@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Inventario Displays</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: sans-serif; background: #13151a; color: #f0f0f0; min-height: 100vh; }
+  .screen { display: none; padding: 16px; max-width: 600px; margin: 0 auto; }
+  .screen.active { display: block; }
+
+  /* LOGIN */
+  #login { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; gap: 14px; }
+  #login h1 { text-align: center; color: #00bf8f; font-size: 24px; margin-bottom: 10px; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 13px; border-radius: 8px; border: none;
+    background: #1e2230; color: #f0f0f0; font-size: 16px;
+  }
+  .btn { width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
+  .btn-verde { background: #00bf8f; color: #021a12; }
+  .btn-azul  { background: #2e6fd4; color: #fff; }
+  .btn-gris  { background: #1e2230; color: #f0f0f0; }
+  .error { color: #f04040; text-align: center; font-size: 14px; min-height: 20px; }
+
+  /* TIENDAS */
+  .header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .header h2 { font-size: 18px; flex: 1; }
+  .back { background: #1e2230; border: none; color: #f0f0f0; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 18px; }
+  .search { width: 100%; padding: 11px; border-radius: 8px; border: none; background: #1e2230; color: #f0f0f0; font-size: 15px; margin-bottom: 10px; }
+  .tienda-item { background: #1e2230; padding: 14px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; font-size: 14px; }
+  .tienda-item:active { background: #2a2f3e; }
+  .subtexto { color: #8a9099; font-size: 13px; margin-bottom: 10px; }
+
+  /* PRODUCTOS */
+  .tabla-header { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; padding: 6px 4px; border-bottom: 1px solid #2a2f3e; margin-bottom: 6px; }
+  .tabla-header span { font-size: 11px; color: #00bf8f; font-weight: bold; text-align: center; }
+  .tabla-header span:first-child { text-align: left; }
+  .fila { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; align-items: center; background: #1e2230; border-radius: 6px; padding: 8px 4px; margin-bottom: 4px; }
+  .fila .nombre { font-size: 11px; padding-left: 4px; word-break: break-word; }
+  .fila .cant { font-size: 13px; font-weight: bold; text-align: center; }
+  .cant.cero { color: #f04040; }
+  .btn-foto { padding: 6px; border-radius: 6px; border: none; background: #2a3240; color: #f0f0f0; cursor: pointer; font-size: 16px; width: 100%; }
+  .btn-foto.ok { background: #00bf8f; color: #021a12; }
+  .fila textarea { font-size: 11px; padding: 4px; border-radius: 6px; border: none; background: #13151a; color: #f0f0f0; resize: none; height: 38px; width: 100%; }
+
+  .btn-enviar { margin-top: 12px; }
+  .status-envio { text-align: center; font-size: 13px; color: #8a9099; margin-top: 8px; min-height: 20px; }
+
+  /* REPORTES */
+  .chips { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .chip { flex: 1; padding: 8px; border-radius: 8px; text-align: center; font-size: 12px; font-weight: bold; min-width: 80px; }
+  .chip-total { background: #1e2230; }
+  .chip-foto  { background: #0a2e1e; color: #00bf8f; }
+  .chip-rojo  { background: #2e0a0a; color: #f04040; }
+  .rep-header { display: grid; grid-template-columns: 1fr 1fr 50px 50px; gap: 4px; padding: 4px; border-bottom: 1px solid #2a2f3e; margin-bottom: 6px; }
+  .rep-header span { font-size: 11px; color: #00bf8f; font-weight: bold; }
+  .rep-fila { display: grid; grid-template-columns: 1fr 1fr 50px 50px; gap: 4px; background: #1e2230; border-radius: 6px; padding: 7px 4px; margin-bottom: 4px; font-size: 11px; align-items: center; }
+  .rep-fila .com { color: #8a9099; font-style: italic; }
+  .foto-ok { color: #00bf8f; text-align: center; font-size: 16px; }
+  .foto-no { color: #8a9099; text-align: center; font-size: 14px; }
+  .btn-refresh { background: #1e2230; border: none; color: #f0f0f0; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login" class="screen active">
+  <h1>Inventario Displays</h1>
+  <input type="text" id="inp-usuario" placeholder="Usuario" autocomplete="off">
+  <input type="password" id="inp-password" placeholder="Contraseña">
+  <div class="error" id="login-error"></div>
+  <button class="btn btn-verde" onclick="doLogin()">Ingresar</button>
+</div>
+
+<!-- TIENDAS -->
+<div id="tiendas" class="screen">
+  <div class="header">
+    <h2>Seleccionar Tienda</h2>
+    <button id="btn-reportes" class="btn-azul btn" style="width:auto;padding:8px 14px;display:none;" onclick="irReportes()">Ver reportes</button>
+  </div>
+  <input type="text" class="search" id="buscar-tienda" placeholder="Buscar tienda..." oninput="filtrarTiendas()">
+  <div class="subtexto" id="status-tiendas">Cargando...</div>
+  <div id="lista-tiendas"></div>
+</div>
+
+<!-- PRODUCTOS -->
+<div id="productos" class="screen">
+  <div class="header">
+    <button class="back" onclick="irTiendas()">←</button>
+    <h2 id="titulo-tienda"></h2>
+  </div>
+  <div class="subtexto" id="status-productos"></div>
+  <div class="tabla-header">
+    <span>Producto</span><span>Cant.</span><span>Foto</span><span>Comentario</span>
+  </div>
+  <div id="lista-productos"></div>
+  <button class="btn btn-verde btn-enviar" onclick="enviarTodos()">✓ Enviar todos los reportes</button>
+  <div class="status-envio" id="status-envio"></div>
+</div>
+
+<!-- REPORTES -->
+<div id="reportes" class="screen">
+  <div class="header">
+    <button class="back" onclick="irTiendas()">←</button>
+    <h2>Reportes enviados</h2>
+    <button class="btn-refresh" onclick="cargarReportes()">↻</button>
+  </div>
+  <div class="chips">
+    <div class="chip chip-total" id="chip-total">0 reportes</div>
+    <div class="chip chip-foto"  id="chip-foto">0 con foto</div>
+    <div class="chip chip-rojo"  id="chip-rojo">0 sin stock</div>
+  </div>
+  <div class="rep-header"><span>Tienda</span><span>Producto</span><span>Coment.</span><span>Foto</span></div>
+  <div id="lista-reportes"></div>
+</div>
+
+<script>
+const API = '';
+let usuario = {};
+let tiendas = [];
+let filas = [];
+let tiendaActual = '';
+
+function mostrar(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+async function doLogin() {
+  const u = document.getElementById('inp-usuario').value.trim();
+  const p = document.getElementById('inp-password').value.trim();
+  document.getElementById('login-error').textContent = 'Verificando...';
+  try {
+    const r = await fetch(API + '/api/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({usuario: u, password: p})
+    });
+    const data = await r.json();
+    if (data.ok) {
+      usuario = data;
+      document.getElementById('login-error').textContent = '';
+      document.getElementById('btn-reportes').style.display = data.rol === 'supervisor' ? 'block' : 'none';
+      mostrar('tiendas');
+      cargarTiendas();
+    } else {
+      document.getElementById('login-error').textContent = data.error || 'Error al ingresar';
+    }
+  } catch(e) {
+    document.getElementById('login-error').textContent = 'Sin conexión con el servidor';
+  }
+}
+
+async function cargarTiendas() {
+  document.getElementById('status-tiendas').textContent = 'Cargando tiendas...';
+  const r = await fetch(API + '/api/tiendas');
+  tiendas = await r.json();
+  document.getElementById('status-tiendas').textContent = tiendas.length + ' tiendas';
+  filtrarTiendas();
+}
+
+function filtrarTiendas() {
+  const txt = document.getElementById('buscar-tienda').value.toLowerCase();
+  const lista = document.getElementById('lista-tiendas');
+  lista.innerHTML = '';
+  tiendas.filter(t => t.toLowerCase().includes(txt)).forEach(t => {
+    const d = document.createElement('div');
+    d.className = 'tienda-item';
+    d.textContent = t;
+    d.onclick = () => irProductos(t);
+    lista.appendChild(d);
+  });
+}
+
+function irTiendas() { mostrar('tiendas'); }
+
+async function irProductos(tienda) {
+  tiendaActual = tienda;
+  document.getElementById('titulo-tienda').textContent = tienda;
+  document.getElementById('status-productos').textContent = 'Cargando...';
+  document.getElementById('status-envio').textContent = '';
+  document.getElementById('lista-productos').innerHTML = '';
+  filas = [];
+  mostrar('productos');
+  const r = await fetch(API + '/api/productos/' + encodeURIComponent(tienda));
+  const productos = await r.json();
+  document.getElementById('status-productos').textContent = productos.length + ' productos';
+  const lista = document.getElementById('lista-productos');
+  productos.forEach((p, i) => {
+    filas.push({nombre: p.nombre, cantidad: p.cantidad, foto_b64: '', comentario: ''});
+    const fila = document.createElement('div');
+    fila.className = 'fila';
+    fila.innerHTML = `
+      <div class="nombre">${p.nombre}</div>
+      <div class="cant ${p.cantidad == 0 ? 'cero' : ''}">${p.cantidad}</div>
+      <button class="btn-foto" id="foto-${i}" onclick="selFoto(${i})">📷</button>
+      <textarea placeholder="Comentario..." oninput="filas[${i}].comentario=this.value"></textarea>
+    `;
+    lista.appendChild(fila);
+  });
+}
+
+function selFoto(i) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+  inp.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      filas[i].foto_b64 = ev.target.result.split(',')[1];
+      const btn = document.getElementById('foto-' + i);
+      btn.textContent = '✓'; btn.classList.add('ok');
+    };
+    reader.readAsDataURL(file);
+  };
+  inp.click();
+}
+
+async function enviarTodos() {
+  document.getElementById('status-envio').textContent = 'Enviando...';
+  let enviados = 0;
+  for (const fd of filas) {
+    try {
+      const r = await fetch(API + '/api/reporte', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({tienda: tiendaActual, producto: fd.nombre,
+          comentario: fd.comentario, foto: fd.foto_b64, usuario: usuario.nombre || ''})
+      });
+      const d = await r.json();
+      if (d.ok) enviados++;
+    } catch(e) {}
+  }
+  document.getElementById('status-envio').textContent = '✓ ' + enviados + '/' + filas.length + ' reportes enviados';
+  document.getElementById('status-envio').style.color = '#00bf8f';
+}
+
+function irReportes() { mostrar('reportes'); cargarReportes(); }
+
+async function cargarReportes() {
+  document.getElementById('lista-reportes').innerHTML = 'Cargando...';
+  const r = await fetch(API + '/api/reportes');
+  const reps = await r.json();
+  const conFoto = reps.filter(r => r.foto).length;
+  const sinStock = reps.filter(r => r.cantidad == 0).length;
+  document.getElementById('chip-total').textContent = reps.length + ' reportes';
+  document.getElementById('chip-foto').textContent  = conFoto + ' con foto';
+  document.getElementById('chip-rojo').textContent  = sinStock + ' sin stock';
+  const lista = document.getElementById('lista-reportes');
+  lista.innerHTML = '';
+  if (!reps.length) { lista.textContent = 'No hay reportes aún'; return; }
+  reps.forEach(rep => {
+    const d = document.createElement('div');
+    d.className = 'rep-fila';
+    d.innerHTML = `
+      <div>${rep.tienda}</div>
+      <div>${rep.producto}</div>
+      <div class="com">${rep.comentario || '—'}</div>
+      <div class="${rep.foto ? 'foto-ok' : 'foto-no'}">${rep.foto ? '✓' : '—'}</div>
+    `;
+    lista.appendChild(d);
+  });
+}
+</script>
+</body>
+</html>

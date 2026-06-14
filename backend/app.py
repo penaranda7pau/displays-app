@@ -1,7 +1,7 @@
 import os
 import base64
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from lector_excel import leer_inventario_completo
@@ -41,6 +41,10 @@ USUARIOS = [
 
 FOTOS_DIR = os.path.join(os.path.dirname(__file__), '..', 'fotos')
 os.makedirs(FOTOS_DIR, exist_ok=True)
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 @app.route("/api/ping")
 def ping():
