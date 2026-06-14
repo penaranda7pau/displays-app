@@ -1,0 +1,7 @@
+flask
+flask-cors
+pandas
+openpyxl
+gunicorn
+flask-sqlalchemy
+psycopg2-binary

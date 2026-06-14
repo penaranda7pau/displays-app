@@ -1,0 +1,5 @@
+venv/
+fotos/
+__pycache__/
+*.pyc
+*.db
