@@ -4,7 +4,6 @@ from datetime import datetime
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from lector_excel import leer_inventario_completo
 
 app = Flask(__name__)
 CORS(app)
@@ -31,6 +30,12 @@ class Reporte(db.Model):
     usuario    = db.Column(db.String(100))
     fecha      = db.Column(db.String(20))
 
+class Inventario(db.Model):
+    id       = db.Column(db.Integer, primary_key=True)
+    tienda   = db.Column(db.String(200), index=True)
+    producto = db.Column(db.String(200))
+    cantidad = db.Column(db.Integer, default=0)
+
 with app.app_context():
     db.create_all()
 
@@ -38,6 +43,8 @@ USUARIOS = [
     {"id": 1, "nombre": "Display 1", "usuario": "display1", "password": "1234",     "rol": "display"},
     {"id": 2, "nombre": "Supervisor", "usuario": "admin",    "password": "admin123", "rol": "supervisor"}
 ]
+
+SYNC_KEY = os.environ.get("SYNC_KEY", "cpfr2024")
 
 FOTOS_DIR = os.path.join(os.path.dirname(__file__), '..', 'fotos')
 os.makedirs(FOTOS_DIR, exist_ok=True)
@@ -62,13 +69,28 @@ def login():
 
 @app.route("/api/tiendas")
 def tiendas():
-    inventario = leer_inventario_completo()
-    return jsonify(sorted(inventario.keys()))
+    rows = db.session.query(Inventario.tienda).distinct().order_by(Inventario.tienda).all()
+    return jsonify([r.tienda for r in rows])
 
 @app.route("/api/productos/<tienda>")
 def productos(tienda):
-    inventario = leer_inventario_completo()
-    return jsonify(inventario.get(tienda, []))
+    rows = Inventario.query.filter_by(tienda=tienda).order_by(Inventario.cantidad.desc()).all()
+    return jsonify([{"nombre": r.producto, "cantidad": r.cantidad} for r in rows])
+
+@app.route("/api/sync", methods=["POST"])
+def sync_inventario():
+    data = request.json
+    if data.get("key") != SYNC_KEY:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    inventario = data.get("inventario", {})
+    Inventario.query.delete()
+    total = 0
+    for tienda, productos in inventario.items():
+        for p in productos:
+            db.session.add(Inventario(tienda=tienda, producto=p["nombre"], cantidad=p["cantidad"]))
+            total += 1
+    db.session.commit()
+    return jsonify({"ok": True, "productos": total})
 
 @app.route("/api/reporte", methods=["POST"])
 def guardar_reporte():
