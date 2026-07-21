@@ -66,6 +66,9 @@
 
   .btn-refresh { background: #1e2230; border: none; color: #f0f0f0; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
   .seccion-vacia { color: #8a9099; font-size: 13px; text-align: center; padding: 20px 0; }
+  .btn-cerrar { background: #8b0000; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; }
+  .btn-cerrar:hover { background: #a00000; }
+  .banner-cierre { background: #1e2230; border: 1px solid #2a2f3e; border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: 13px; color: #8a9099; }
 </style>
 </head>
 <body>
@@ -111,6 +114,10 @@
     <button class="back" onclick="irTiendas()">←</button>
     <h2>Panel supervisor</h2>
     <button class="btn-refresh" onclick="cargarPanel()">↻</button>
+    <button class="btn-cerrar" onclick="cerrarSemana()">Cerrar semana ↓</button>
+  </div>
+  <div class="banner-cierre" id="banner-semana">
+    Semana actual: <strong id="label-semana">—</strong> &nbsp;|&nbsp; Los reportes se archivan al cerrar semana.
   </div>
 
   <!-- TABS -->
@@ -291,12 +298,47 @@ async function enviarTodos() {
 }
 
 async function cargarPanel() {
+  // Mostrar semana actual
+  const now = new Date();
+  const year = now.getFullYear();
+  const start = new Date(year, 0, 1);
+  const week = Math.ceil(((now - start) / 86400000 + start.getDay() + 1) / 7);
+  document.getElementById('label-semana').textContent = year + '-S' + String(week).padStart(2,'0');
+
   const r = await fetch(API + '/api/reportes');
   todosReportes = await r.json();
   renderReportes();
   renderPorTienda();
   renderCriticos();
   renderDisplays();
+}
+
+async function cerrarSemana() {
+  if (!confirm('¿Cerrar la semana actual?\n\nEsto generará el Excel de diferencias y archivará los reportes. No se pueden deshacer.')) return;
+  const btn = document.querySelector('.btn-cerrar');
+  btn.textContent = 'Generando...';
+  btn.disabled = true;
+  try {
+    const r = await fetch(API + '/api/cerrar-semana', {method: 'POST'});
+    if (!r.ok) { alert('Error al cerrar semana: ' + r.status); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const cd = r.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="?([^"]+)"?/);
+    a.download = match ? match[1] : 'diferencias.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setTimeout(() => cargarPanel(), 500);
+  } catch(e) {
+    alert('Error de red al cerrar semana');
+  } finally {
+    btn.textContent = 'Cerrar semana ↓';
+    btn.disabled = false;
+  }
 }
 
 function renderReportes() {

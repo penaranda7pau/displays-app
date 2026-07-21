@@ -1,9 +1,26 @@
 import os
+import json
 import glob
 import pandas as pd
 
-RUTA_WM   = r"C:\Users\HP 645\OneDrive - CPFR\CPFR Advisor - General\reportes generales\Mundo Vegano\DISPLAYS\BD INV\WM"
-RUTA_AUTO = r"C:\Users\HP 645\OneDrive - CPFR\CPFR Advisor - General\reportes generales\Mundo Vegano\DISPLAYS\BD INV\AUTO"
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "config.json")
+
+_DEFAULTS = {
+    "ruta_wm":   r"C:\Users\HP 645\OneDrive - CPFR\CPFR Advisor - General\reportes generales\Mundo Vegano\DISPLAYS\BD INV\WM",
+    "ruta_auto": r"C:\Users\HP 645\OneDrive - CPFR\CPFR Advisor - General\reportes generales\Mundo Vegano\DISPLAYS\BD INV\AUTO",
+}
+
+def _cargar_config():
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        cfg = {}
+    return {**_DEFAULTS, **cfg}
+
+_config = _cargar_config()
+RUTA_WM   = _config["ruta_wm"]
+RUTA_AUTO = _config["ruta_auto"]
 
 def get_primer_excel(ruta):
     archivos = glob.glob(os.path.join(ruta, "*.xlsx"))
