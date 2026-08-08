@@ -380,7 +380,7 @@ async function irProductos(tienda) {
       : `<button class="btn-foto" id="foto-${i}" onclick="selFoto(${i})">📷</button>`;
     fila.innerHTML = `
       <div class="nombre">${p.nombre}</div>
-      <div class="cant ${p.cantidad == 0 ? 'cero' : ''}">${p.cantidad}</div>
+      <div class="cant ${p.cantidad <= 0 ? 'cero' : ''}">${p.cantidad}</div>
       <div id="foto-wrap-${i}">${btnFoto}</div>
       <textarea placeholder="Comentario..." oninput="filas[${i}].comentario=this.value"></textarea>
     `;
