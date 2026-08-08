@@ -40,8 +40,9 @@
   .status-envio { text-align: center; font-size: 13px; color: #8a9099; margin-top: 8px; min-height: 20px; }
 
   /* TABS SUPERVISOR */
-  .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid #2a2f3e; }
-  .tab { padding: 8px 14px; font-size: 13px; cursor: pointer; color: #8a9099; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; }
+  .tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid #2a2f3e; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { padding: 8px 9px; font-size: 12px; cursor: pointer; color: #8a9099; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; flex-shrink: 0; white-space: nowrap; }
   .tab.activo { color: #00bf8f; border-bottom: 2px solid #00bf8f; font-weight: bold; }
 
   /* CHIPS */
@@ -144,7 +145,7 @@
   <!-- TABS -->
   <div class="tabs">
     <button class="tab activo" onclick="cambiarTab('tab-reportes',this)">Reportes</button>
-    <button class="tab" onclick="cambiarTab('tab-tiendas',this)">Por tienda</button>
+    <button class="tab" onclick="cambiarTab('tab-tiendas',this)">Tiendas</button>
     <button class="tab" onclick="cambiarTab('tab-criticos',this)">Críticos</button>
     <button class="tab" onclick="cambiarTab('tab-displays',this)">Displays</button>
     <button class="tab" onclick="cambiarTab('tab-usuarios',this)">Usuarios</button>
