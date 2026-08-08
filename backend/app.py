@@ -381,45 +381,89 @@ def cerrar_semana():
             ws3.cell(r, c).fill   = fill_verde
             ws3.cell(r, c).border = border
 
-    # Hoja 4 — Historial de reincidentes (todas las semanas archivadas)
-    ws4 = wb.create_sheet("Historial reincidentes")
-    ws4.append(["Tienda", "Producto", "Stock sistema", "Semanas con problema", "Detalle por semana"])
-    estilo_header(ws4, [35, 40, 14, 18, 60])
+    # Hoja 4+ — Una hoja por cadena, formato matricial (tienda+producto vs semanas)
+    import re as _re
 
-    fill_grave = PatternFill("solid", fgColor="5C0000")
-    font_grave = Font(bold=True, color="FFFFFF")
+    def extraer_cadena(tienda):
+        parts = tienda.strip().split()
+        if not parts:
+            return tienda
+        if _re.match(r'^[A-Z]+\d+$', parts[0]):
+            return ' '.join(parts[1:-1]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else parts[0])
+        return parts[0]
 
     inventario_actual = {(inv.tienda, inv.producto): inv.cantidad for inv in Inventario.query.all()}
-    historial = {}
-    for d in Diferencia.query.filter(Diferencia.estado != "OK").order_by(Diferencia.semana).all():
-        key = historial.setdefault((d.tienda, d.producto), {"cantidad": d.cantidad, "semanas": []})
-        key["semanas"].append((d.semana, d.estado))
-        key["cantidad"] = d.cantidad  # se queda con el stock de la semana más reciente
 
-    filas_historial = []
-    for (tienda, producto), info in historial.items():
-        semanas_unicas = sorted(set(s for s, _ in info["semanas"]))
-        if len(semanas_unicas) <= 1:
-            continue
-        stock = inventario_actual.get((tienda, producto), info["cantidad"])
-        detalle = " | ".join(
-            f"{s.split('-')[1]}: {'sin foto' if e == 'SIN_FOTO' else 'con justificación'}"
-            for s, e in info["semanas"]
-        )
-        filas_historial.append((tienda, producto, stock, len(semanas_unicas), detalle))
+    # Obtener todas las semanas archivadas ordenadas
+    semanas_arch = sorted(set(
+        d.semana for d in Diferencia.query.with_entities(Diferencia.semana).distinct().all()
+    ))
 
-    filas_historial.sort(key=lambda f: f[3], reverse=True)
+    # Construir mapa: {(tienda, producto): {semana: estado}}
+    matriz = {}
+    for d in Diferencia.query.order_by(Diferencia.semana).all():
+        key = (d.tienda, d.producto)
+        if key not in matriz:
+            matriz[key] = {}
+        if d.estado != "OK":
+            matriz[key][d.semana] = 1
+        elif d.semana not in matriz[key]:
+            matriz[key][d.semana] = 0
 
-    for tienda, producto, stock, num_semanas, detalle in filas_historial:
-        ws4.append([tienda, producto, stock, num_semanas, detalle])
-        r = ws4.max_row
-        grave = num_semanas >= 3
-        for c in range(1, 6):
-            ws4.cell(r, c).border = border
-            ws4.cell(r, c).alignment = Alignment(vertical="center", wrap_text=True)
-            if grave:
-                ws4.cell(r, c).fill = fill_grave
-                ws4.cell(r, c).font = font_grave
+    # Agrupar por cadena
+    cadenas = {}
+    for (tienda, producto) in matriz:
+        c = extraer_cadena(tienda)
+        cadenas.setdefault(c, []).append((tienda, producto))
+
+    fill_uno  = PatternFill("solid", fgColor="C62828")   # rojo — tiene diferencia
+    fill_cero = PatternFill("solid", fgColor="1B5E20")   # verde — OK
+    font_blanco = Font(bold=True, color="FFFFFF")
+    font_header_col = Font(bold=True, color="FFFFFF", size=9)
+    fill_header_col = PatternFill("solid", fgColor="1e4060")
+
+    for cadena, pares in sorted(cadenas.items()):
+        nombre_hoja = cadena[:28]  # máx 31 chars en Excel
+        ws = wb.create_sheet(nombre_hoja)
+
+        # Encabezados de columna: Tienda | Producto | Stock | fecha1 | fecha2 ...
+        cabeceras = ["Tienda", "Producto", "Stock"]
+        for sem in semanas_arch:
+            _, leg = rango_de_codigo(sem)
+            cabeceras.append(leg)
+        ws.append(cabeceras)
+
+        # Estilo encabezado
+        anchos = [30, 38, 8] + [16] * len(semanas_arch)
+        for i, ancho in enumerate(anchos, 1):
+            ws.column_dimensions[ws.cell(1, i).column_letter].width = ancho
+            ws.cell(1, i).fill = fill_header_col
+            ws.cell(1, i).font = font_header_col
+            ws.cell(1, i).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.row_dimensions[1].height = 36
+
+        pares_ord = sorted(pares, key=lambda x: (x[0], x[1]))
+        for tienda, producto in pares_ord:
+            stock = inventario_actual.get((tienda, producto), "")
+            fila = [tienda, producto, stock]
+            for sem in semanas_arch:
+                val = matriz[(tienda, producto)].get(sem, "")
+                fila.append(val if val != "" else "")
+            ws.append(fila)
+            r = ws.max_row
+            for c in range(1, len(cabeceras) + 1):
+                ws.cell(r, c).border = border
+                ws.cell(r, c).alignment = Alignment(vertical="center")
+                if c > 3:
+                    v = ws.cell(r, c).value
+                    if v == 1:
+                        ws.cell(r, c).fill = fill_uno
+                        ws.cell(r, c).font = font_blanco
+                        ws.cell(r, c).value = "✗"
+                    elif v == 0:
+                        ws.cell(r, c).fill = fill_cero
+                        ws.cell(r, c).font = font_blanco
+                        ws.cell(r, c).value = "✓"
 
     # Hoja 5 — Tiendas sin visita
     todas_tiendas = set(inv.tienda for inv in Inventario.query.all())
