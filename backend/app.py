@@ -295,6 +295,8 @@ def cerrar_semana():
         if inv.cantidad <= 0:
             continue
         key = (inv.tienda, inv.producto)
+        if inv.cantidad <= 0:
+            continue  # sin stock en sistema, no es diferencia
         rep = mapa.get(key)
         if rep and rep.foto:
             estado = "OK"
@@ -621,6 +623,8 @@ def diferencias_semana():
     resultado = []
     for inv in inventario:
         key = (inv.tienda, inv.producto)
+        if inv.cantidad <= 0:
+            continue  # sin stock en sistema, no es diferencia
         rep = mapa.get(key)
         if rep and rep.foto:
             estado = "OK"
