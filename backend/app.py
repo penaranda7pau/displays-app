@@ -414,9 +414,10 @@ def cerrar_semana():
         _, leg = rango_de_codigo(sem)
         cabeceras.append(leg)
     cabeceras.append("Total")
+    cabeceras.append("Comentario semana actual")
     ws4.append(cabeceras)
 
-    anchos = [32, 40, 8] + [16] * len(semanas_arch) + [8]
+    anchos = [32, 40, 8] + [16] * len(semanas_arch) + [8, 45]
     for i, ancho in enumerate(anchos, 1):
         ws4.column_dimensions[ws4.cell(1, i).column_letter].width = ancho
         ws4.cell(1, i).fill = fill_header_col
@@ -424,17 +425,24 @@ def cerrar_semana():
         ws4.cell(1, i).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws4.row_dimensions[1].height = 40
 
+    # Comentarios de la semana que se está cerrando ahora
+    comentarios_semana = {
+        (d.tienda, d.producto): d.comentario or ""
+        for d in Diferencia.query.filter_by(semana=semana).all()
+    }
+
     # Calcular total por fila y ordenar de mayor a menor
     filas_mat = []
     for (tienda, producto), sem_map in matriz.items():
         stock = inventario_actual.get((tienda, producto), "")
         vals = [sem_map.get(s, None) for s in semanas_arch]
         total = sum(1 for v in vals if v == 1)
-        filas_mat.append((tienda, producto, stock, vals, total))
+        comentario = comentarios_semana.get((tienda, producto), "")
+        filas_mat.append((tienda, producto, stock, vals, total, comentario))
     filas_mat.sort(key=lambda x: x[4], reverse=True)
 
-    for tienda, producto, stock, vals, total in filas_mat:
-        fila = [tienda, producto, stock] + [""] * len(semanas_arch) + [total]
+    for tienda, producto, stock, vals, total, comentario in filas_mat:
+        fila = [tienda, producto, stock] + [""] * len(semanas_arch) + [total, comentario]
         ws4.append(fila)
         r = ws4.max_row
         # Tienda / Producto / Stock
@@ -463,6 +471,10 @@ def cerrar_semana():
         if total >= 3:
             ws4.cell(r, c_total).fill = fill_total_alto
             ws4.cell(r, c_total).font = Font(bold=True, color="FFFFFF")
+        # Comentario
+        c_com = c_total + 1
+        ws4.cell(r, c_com).border = border
+        ws4.cell(r, c_com).alignment = Alignment(vertical="center", wrap_text=True)
 
     # Hoja 5 — Tiendas sin visita
     todas_tiendas = set(inv.tienda for inv in Inventario.query.all())
