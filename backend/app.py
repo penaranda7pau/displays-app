@@ -382,6 +382,87 @@ def cerrar_semana():
                 ws4.cell(r, c).fill = fill_grave
                 ws4.cell(r, c).font = font_grave
 
+    # Hoja 5 — Tiendas sin visita
+    todas_tiendas = set(inv.tienda for inv in Inventario.query.all())
+    tiendas_con_reporte = set(r.tienda for r in reportes)
+    tiendas_sin_visita = sorted(todas_tiendas - tiendas_con_reporte)
+
+    fill_naranja = PatternFill("solid", fgColor="FFE0B2")
+    font_naranja = Font(bold=True, color="BF360C")
+
+    ws5 = wb.create_sheet("Tiendas sin visita")
+    ws5.append(["Tienda", "Productos en sistema", "Observación"])
+    estilo_header(ws5, [40, 20, 40])
+    for t in tiendas_sin_visita:
+        prods = Inventario.query.filter_by(tienda=t).count()
+        ws5.append([t, prods, "Ningún display reportó esta tienda en la semana"])
+        r = ws5.max_row
+        for c in range(1, 4):
+            ws5.cell(r, c).fill   = fill_naranja
+            ws5.cell(r, c).font   = font_naranja
+            ws5.cell(r, c).border = border
+
+    # Hoja 6 — Resumen por tienda con % cumplimiento
+    ws6 = wb.create_sheet("Resumen por tienda")
+    ws6.append(["Tienda", "Total productos", "Con foto", "Sin foto", "% Cumplimiento"])
+    estilo_header(ws6, [40, 16, 12, 12, 16])
+
+    resumen_tiendas = {}
+    for inv in Inventario.query.all():
+        if inv.cantidad <= 0:
+            continue
+        t = inv.tienda
+        if t not in resumen_tiendas:
+            resumen_tiendas[t] = {"total": 0, "ok": 0}
+        resumen_tiendas[t]["total"] += 1
+
+    for d in Diferencia.query.filter_by(semana=semana, estado="OK").all():
+        if d.tienda in resumen_tiendas:
+            resumen_tiendas[d.tienda]["ok"] += 1
+
+    filas_resumen = []
+    for t, datos in resumen_tiendas.items():
+        pct = round(datos["ok"] / datos["total"] * 100) if datos["total"] else 0
+        filas_resumen.append((t, datos["total"], datos["ok"], datos["total"] - datos["ok"], pct))
+    filas_resumen.sort(key=lambda x: x[4])  # menor % primero
+
+    for t, total, ok, sin_foto, pct in filas_resumen:
+        ws6.append([t, total, ok, sin_foto, f"{pct}%"])
+        r = ws6.max_row
+        fill = fill_verde if pct >= 80 else (fill_amarillo if pct >= 50 else fill_rojo)
+        for c in range(1, 6):
+            ws6.cell(r, c).fill   = fill
+            ws6.cell(r, c).border = border
+            ws6.cell(r, c).alignment = Alignment(vertical="center")
+
+    # Hoja 7 — Resumen por display
+    ws7 = wb.create_sheet("Resumen por display")
+    ws7.append(["Display", "Tiendas visitadas", "Productos reportados", "Con foto", "Última actividad"])
+    estilo_header(ws7, [25, 18, 20, 12, 20])
+
+    resumen_display = {}
+    for rep in reportes:
+        u = rep.usuario or "Desconocido"
+        if u not in resumen_display:
+            resumen_display[u] = {"tiendas": set(), "total": 0, "fotos": 0, "ultima": ""}
+        resumen_display[u]["tiendas"].add(rep.tienda)
+        resumen_display[u]["total"] += 1
+        if rep.foto:
+            resumen_display[u]["fotos"] += 1
+        if rep.fecha > resumen_display[u]["ultima"]:
+            resumen_display[u]["ultima"] = rep.fecha
+
+    for disp, datos in sorted(resumen_display.items()):
+        fecha_fmt = datos["ultima"][:8]
+        if len(fecha_fmt) == 8:
+            fecha_fmt = f"{fecha_fmt[6:8]}/{fecha_fmt[4:6]}/{fecha_fmt[:4]}"
+        ws7.append([disp, len(datos["tiendas"]), datos["total"], datos["fotos"], fecha_fmt])
+        r = ws7.max_row
+        for c in range(1, 6):
+            ws7.cell(r, c).fill   = fill_verde
+            ws7.cell(r, c).border = border
+            ws7.cell(r, c).alignment = Alignment(vertical="center")
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -393,6 +474,34 @@ def cerrar_semana():
 def ver_foto_reporte(reporte_id):
     rep = Reporte.query.get_or_404(reporte_id)
     return jsonify({"foto_b64": rep.foto_b64 or ""})
+
+@app.route("/api/diferencias-semana")
+def diferencias_semana():
+    semana = semana_actual()
+    reportes = Reporte.query.filter_by(semana=semana).all()
+    mapa = {}
+    for r in reportes:
+        key = (r.tienda, r.producto)
+        if key not in mapa or r.foto:
+            mapa[key] = r
+    inventario = Inventario.query.filter(Inventario.cantidad > 0).all()
+    tiendas_con_reporte = set(r.tienda for r in reportes)
+    todas_tiendas = set(inv.tienda for inv in Inventario.query.all())
+    resultado = []
+    for inv in inventario:
+        key = (inv.tienda, inv.producto)
+        rep = mapa.get(key)
+        if rep and rep.foto:
+            estado = "OK"
+        elif rep and rep.comentario:
+            estado = "CON_JUSTIFICACION"
+        else:
+            estado = "SIN_FOTO"
+        resultado.append({"tienda": inv.tienda, "producto": inv.producto,
+                          "cantidad": inv.cantidad, "estado": estado,
+                          "comentario": rep.comentario if rep else ""})
+    sin_visita = sorted(todas_tiendas - tiendas_con_reporte)
+    return jsonify({"diferencias": resultado, "tiendas_sin_visita": sin_visita})
 
 @app.route("/api/reportes/<int:reporte_id>", methods=["DELETE"])
 def eliminar_reporte(reporte_id):

@@ -22,6 +22,9 @@
   body { font-family: 'Segoe UI', sans-serif; background: var(--fondo); color: var(--texto); min-height: 100vh; }
   .screen { display: none; padding: 16px; max-width: 640px; margin: 0 auto; }
   .screen.active { display: block; }
+  @media (min-width: 900px) {
+    #panel { max-width: 1100px; padding: 24px 32px; }
+  }
 
   /* LOGIN */
   #login { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; gap: 14px; }
@@ -154,7 +157,7 @@
 </div>
 
 <!-- PANEL SUPERVISOR -->
-<div id="panel" class="screen">
+<div id="panel" class="screen" style="max-width:100%;">
   <div class="header">
     <button class="back" onclick="irTiendas()">←</button>
     <h2>Panel supervisor</h2>
@@ -168,8 +171,8 @@
   <!-- TABS -->
   <div class="tabs">
     <button class="tab activo" onclick="cambiarTab('tab-reportes',this)">Reportes</button>
-    <button class="tab" onclick="cambiarTab('tab-tiendas',this)">Tiendas</button>
-    <button class="tab" onclick="cambiarTab('tab-criticos',this)">Críticos</button>
+    <button class="tab" onclick="cambiarTab('tab-tiendas',this)">Por tienda</button>
+    <button class="tab" onclick="cambiarTab('tab-diferencias',this)">Diferencias</button>
     <button class="tab" onclick="cambiarTab('tab-displays',this)">Displays</button>
     <button class="tab" onclick="cambiarTab('tab-usuarios',this)">Usuarios</button>
   </div>
@@ -179,7 +182,7 @@
     <div class="chips">
       <div class="chip chip-total" id="chip-total">0 reportes</div>
       <div class="chip chip-foto"  id="chip-foto">0 con foto</div>
-      <div class="chip chip-rojo"  id="chip-rojo">0 sin stock</div>
+      <div class="chip chip-rojo"  id="chip-rojo">0 sin foto</div>
     </div>
     <div class="tbl-head" style="grid-template-columns:1fr 1fr 60px 70px;">
       <span>Tienda</span><span>Producto</span><span>Coment.</span><span>Foto</span>
@@ -189,25 +192,33 @@
 
   <!-- TAB POR TIENDA -->
   <div id="tab-tiendas" style="display:none;">
-    <div class="subtexto" style="margin-bottom:10px;">Resumen de reportes por tienda</div>
-    <div class="tbl-head" style="grid-template-columns:1fr 50px 50px 50px;">
-      <span>Tienda</span><span>Visitas</span><span>Sin stk</span><span>Fotos</span>
+    <div class="subtexto" style="margin-bottom:10px;">Días distintos que cada tienda fue visitada esta semana</div>
+    <div class="tbl-head" style="grid-template-columns:1fr 70px 60px;">
+      <span>Tienda</span><span>Días visitados</span><span>Con foto</span>
     </div>
     <div id="lista-por-tienda"></div>
   </div>
 
-  <!-- TAB CRÍTICOS -->
-  <div id="tab-criticos" style="display:none;">
-    <div class="subtexto" style="margin-bottom:10px;">Productos con más reportes de stock 0</div>
-    <div class="tbl-head" style="grid-template-columns:1fr 70px;">
-      <span>Producto</span><span>Veces sin stk</span>
+  <!-- TAB DIFERENCIAS -->
+  <div id="tab-diferencias" style="display:none;">
+    <div class="subtexto" style="margin-bottom:10px;">Productos con stock en sistema que aún no tienen foto esta semana</div>
+    <div class="chips">
+      <div class="chip chip-rojo"  id="chip-dif-sin">0 sin foto</div>
+      <div class="chip chip-amarillo" id="chip-dif-just">0 con justificación</div>
+      <div class="chip chip-foto"  id="chip-dif-ok">0 exhibidos</div>
     </div>
-    <div id="lista-criticos"></div>
+    <div class="tbl-head" style="grid-template-columns:1fr 1fr 60px 90px;">
+      <span>Tienda</span><span>Producto</span><span>Stock</span><span>Estado</span>
+    </div>
+    <div id="lista-diferencias"></div>
+    <div id="lista-sin-visita" style="margin-top:16px;"></div>
   </div>
+
+  <!-- TAB CRÍTICOS (renombrado a Displays) ya no aparece, fue reemplazado -->
 
   <!-- TAB DISPLAYS -->
   <div id="tab-displays" style="display:none;">
-    <div class="subtexto" style="margin-bottom:10px;">Actividad por display</div>
+    <div class="subtexto" style="margin-bottom:10px;">Actividad por display esta semana</div>
     <div id="lista-displays"></div>
   </div>
 
@@ -262,12 +273,14 @@ function mostrar(id) {
 }
 
 function cambiarTab(id, btn) {
-  ['tab-reportes','tab-tiendas','tab-criticos','tab-displays','tab-usuarios'].forEach(t => {
-    document.getElementById(t).style.display = 'none';
+  ['tab-reportes','tab-tiendas','tab-diferencias','tab-displays','tab-usuarios'].forEach(t => {
+    const el = document.getElementById(t);
+    if (el) el.style.display = 'none';
   });
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('activo'));
   document.getElementById(id).style.display = 'block';
   btn.classList.add('activo');
+  if (id === 'tab-diferencias') renderDiferencias();
 }
 
 async function doLogin() {
@@ -527,23 +540,23 @@ function cerrarModalFoto() {
 function renderPorTienda() {
   const mapa = {};
   todosReportes.forEach(r => {
-    if (!mapa[r.tienda]) mapa[r.tienda] = {visitas: 0, sinStock: 0, fotos: 0};
-    mapa[r.tienda].visitas++;
-    if (r.foto) mapa[r.tienda].fotos++;
+    if (!mapa[r.tienda]) mapa[r.tienda] = {dias: new Set(), fotos: 0};
+    const dia = (r.fecha || '').substring(0, 10);
+    if (dia) mapa[r.tienda].dias.add(dia);
+    if (r.foto || r.foto_b64) mapa[r.tienda].fotos++;
   });
   const lista = document.getElementById('lista-por-tienda');
   lista.innerHTML = '';
-  const ordenado = Object.entries(mapa).sort((a,b) => b[1].visitas - a[1].visitas);
+  const ordenado = Object.entries(mapa).sort((a,b) => b[1].dias.size - a[1].dias.size);
   if (!ordenado.length) { lista.innerHTML = '<div class="seccion-vacia">Sin datos</div>'; return; }
   ordenado.forEach(([tienda, d]) => {
     const row = document.createElement('div');
     row.className = 'tbl-row';
-    row.style.gridTemplateColumns = '1fr 50px 50px 50px';
+    row.style.gridTemplateColumns = '1fr 70px 60px';
     row.innerHTML = `
       <div>${tienda}</div>
-      <div class="center">${d.visitas}</div>
-      <div class="rojo">${d.sinStock}</div>
-      <div class="verde">${d.fotos}</div>
+      <div class="center">${d.dias.size}</div>
+      <div class="verde center">${d.fotos}</div>
     `;
     lista.appendChild(row);
   });
@@ -569,6 +582,55 @@ function renderCriticos() {
     `;
     lista.appendChild(row);
   });
+}
+
+async function renderDiferencias() {
+  const lista = document.getElementById('lista-diferencias');
+  const listaSV = document.getElementById('lista-sin-visita');
+  lista.innerHTML = '<div class="seccion-vacia">Cargando...</div>';
+  try {
+    const res = await fetch(API + '/api/diferencias-semana');
+    const data = await res.json();
+    const difs = data.diferencias || [];
+    const sinVisita = data.tiendas_sin_visita || [];
+
+    document.getElementById('chip-dif-sin').textContent = difs.filter(d=>d.estado==='sin_foto').length + ' sin foto';
+    document.getElementById('chip-dif-just').textContent = difs.filter(d=>d.estado==='justificado').length + ' justificados';
+    document.getElementById('chip-dif-ok').textContent = difs.filter(d=>d.estado==='ok').length + ' exhibidos';
+
+    lista.innerHTML = '';
+    if (!difs.length) {
+      lista.innerHTML = '<div class="seccion-vacia">Todo al día esta semana ✓</div>';
+    } else {
+      difs.forEach(d => {
+        const row = document.createElement('div');
+        row.className = 'tbl-row';
+        row.style.gridTemplateColumns = '1fr 1fr 60px 90px';
+        const color = d.estado === 'sin_foto' ? 'color:#e74c3c' : d.estado === 'justificado' ? 'color:#f39c12' : 'color:#6aaa4f';
+        row.innerHTML = `
+          <div>${d.tienda}</div>
+          <div style="font-size:12px">${d.producto}</div>
+          <div class="center">${d.stock ?? '—'}</div>
+          <div class="center" style="${color};font-size:11px">${d.estado === 'sin_foto' ? 'Sin foto' : d.estado === 'justificado' ? 'Justificado' : 'Exhibido'}</div>
+        `;
+        lista.appendChild(row);
+      });
+    }
+
+    listaSV.innerHTML = '';
+    if (sinVisita.length) {
+      listaSV.innerHTML = `<div class="subtexto" style="color:#e74c3c;margin-bottom:6px;">⚠ Tiendas sin visita esta semana (${sinVisita.length})</div>`;
+      sinVisita.forEach(t => {
+        const row = document.createElement('div');
+        row.className = 'tbl-row';
+        row.style.gridTemplateColumns = '1fr';
+        row.innerHTML = `<div>${t}</div>`;
+        listaSV.appendChild(row);
+      });
+    }
+  } catch(e) {
+    lista.innerHTML = '<div class="seccion-vacia">Error al cargar diferencias</div>';
+  }
 }
 
 function renderDisplays() {
