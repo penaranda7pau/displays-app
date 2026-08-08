@@ -493,9 +493,24 @@ def cerrar_semana():
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
+
+    # Borrar reportes de la semana cerrada para empezar semana nueva limpia
+    Reporte.query.filter_by(semana=semana).delete()
+    db.session.commit()
+
     nombre = f"diferencias_{rango_archivo}.xlsx"
     return send_file(buf, as_attachment=True, download_name=nombre,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+@app.route("/api/limpiar-reportes", methods=["POST"])
+def limpiar_reportes():
+    data = request.json or {}
+    if data.get("rol") != "supervisor":
+        return jsonify({"error": "No autorizado"}), 403
+    count = Reporte.query.count()
+    Reporte.query.delete()
+    db.session.commit()
+    return jsonify({"ok": True, "borrados": count})
 
 @app.route("/api/reporte/<int:reporte_id>/foto")
 def ver_foto_reporte(reporte_id):
