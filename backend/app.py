@@ -103,19 +103,29 @@ def semana_actual():
 
 MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
-def rango_semana_actual():
-    now = datetime.now()
-    lunes = now - timedelta(days=now.weekday())
-    domingo = lunes + timedelta(days=6)
+def rango_de_codigo(semana_code):
+    """Convierte '2026-S30' al rango de fechas legible y para nombre de archivo."""
+    try:
+        parts = semana_code.split("-S")
+        year, week = int(parts[0]), int(parts[1])
+        lunes  = datetime.fromisocalendar(year, week, 1)
+        domingo = lunes + timedelta(days=6)
+    except Exception:
+        now = datetime.now()
+        lunes = now - timedelta(days=now.weekday())
+        domingo = lunes + timedelta(days=6)
     mes_lunes   = MESES_ES[lunes.month - 1]
     mes_domingo = MESES_ES[domingo.month - 1]
     if lunes.month == domingo.month:
-        archivo  = f"{lunes.day:02d}-{domingo.day:02d}_{mes_domingo}_{domingo.year}"
-        legible  = f"{lunes.day:02d}-{domingo.day:02d} {mes_domingo} {domingo.year}"
+        archivo = f"{lunes.day:02d}-{domingo.day:02d}_{mes_domingo}_{domingo.year}"
+        legible = f"{lunes.day} – {domingo.day} {mes_domingo} {domingo.year}"
     else:
-        archivo  = f"{lunes.day:02d}_{mes_lunes}-{domingo.day:02d}_{mes_domingo}_{domingo.year}"
-        legible  = f"{lunes.day:02d} {mes_lunes}-{domingo.day:02d} {mes_domingo} {domingo.year}"
+        archivo = f"{lunes.day:02d}_{mes_lunes}-{domingo.day:02d}_{mes_domingo}_{domingo.year}"
+        legible = f"{lunes.day} {mes_lunes} – {domingo.day} {mes_domingo} {domingo.year}"
     return archivo, legible
+
+def rango_semana_actual():
+    return rango_de_codigo(semana_actual())
 
 @app.route("/")
 def index():
@@ -137,7 +147,9 @@ def login():
 
 @app.route("/api/semana-activa")
 def get_semana_activa():
-    return jsonify({"semana_activa": semana_actual()})
+    codigo = semana_actual()
+    _, legible = rango_de_codigo(codigo)
+    return jsonify({"semana_activa": codigo, "semana_legible": legible})
 
 @app.route("/api/set-semana", methods=["POST"])
 def set_semana():

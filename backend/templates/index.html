@@ -165,7 +165,7 @@
     <button class="btn-cerrar" onclick="cerrarSemana()">Cerrar semana ↓</button>
   </div>
   <div class="banner-cierre" id="banner-semana">
-    Semana activa: <strong id="label-semana">—</strong> &nbsp;|&nbsp; Los reportes se archivan al cerrar semana.
+    Semana activa: <strong id="label-semana">—</strong> &nbsp;<span id="label-semana-codigo" style="opacity:0.5;font-size:11px;"></span>&nbsp;|&nbsp; Los reportes se archivan al cerrar semana.
   </div>
   <div id="modo-prueba-bar" style="display:none;background:#1a1a2e;border:1px solid #f0b040;border-radius:8px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
     <span style="color:#f0b040;font-size:12px;">🧪 Semana manual (pruebas):</span>
@@ -442,8 +442,7 @@ async function enviarTodos() {
 async function setSemana(restablecer) {
   const semana = restablecer ? '' : document.getElementById('input-semana-prueba').value.trim();
   const res = await fetch(API + '/api/set-semana', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({semana})});
-  const data = await res.json();
-  document.getElementById('label-semana').textContent = data.semana_activa;
+  await res.json();
   if (restablecer) document.getElementById('input-semana-prueba').value = '';
   cargarPanel();
 }
@@ -457,7 +456,8 @@ async function cargarPanel() {
   try {
     const rs = await fetch(API + '/api/semana-activa');
     const ds = await rs.json();
-    document.getElementById('label-semana').textContent = ds.semana_activa || '—';
+    document.getElementById('label-semana').textContent = ds.semana_legible || ds.semana_activa || '—';
+    document.getElementById('label-semana-codigo').textContent = ds.semana_activa || '';
   } catch(e) {
     document.getElementById('label-semana').textContent = '—';
   }
