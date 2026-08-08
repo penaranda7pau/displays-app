@@ -596,7 +596,7 @@ function renderUsuarios() {
     fila.innerHTML = `
       <div class="info">
         <div class="nom">${u.nombre}</div>
-        <div class="usr">@${u.usuario}</div>
+        <div class="usr">@${u.usuario} &nbsp;·&nbsp; 🔑 ${u.password}</div>
       </div>
       <button class="btn-eliminar-usuario" onclick="eliminarUsuario(${u.id})">Eliminar</button>
     `;

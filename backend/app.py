@@ -135,7 +135,7 @@ def _es_supervisor(data):
 @app.route("/api/usuarios")
 def listar_usuarios():
     rows = Usuario.query.order_by(Usuario.rol.desc(), Usuario.nombre).all()
-    return jsonify([{"id": u.id, "nombre": u.nombre, "usuario": u.usuario, "rol": u.rol} for u in rows])
+    return jsonify([{"id": u.id, "nombre": u.nombre, "usuario": u.usuario, "password": u.password, "rol": u.rol} for u in rows])
 
 @app.route("/api/usuarios", methods=["POST"])
 def crear_usuario():
