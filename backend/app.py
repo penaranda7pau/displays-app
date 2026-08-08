@@ -1,7 +1,7 @@
 import os
 import io
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template, send_file
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -31,6 +31,7 @@ class Reporte(db.Model):
     producto   = db.Column(db.String(200))
     comentario = db.Column(db.Text)
     foto       = db.Column(db.String(300))
+    foto_b64   = db.Column(db.Text)
     usuario    = db.Column(db.String(100))
     fecha      = db.Column(db.String(20))
     semana     = db.Column(db.String(20), default="")  # semana a la que pertenece
@@ -50,13 +51,40 @@ class Diferencia(db.Model):
     estado     = db.Column(db.String(50))   # SIN_FOTO / CON_JUSTIFICACION / OK
     comentario = db.Column(db.Text)
 
+class Usuario(db.Model):
+    id       = db.Column(db.Integer, primary_key=True)
+    nombre   = db.Column(db.String(150))
+    usuario  = db.Column(db.String(100), unique=True)
+    password = db.Column(db.String(100))
+    rol      = db.Column(db.String(20), default="display")
+
+USUARIOS_INICIALES = [
+    {"nombre": "Display 1", "usuario": "display1", "password": "1234",     "rol": "display"},
+    {"nombre": "Supervisor", "usuario": "admin",    "password": "admin123", "rol": "supervisor"}
+]
+
+def _migrar_columnas():
+    # db.create_all() no altera tablas existentes; agrega columnas nuevas a mano.
+    with db.engine.connect() as conn:
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("ALTER TABLE reporte ADD COLUMN IF NOT EXISTS foto_b64 TEXT"))
+            else:
+                conn.execute(db.text("ALTER TABLE reporte ADD COLUMN foto_b64 TEXT"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+def _seed_usuarios():
+    if Usuario.query.count() == 0:
+        for u in USUARIOS_INICIALES:
+            db.session.add(Usuario(**u))
+        db.session.commit()
+
 with app.app_context():
     db.create_all()
-
-USUARIOS = [
-    {"id": 1, "nombre": "Display 1", "usuario": "display1", "password": "1234",     "rol": "display"},
-    {"id": 2, "nombre": "Supervisor", "usuario": "admin",    "password": "admin123", "rol": "supervisor"}
-]
+    _migrar_columnas()
+    _seed_usuarios()
 
 SYNC_KEY = os.environ.get("SYNC_KEY", "cpfr2024")
 
@@ -66,6 +94,22 @@ os.makedirs(FOTOS_DIR, exist_ok=True)
 def semana_actual():
     now = datetime.now()
     return now.strftime("%Y-S%V")
+
+MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+def rango_semana_actual():
+    now = datetime.now()
+    lunes = now - timedelta(days=now.weekday())
+    domingo = lunes + timedelta(days=6)
+    mes_lunes   = MESES_ES[lunes.month - 1]
+    mes_domingo = MESES_ES[domingo.month - 1]
+    if lunes.month == domingo.month:
+        archivo  = f"{lunes.day:02d}-{domingo.day:02d}_{mes_domingo}_{domingo.year}"
+        legible  = f"{lunes.day:02d}-{domingo.day:02d} {mes_domingo} {domingo.year}"
+    else:
+        archivo  = f"{lunes.day:02d}_{mes_lunes}-{domingo.day:02d}_{mes_domingo}_{domingo.year}"
+        legible  = f"{lunes.day:02d} {mes_lunes}-{domingo.day:02d} {mes_domingo} {domingo.year}"
+    return archivo, legible
 
 @app.route("/")
 def index():
@@ -80,14 +124,55 @@ def login():
     data     = request.json
     usuario  = data.get("usuario", "").strip()
     password = data.get("password", "").strip()
-    for u in USUARIOS:
-        if u["usuario"] == usuario and u["password"] == password:
-            return jsonify({"ok": True, "id": u["id"], "nombre": u["nombre"], "rol": u["rol"]})
+    u = Usuario.query.filter_by(usuario=usuario, password=password).first()
+    if u:
+        return jsonify({"ok": True, "id": u.id, "nombre": u.nombre, "rol": u.rol})
     return jsonify({"ok": False, "error": "Usuario o contraseña incorrectos"}), 401
+
+def _es_supervisor(data):
+    return (data or {}).get("solicitante_rol") == "supervisor"
+
+@app.route("/api/usuarios")
+def listar_usuarios():
+    rows = Usuario.query.order_by(Usuario.rol.desc(), Usuario.nombre).all()
+    return jsonify([{"id": u.id, "nombre": u.nombre, "usuario": u.usuario, "rol": u.rol} for u in rows])
+
+@app.route("/api/usuarios", methods=["POST"])
+def crear_usuario():
+    data = request.json
+    if not _es_supervisor(data):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    nombre   = data.get("nombre", "").strip()
+    usuario  = data.get("usuario", "").strip()
+    password = data.get("password", "").strip()
+    if not (nombre and usuario and password):
+        return jsonify({"ok": False, "error": "Faltan datos"}), 400
+    if Usuario.query.filter_by(usuario=usuario).first():
+        return jsonify({"ok": False, "error": "Ese usuario ya existe"}), 400
+    u = Usuario(nombre=nombre, usuario=usuario, password=password, rol="display")
+    db.session.add(u)
+    db.session.commit()
+    return jsonify({"ok": True, "id": u.id})
+
+@app.route("/api/usuarios/<int:usuario_id>", methods=["DELETE"])
+def eliminar_usuario(usuario_id):
+    if not _es_supervisor(request.json):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    u = Usuario.query.get_or_404(usuario_id)
+    if u.rol == "supervisor":
+        return jsonify({"ok": False, "error": "No se puede eliminar al supervisor"}), 400
+    db.session.delete(u)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 @app.route("/api/tiendas")
 def tiendas():
     rows = db.session.query(Inventario.tienda).distinct().order_by(Inventario.tienda).all()
+    return jsonify([r.tienda for r in rows])
+
+@app.route("/api/tiendas-reportadas")
+def tiendas_reportadas():
+    rows = db.session.query(Reporte.tienda).filter_by(semana=semana_actual()).distinct().all()
     return jsonify([r.tienda for r in rows])
 
 @app.route("/api/productos/<tienda>")
@@ -125,7 +210,8 @@ def guardar_reporte():
         with open(os.path.join(FOTOS_DIR, nombre_foto), "wb") as f:
             f.write(base64.b64decode(foto_b64))
     rep = Reporte(tienda=tienda, producto=producto, comentario=comentario,
-                  foto=nombre_foto, usuario=usuario, fecha=fecha, semana=semana_actual())
+                  foto=nombre_foto, foto_b64=foto_b64 or None, usuario=usuario,
+                  fecha=fecha, semana=semana_actual())
     db.session.add(rep)
     db.session.commit()
     return jsonify({"ok": True, "id": rep.id})
@@ -208,9 +294,11 @@ def cerrar_semana():
         for i, w in enumerate(cols, 1):
             ws.column_dimensions[get_column_letter(i)].width = w
 
+    rango_archivo, rango_legible = rango_semana_actual()
+
     # Hoja 1 — Diferencias actuales
     ws1 = wb.active
-    ws1.title = f"Diferencias {semana}"
+    ws1.title = f"Diferencias {rango_legible}"
     ws1.append(["Tienda", "Producto", "Stock sistema", "Estado", "Comentario", "Reincidente"])
     estilo_header(ws1, [35, 40, 14, 18, 40, 12])
 
@@ -254,12 +342,57 @@ def cerrar_semana():
             ws3.cell(r, c).fill   = fill_verde
             ws3.cell(r, c).border = border
 
+    # Hoja 4 — Historial de reincidentes (todas las semanas archivadas)
+    ws4 = wb.create_sheet("Historial reincidentes")
+    ws4.append(["Tienda", "Producto", "Stock sistema", "Semanas con problema", "Detalle por semana"])
+    estilo_header(ws4, [35, 40, 14, 18, 60])
+
+    fill_grave = PatternFill("solid", fgColor="5C0000")
+    font_grave = Font(bold=True, color="FFFFFF")
+
+    inventario_actual = {(inv.tienda, inv.producto): inv.cantidad for inv in Inventario.query.all()}
+    historial = {}
+    for d in Diferencia.query.filter(Diferencia.estado != "OK").order_by(Diferencia.semana).all():
+        key = historial.setdefault((d.tienda, d.producto), {"cantidad": d.cantidad, "semanas": []})
+        key["semanas"].append((d.semana, d.estado))
+        key["cantidad"] = d.cantidad  # se queda con el stock de la semana más reciente
+
+    filas_historial = []
+    for (tienda, producto), info in historial.items():
+        semanas_unicas = sorted(set(s for s, _ in info["semanas"]))
+        if len(semanas_unicas) <= 1:
+            continue
+        stock = inventario_actual.get((tienda, producto), info["cantidad"])
+        detalle = " | ".join(
+            f"{s.split('-')[1]}: {'sin foto' if e == 'SIN_FOTO' else 'con justificación'}"
+            for s, e in info["semanas"]
+        )
+        filas_historial.append((tienda, producto, stock, len(semanas_unicas), detalle))
+
+    filas_historial.sort(key=lambda f: f[3], reverse=True)
+
+    for tienda, producto, stock, num_semanas, detalle in filas_historial:
+        ws4.append([tienda, producto, stock, num_semanas, detalle])
+        r = ws4.max_row
+        grave = num_semanas >= 3
+        for c in range(1, 6):
+            ws4.cell(r, c).border = border
+            ws4.cell(r, c).alignment = Alignment(vertical="center", wrap_text=True)
+            if grave:
+                ws4.cell(r, c).fill = fill_grave
+                ws4.cell(r, c).font = font_grave
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    nombre = f"diferencias_{semana}.xlsx"
+    nombre = f"diferencias_{rango_archivo}.xlsx"
     return send_file(buf, as_attachment=True, download_name=nombre,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+@app.route("/api/reporte/<int:reporte_id>/foto")
+def ver_foto_reporte(reporte_id):
+    rep = Reporte.query.get_or_404(reporte_id)
+    return jsonify({"foto_b64": rep.foto_b64 or ""})
 
 @app.route("/api/reportes/<int:reporte_id>", methods=["DELETE"])
 def eliminar_reporte(reporte_id):

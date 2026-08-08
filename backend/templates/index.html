@@ -69,6 +69,27 @@
   .btn-cerrar { background: #8b0000; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; }
   .btn-cerrar:hover { background: #a00000; }
   .banner-cierre { background: #1e2230; border: 1px solid #2a2f3e; border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: 13px; color: #8a9099; }
+
+  .btn-ver-foto { background: #2e6fd4; color: #fff; border: none; border-radius: 6px; padding: 5px 6px; font-size: 11px; cursor: pointer; width: 100%; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.activo { display: flex; }
+  .modal-foto-box { max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .modal-foto-box img { max-width: 100%; max-height: 78vh; border-radius: 8px; }
+  .modal-cerrar { background: #1e2230; color: #f0f0f0; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+
+  .modal-instrucciones-box { background: #1e2230; border-radius: 12px; padding: 22px; max-width: 340px; width: 100%; }
+  .modal-instrucciones-box h3 { font-size: 16px; margin-bottom: 12px; }
+  .modal-instrucciones-box ul { margin: 0 0 16px 18px; font-size: 13px; line-height: 1.7; color: #d0d3d8; }
+  .modal-instrucciones-box label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8a9099; margin-bottom: 16px; }
+  .modal-instrucciones-box label input { width: auto; }
+
+  .form-usuario { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .form-usuario input { padding: 10px; border-radius: 8px; border: none; background: #1e2230; color: #f0f0f0; font-size: 13px; }
+  .fila-usuario { display: flex; align-items: center; gap: 10px; background: #1e2230; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  .fila-usuario .info { flex: 1; }
+  .fila-usuario .info .nom { font-size: 13px; font-weight: bold; }
+  .fila-usuario .info .usr { font-size: 12px; color: #8a9099; }
+  .btn-eliminar-usuario { background: #2e0a0a; color: #f04040; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -126,6 +147,7 @@
     <button class="tab" onclick="cambiarTab('tab-tiendas',this)">Por tienda</button>
     <button class="tab" onclick="cambiarTab('tab-criticos',this)">Críticos</button>
     <button class="tab" onclick="cambiarTab('tab-displays',this)">Displays</button>
+    <button class="tab" onclick="cambiarTab('tab-usuarios',this)">Usuarios</button>
   </div>
 
   <!-- TAB REPORTES -->
@@ -164,15 +186,51 @@
     <div class="subtexto" style="margin-bottom:10px;">Actividad por display</div>
     <div id="lista-displays"></div>
   </div>
+
+  <!-- TAB USUARIOS -->
+  <div id="tab-usuarios" style="display:none;">
+    <div class="subtexto" style="margin-bottom:10px;">Displays con acceso a la app</div>
+    <div class="form-usuario">
+      <input type="text" id="nuevo-usuario-nombre" placeholder="Nombre">
+      <input type="text" id="nuevo-usuario-login" placeholder="Usuario">
+      <input type="text" id="nuevo-usuario-password" placeholder="Contraseña">
+      <button class="btn btn-verde" onclick="agregarUsuario()">Agregar display</button>
+    </div>
+    <div class="error" id="error-usuario"></div>
+    <div id="lista-usuarios"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-foto">
+  <div class="modal-foto-box">
+    <img id="modal-foto-img" src="" alt="Foto del reporte">
+    <button class="modal-cerrar" onclick="cerrarModalFoto()">Cerrar</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-instrucciones">
+  <div class="modal-instrucciones-box">
+    <h3>📸 Instrucciones para la foto</h3>
+    <ul>
+      <li>Toma la foto de FRENTE al display</li>
+      <li>El producto debe verse claramente y completo</li>
+      <li>Solo ese producto en la foto, no varios juntos</li>
+      <li>Buena iluminación, sin flash si hay reflejo</li>
+    </ul>
+    <label><input type="checkbox" id="check-no-mostrar-instrucciones"> No volver a mostrar</label>
+    <button class="btn btn-verde" id="btn-instrucciones-ok">Entendido, tomar foto</button>
+  </div>
 </div>
 
 <script>
 const API = '';
 let usuario = {};
 let tiendas = [];
+let tiendasReportadas = new Set();
 let filas = [];
 let tiendaActual = '';
 let todosReportes = [];
+let usuariosDB = [];
 
 function mostrar(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -180,7 +238,7 @@ function mostrar(id) {
 }
 
 function cambiarTab(id, btn) {
-  ['tab-reportes','tab-tiendas','tab-criticos','tab-displays'].forEach(t => {
+  ['tab-reportes','tab-tiendas','tab-criticos','tab-displays','tab-usuarios'].forEach(t => {
     document.getElementById(t).style.display = 'none';
   });
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('activo'));
@@ -214,8 +272,12 @@ async function doLogin() {
 
 async function cargarTiendas() {
   document.getElementById('status-tiendas').textContent = 'Cargando tiendas...';
-  const r = await fetch(API + '/api/tiendas');
-  tiendas = await r.json();
+  const [rTiendas, rReportadas] = await Promise.all([
+    fetch(API + '/api/tiendas'),
+    fetch(API + '/api/tiendas-reportadas')
+  ]);
+  tiendas = await rTiendas.json();
+  tiendasReportadas = new Set(await rReportadas.json());
   document.getElementById('status-tiendas').textContent = tiendas.length + ' tiendas';
   filtrarTiendas();
 }
@@ -228,6 +290,13 @@ function filtrarTiendas() {
     const d = document.createElement('div');
     d.className = 'tienda-item';
     d.textContent = t;
+    if (tiendasReportadas.has(t)) {
+      const check = document.createElement('span');
+      check.textContent = ' ✓';
+      check.style.color = '#00bf8f';
+      check.style.fontWeight = 'bold';
+      d.appendChild(check);
+    }
     d.onclick = () => irProductos(t);
     lista.appendChild(d);
   });
@@ -276,7 +345,23 @@ function selFoto(i) {
     };
     reader.readAsDataURL(file);
   };
-  inp.click();
+  if (localStorage.getItem('ocultarInstruccionesFoto') === '1') {
+    inp.click();
+  } else {
+    mostrarInstruccionesFoto(() => inp.click());
+  }
+}
+
+function mostrarInstruccionesFoto(onOk) {
+  document.getElementById('check-no-mostrar-instrucciones').checked = false;
+  document.getElementById('modal-instrucciones').classList.add('activo');
+  document.getElementById('btn-instrucciones-ok').onclick = () => {
+    if (document.getElementById('check-no-mostrar-instrucciones').checked) {
+      localStorage.setItem('ocultarInstruccionesFoto', '1');
+    }
+    document.getElementById('modal-instrucciones').classList.remove('activo');
+    onOk();
+  };
 }
 
 async function enviarTodos() {
@@ -311,6 +396,7 @@ async function cargarPanel() {
   renderPorTienda();
   renderCriticos();
   renderDisplays();
+  cargarUsuarios();
 }
 
 async function cerrarSemana() {
@@ -359,10 +445,35 @@ function renderReportes() {
       <div>${rep.tienda}</div>
       <div>${rep.producto}</div>
       <div class="muted">${rep.comentario || '—'}</div>
-      <div class="${rep.foto ? 'verde' : 'muted'}">${rep.foto ? '✓' : '—'}</div>
+      <div>${rep.foto ? `<button class="btn-ver-foto" onclick="verFoto(${rep.id})">Ver foto 🖼</button>` : '<span class="muted">—</span>'}</div>
     `;
     lista.appendChild(d);
   });
+}
+
+async function verFoto(id) {
+  const modal = document.getElementById('modal-foto');
+  const img = document.getElementById('modal-foto-img');
+  img.src = '';
+  modal.classList.add('activo');
+  try {
+    const r = await fetch(API + '/api/reporte/' + id + '/foto');
+    const data = await r.json();
+    if (data.foto_b64) {
+      img.src = 'data:image/jpeg;base64,' + data.foto_b64;
+    } else {
+      cerrarModalFoto();
+      alert('No se encontró la foto de este reporte.');
+    }
+  } catch (e) {
+    cerrarModalFoto();
+    alert('Error al cargar la foto.');
+  }
+}
+
+function cerrarModalFoto() {
+  document.getElementById('modal-foto').classList.remove('activo');
+  document.getElementById('modal-foto-img').src = '';
 }
 
 function renderPorTienda() {
@@ -441,6 +552,67 @@ function renderDisplays() {
     });
     lista.appendChild(bloque);
   });
+}
+
+async function cargarUsuarios() {
+  const r = await fetch(API + '/api/usuarios');
+  usuariosDB = await r.json();
+  renderUsuarios();
+}
+
+function renderUsuarios() {
+  const lista = document.getElementById('lista-usuarios');
+  lista.innerHTML = '';
+  const displays = usuariosDB.filter(u => u.rol === 'display');
+  if (!displays.length) { lista.innerHTML = '<div class="seccion-vacia">No hay displays cargados</div>'; return; }
+  displays.forEach(u => {
+    const fila = document.createElement('div');
+    fila.className = 'fila-usuario';
+    fila.innerHTML = `
+      <div class="info">
+        <div class="nom">${u.nombre}</div>
+        <div class="usr">@${u.usuario}</div>
+      </div>
+      <button class="btn-eliminar-usuario" onclick="eliminarUsuario(${u.id})">Eliminar</button>
+    `;
+    lista.appendChild(fila);
+  });
+}
+
+async function agregarUsuario() {
+  const nombre   = document.getElementById('nuevo-usuario-nombre').value.trim();
+  const login    = document.getElementById('nuevo-usuario-login').value.trim();
+  const password = document.getElementById('nuevo-usuario-password').value.trim();
+  const errorEl  = document.getElementById('error-usuario');
+  errorEl.textContent = '';
+  if (!nombre || !login || !password) { errorEl.textContent = 'Completá todos los campos'; return; }
+  try {
+    const r = await fetch(API + '/api/usuarios', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({nombre, usuario: login, password, solicitante_rol: usuario.rol})
+    });
+    const data = await r.json();
+    if (!data.ok) { errorEl.textContent = data.error || 'Error al crear el usuario'; return; }
+    document.getElementById('nuevo-usuario-nombre').value = '';
+    document.getElementById('nuevo-usuario-login').value = '';
+    document.getElementById('nuevo-usuario-password').value = '';
+    cargarUsuarios();
+  } catch (e) {
+    errorEl.textContent = 'Error de red al crear el usuario';
+  }
+}
+
+async function eliminarUsuario(id) {
+  if (!confirm('¿Eliminar este display? No podrá volver a iniciar sesión.')) return;
+  const r = await fetch(API + '/api/usuarios/' + id, {
+    method: 'DELETE',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({solicitante_rol: usuario.rol})
+  });
+  const data = await r.json();
+  if (!data.ok) { alert(data.error || 'Error al eliminar'); return; }
+  cargarUsuarios();
 }
 </script>
 </body>
