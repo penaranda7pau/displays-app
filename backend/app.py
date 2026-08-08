@@ -381,25 +381,14 @@ def cerrar_semana():
             ws3.cell(r, c).fill   = fill_verde
             ws3.cell(r, c).border = border
 
-    # Hoja 4+ — Una hoja por cadena, formato matricial (tienda+producto vs semanas)
-    import re as _re
-
-    def extraer_cadena(tienda):
-        parts = tienda.strip().split()
-        if not parts:
-            return tienda
-        if _re.match(r'^[A-Z]+\d+$', parts[0]):
-            return ' '.join(parts[1:-1]) if len(parts) > 2 else (parts[1] if len(parts) == 2 else parts[0])
-        return parts[0]
-
+    # Hoja 4 — Historial matricial: todas las tiendas, ordenado por total de diferencias
     inventario_actual = {(inv.tienda, inv.producto): inv.cantidad for inv in Inventario.query.all()}
 
-    # Obtener todas las semanas archivadas ordenadas
     semanas_arch = sorted(set(
         d.semana for d in Diferencia.query.with_entities(Diferencia.semana).distinct().all()
     ))
 
-    # Construir mapa: {(tienda, producto): {semana: estado}}
+    # {(tienda, producto): {semana: 1/0}}
     matriz = {}
     for d in Diferencia.query.order_by(Diferencia.semana).all():
         key = (d.tienda, d.producto)
@@ -410,60 +399,70 @@ def cerrar_semana():
         elif d.semana not in matriz[key]:
             matriz[key][d.semana] = 0
 
-    # Agrupar por cadena
-    cadenas = {}
-    for (tienda, producto) in matriz:
-        c = extraer_cadena(tienda)
-        cadenas.setdefault(c, []).append((tienda, producto))
-
-    fill_uno  = PatternFill("solid", fgColor="C62828")   # rojo — tiene diferencia
-    fill_cero = PatternFill("solid", fgColor="1B5E20")   # verde — OK
-    font_blanco = Font(bold=True, color="FFFFFF")
+    fill_uno        = PatternFill("solid", fgColor="C62828")
+    fill_cero       = PatternFill("solid", fgColor="1B5E20")
+    fill_vacio      = PatternFill("solid", fgColor="2a2a2a")
+    font_blanco     = Font(bold=True, color="FFFFFF", size=10)
     font_header_col = Font(bold=True, color="FFFFFF", size=9)
     fill_header_col = PatternFill("solid", fgColor="1e4060")
+    fill_total_alto = PatternFill("solid", fgColor="5C0000")
 
-    for cadena, pares in sorted(cadenas.items()):
-        nombre_hoja = cadena[:28]  # máx 31 chars en Excel
-        ws = wb.create_sheet(nombre_hoja)
+    ws4 = wb.create_sheet("Historial diferencias")
 
-        # Encabezados de columna: Tienda | Producto | Stock | fecha1 | fecha2 ...
-        cabeceras = ["Tienda", "Producto", "Stock"]
-        for sem in semanas_arch:
-            _, leg = rango_de_codigo(sem)
-            cabeceras.append(leg)
-        ws.append(cabeceras)
+    cabeceras = ["Tienda", "Producto", "Stock"]
+    for sem in semanas_arch:
+        _, leg = rango_de_codigo(sem)
+        cabeceras.append(leg)
+    cabeceras.append("Total")
+    ws4.append(cabeceras)
 
-        # Estilo encabezado
-        anchos = [30, 38, 8] + [16] * len(semanas_arch)
-        for i, ancho in enumerate(anchos, 1):
-            ws.column_dimensions[ws.cell(1, i).column_letter].width = ancho
-            ws.cell(1, i).fill = fill_header_col
-            ws.cell(1, i).font = font_header_col
-            ws.cell(1, i).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ws.row_dimensions[1].height = 36
+    anchos = [32, 40, 8] + [16] * len(semanas_arch) + [8]
+    for i, ancho in enumerate(anchos, 1):
+        ws4.column_dimensions[ws4.cell(1, i).column_letter].width = ancho
+        ws4.cell(1, i).fill = fill_header_col
+        ws4.cell(1, i).font = font_header_col
+        ws4.cell(1, i).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws4.row_dimensions[1].height = 40
 
-        pares_ord = sorted(pares, key=lambda x: (x[0], x[1]))
-        for tienda, producto in pares_ord:
-            stock = inventario_actual.get((tienda, producto), "")
-            fila = [tienda, producto, stock]
-            for sem in semanas_arch:
-                val = matriz[(tienda, producto)].get(sem, "")
-                fila.append(val if val != "" else "")
-            ws.append(fila)
-            r = ws.max_row
-            for c in range(1, len(cabeceras) + 1):
-                ws.cell(r, c).border = border
-                ws.cell(r, c).alignment = Alignment(vertical="center")
-                if c > 3:
-                    v = ws.cell(r, c).value
-                    if v == 1:
-                        ws.cell(r, c).fill = fill_uno
-                        ws.cell(r, c).font = font_blanco
-                        ws.cell(r, c).value = "✗"
-                    elif v == 0:
-                        ws.cell(r, c).fill = fill_cero
-                        ws.cell(r, c).font = font_blanco
-                        ws.cell(r, c).value = "✓"
+    # Calcular total por fila y ordenar de mayor a menor
+    filas_mat = []
+    for (tienda, producto), sem_map in matriz.items():
+        stock = inventario_actual.get((tienda, producto), "")
+        vals = [sem_map.get(s, None) for s in semanas_arch]
+        total = sum(1 for v in vals if v == 1)
+        filas_mat.append((tienda, producto, stock, vals, total))
+    filas_mat.sort(key=lambda x: x[4], reverse=True)
+
+    for tienda, producto, stock, vals, total in filas_mat:
+        fila = [tienda, producto, stock] + [""] * len(semanas_arch) + [total]
+        ws4.append(fila)
+        r = ws4.max_row
+        # Tienda / Producto / Stock
+        for c in range(1, 4):
+            ws4.cell(r, c).border = border
+            ws4.cell(r, c).alignment = Alignment(vertical="center")
+        # Celdas de semana
+        for i, v in enumerate(vals):
+            c = 4 + i
+            ws4.cell(r, c).border = border
+            ws4.cell(r, c).alignment = Alignment(horizontal="center", vertical="center")
+            if v == 1:
+                ws4.cell(r, c).fill = fill_uno
+                ws4.cell(r, c).font = font_blanco
+                ws4.cell(r, c).value = "1"
+            elif v == 0:
+                ws4.cell(r, c).fill = fill_cero
+                ws4.cell(r, c).font = font_blanco
+                ws4.cell(r, c).value = "0"
+            else:
+                ws4.cell(r, c).fill = fill_vacio
+        # Total
+        c_total = 4 + len(semanas_arch)
+        ws4.cell(r, c_total).border = border
+        ws4.cell(r, c_total).alignment = Alignment(horizontal="center", vertical="center")
+        if total >= 3:
+            ws4.cell(r, c_total).fill = fill_total_alto
+            ws4.cell(r, c_total).font = Font(bold=True, color="FFFFFF")
 
     # Hoja 5 — Tiendas sin visita
     todas_tiendas = set(inv.tienda for inv in Inventario.query.all())
