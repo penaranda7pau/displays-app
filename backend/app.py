@@ -58,6 +58,10 @@ class Usuario(db.Model):
     password = db.Column(db.String(100))
     rol      = db.Column(db.String(20), default="display")
 
+class Config(db.Model):
+    clave = db.Column(db.String(50), primary_key=True)
+    valor = db.Column(db.String(100))
+
 USUARIOS_INICIALES = [
     {"nombre": "Display 1", "usuario": "display1", "password": "1234",     "rol": "display"},
     {"nombre": "Supervisor", "usuario": "admin",    "password": "admin123", "rol": "supervisor"}
@@ -92,8 +96,10 @@ FOTOS_DIR = os.path.join(os.path.dirname(__file__), '..', 'fotos')
 os.makedirs(FOTOS_DIR, exist_ok=True)
 
 def semana_actual():
-    now = datetime.now()
-    return now.strftime("%Y-S%V")
+    cfg = Config.query.get("semana_override")
+    if cfg and cfg.valor:
+        return cfg.valor
+    return datetime.now().strftime("%Y-S%V")
 
 MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
@@ -128,6 +134,27 @@ def login():
     if u:
         return jsonify({"ok": True, "id": u.id, "nombre": u.nombre, "rol": u.rol})
     return jsonify({"ok": False, "error": "Usuario o contraseña incorrectos"}), 401
+
+@app.route("/api/semana-activa")
+def get_semana_activa():
+    return jsonify({"semana_activa": semana_actual()})
+
+@app.route("/api/set-semana", methods=["POST"])
+def set_semana():
+    data = request.json or {}
+    semana = (data.get("semana") or "").strip()
+    cfg = Config.query.get("semana_override")
+    if semana:
+        if not cfg:
+            cfg = Config(clave="semana_override", valor=semana)
+            db.session.add(cfg)
+        else:
+            cfg.valor = semana
+    else:
+        if cfg:
+            cfg.valor = ""
+    db.session.commit()
+    return jsonify({"ok": True, "semana_activa": semana_actual()})
 
 def _es_supervisor(data):
     return (data or {}).get("solicitante_rol") == "supervisor"
