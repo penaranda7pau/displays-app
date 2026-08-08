@@ -3,101 +3,124 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Inventario Displays</title>
+<title>CPFR Displays</title>
 <style>
+  :root {
+    --azul:    #1e4060;
+    --azul2:   #2a5a80;
+    --verde:   #6aaa4f;
+    --verde2:  #558a3e;
+    --rojo:    #f04040;
+    --fondo:   #0f1923;
+    --card:    #172130;
+    --card2:   #1e2d3d;
+    --borde:   #253448;
+    --texto:   #e8edf2;
+    --muted:   #7a8fa6;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: sans-serif; background: #13151a; color: #f0f0f0; min-height: 100vh; }
+  body { font-family: 'Segoe UI', sans-serif; background: var(--fondo); color: var(--texto); min-height: 100vh; }
   .screen { display: none; padding: 16px; max-width: 640px; margin: 0 auto; }
   .screen.active { display: block; }
 
+  /* LOGIN */
   #login { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; gap: 14px; }
-  #login h1 { text-align: center; color: #00bf8f; font-size: 24px; margin-bottom: 10px; }
-  input[type=text], input[type=password] { width: 100%; padding: 13px; border-radius: 8px; border: none; background: #1e2230; color: #f0f0f0; font-size: 16px; }
+  .login-logo { text-align: center; margin-bottom: 8px; }
+  .login-logo .logo-cpfr { font-size: 42px; font-weight: 900; color: var(--azul); letter-spacing: -1px; }
+  .login-logo .logo-advisor { font-size: 13px; letter-spacing: 5px; color: var(--muted); text-transform: uppercase; margin-top: -4px; }
+  .login-logo .logo-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  input[type=text], input[type=password] { width: 100%; padding: 13px; border-radius: 8px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 16px; }
   .btn { width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
-  .btn-verde { background: #00bf8f; color: #021a12; }
-  .btn-azul  { background: #2e6fd4; color: #fff; }
-  .btn-gris  { background: #1e2230; color: #f0f0f0; }
-  .error { color: #f04040; text-align: center; font-size: 14px; min-height: 20px; }
+  .btn-verde { background: var(--azul); color: #fff; }
+  .btn-verde:hover { background: var(--azul2); }
+  .btn-azul  { background: var(--azul2); color: #fff; }
+  .btn-gris  { background: var(--card); color: var(--texto); }
+  .error { color: var(--rojo); text-align: center; font-size: 14px; min-height: 20px; }
 
   .header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .header h2 { font-size: 18px; flex: 1; }
-  .back { background: #1e2230; border: none; color: #f0f0f0; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 18px; }
-  .search { width: 100%; padding: 11px; border-radius: 8px; border: none; background: #1e2230; color: #f0f0f0; font-size: 15px; margin-bottom: 10px; }
-  .tienda-item { background: #1e2230; padding: 14px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; font-size: 14px; }
-  .subtexto { color: #8a9099; font-size: 13px; margin-bottom: 10px; }
+  .back { background: var(--card); border: none; color: var(--texto); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 18px; }
+  .search { width: 100%; padding: 11px; border-radius: 8px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 15px; margin-bottom: 10px; }
+  .tienda-item { background: var(--card); padding: 14px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; font-size: 14px; border: 1px solid var(--borde); }
+  .tienda-item:hover { border-color: var(--azul2); }
+  .subtexto { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
 
-  .tabla-header { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; padding: 6px 4px; border-bottom: 1px solid #2a2f3e; margin-bottom: 6px; }
-  .tabla-header span { font-size: 11px; color: #00bf8f; font-weight: bold; text-align: center; }
+  .tabla-header { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; padding: 6px 4px; border-bottom: 1px solid var(--borde); margin-bottom: 6px; }
+  .tabla-header span { font-size: 11px; color: var(--verde); font-weight: bold; text-align: center; }
   .tabla-header span:first-child { text-align: left; }
-  .fila { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; align-items: center; background: #1e2230; border-radius: 6px; padding: 8px 4px; margin-bottom: 4px; }
+  .fila { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; align-items: center; background: var(--card); border-radius: 6px; padding: 8px 4px; margin-bottom: 4px; border: 1px solid var(--borde); }
   .fila .nombre { font-size: 11px; padding-left: 4px; word-break: break-word; }
   .fila .cant { font-size: 13px; font-weight: bold; text-align: center; }
-  .cant.cero { color: #f04040; }
-  .btn-foto { padding: 6px; border-radius: 6px; border: none; background: #2a3240; color: #f0f0f0; cursor: pointer; font-size: 16px; width: 100%; }
-  .btn-foto.ok { background: #00bf8f; color: #021a12; }
-  .fila textarea { font-size: 11px; padding: 4px; border-radius: 6px; border: none; background: #13151a; color: #f0f0f0; resize: none; height: 38px; width: 100%; }
+  .cant.cero { color: var(--rojo); }
+  .btn-foto { padding: 6px; border-radius: 6px; border: none; background: var(--card2); color: var(--texto); cursor: pointer; font-size: 16px; width: 100%; }
+  .btn-foto.ok { background: var(--verde); color: #fff; }
+  .fila textarea { font-size: 11px; padding: 4px; border-radius: 6px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); resize: none; height: 38px; width: 100%; }
   .btn-enviar { margin-top: 12px; }
-  .status-envio { text-align: center; font-size: 13px; color: #8a9099; margin-top: 8px; min-height: 20px; }
+  .status-envio { text-align: center; font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 20px; }
 
-  /* TABS SUPERVISOR */
-  .tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid #2a2f3e; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  /* TABS */
+  .tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--borde); overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
-  .tab { padding: 8px 9px; font-size: 12px; cursor: pointer; color: #8a9099; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; flex-shrink: 0; white-space: nowrap; }
-  .tab.activo { color: #00bf8f; border-bottom: 2px solid #00bf8f; font-weight: bold; }
+  .tab { padding: 8px 9px; font-size: 12px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; flex-shrink: 0; white-space: nowrap; }
+  .tab.activo { color: var(--verde); border-bottom: 2px solid var(--verde); font-weight: bold; }
 
   /* CHIPS */
   .chips { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .chip { flex: 1; padding: 10px 8px; border-radius: 8px; text-align: center; font-size: 12px; font-weight: bold; min-width: 80px; }
-  .chip-total { background: #1e2230; }
-  .chip-foto  { background: #0a2e1e; color: #00bf8f; }
-  .chip-rojo  { background: #2e0a0a; color: #f04040; }
+  .chip-total { background: var(--card); }
+  .chip-foto  { background: #0a1e10; color: var(--verde); }
+  .chip-rojo  { background: #2e0a0a; color: var(--rojo); }
   .chip-amarillo { background: #2e2500; color: #f0b040; }
 
   /* TABLA GENERICA */
-  .tbl-head { display: grid; gap: 4px; padding: 6px 4px; border-bottom: 1px solid #2a2f3e; margin-bottom: 6px; }
-  .tbl-head span { font-size: 11px; color: #00bf8f; font-weight: bold; }
-  .tbl-row  { display: grid; gap: 4px; background: #1e2230; border-radius: 6px; padding: 8px 4px; margin-bottom: 4px; font-size: 11px; align-items: center; }
-  .tbl-row .muted { color: #8a9099; }
-  .tbl-row .verde { color: #00bf8f; text-align: center; }
-  .tbl-row .rojo  { color: #f04040; text-align: center; font-weight: bold; }
+  .tbl-head { display: grid; gap: 4px; padding: 6px 4px; border-bottom: 1px solid var(--borde); margin-bottom: 6px; }
+  .tbl-head span { font-size: 11px; color: var(--verde); font-weight: bold; }
+  .tbl-row  { display: grid; gap: 4px; background: var(--card); border-radius: 6px; padding: 8px 4px; margin-bottom: 4px; font-size: 11px; align-items: center; border: 1px solid var(--borde); }
+  .tbl-row .muted { color: var(--muted); }
+  .tbl-row .verde { color: var(--verde); text-align: center; }
+  .tbl-row .rojo  { color: var(--rojo); text-align: center; font-weight: bold; }
   .tbl-row .center { text-align: center; }
-  .badge-rojo   { background: #2e0a0a; color: #f04040; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-  .badge-verde  { background: #0a2e1e; color: #00bf8f; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-  .badge-gris   { background: #1e2230; color: #8a9099; padding: 2px 7px; border-radius: 4px; font-size: 11px; }
+  .badge-rojo   { background: #2e0a0a; color: var(--rojo); padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+  .badge-verde  { background: #0a1e10; color: var(--verde); padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+  .badge-gris   { background: var(--card2); color: var(--muted); padding: 2px 7px; border-radius: 4px; font-size: 11px; }
 
-  .btn-refresh { background: #1e2230; border: none; color: #f0f0f0; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
-  .seccion-vacia { color: #8a9099; font-size: 13px; text-align: center; padding: 20px 0; }
+  .btn-refresh { background: var(--card); border: none; color: var(--texto); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .seccion-vacia { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
   .btn-cerrar { background: #8b0000; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; }
   .btn-cerrar:hover { background: #a00000; }
-  .banner-cierre { background: #1e2230; border: 1px solid #2a2f3e; border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: 13px; color: #8a9099; }
+  .banner-cierre { background: var(--card); border: 1px solid var(--borde); border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: 13px; color: var(--muted); }
 
-  .btn-ver-foto { background: #2e6fd4; color: #fff; border: none; border-radius: 6px; padding: 5px 6px; font-size: 11px; cursor: pointer; width: 100%; }
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+  .btn-ver-foto { background: var(--azul2); color: #fff; border: none; border-radius: 6px; padding: 5px 6px; font-size: 11px; cursor: pointer; width: 100%; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
   .modal-overlay.activo { display: flex; }
   .modal-foto-box { max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; align-items: center; gap: 12px; }
   .modal-foto-box img { max-width: 100%; max-height: 78vh; border-radius: 8px; }
-  .modal-cerrar { background: #1e2230; color: #f0f0f0; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .modal-cerrar { background: var(--card); color: var(--texto); border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; }
 
-  .modal-instrucciones-box { background: #1e2230; border-radius: 12px; padding: 22px; max-width: 340px; width: 100%; }
-  .modal-instrucciones-box h3 { font-size: 16px; margin-bottom: 12px; }
+  .modal-instrucciones-box { background: var(--card); border-radius: 12px; padding: 22px; max-width: 340px; width: 100%; border: 1px solid var(--borde); }
+  .modal-instrucciones-box h3 { font-size: 16px; margin-bottom: 12px; color: var(--verde); }
   .modal-instrucciones-box ul { margin: 0 0 16px 18px; font-size: 13px; line-height: 1.7; color: #d0d3d8; }
-  .modal-instrucciones-box label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8a9099; margin-bottom: 16px; }
+  .modal-instrucciones-box label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
   .modal-instrucciones-box label input { width: auto; }
 
   .form-usuario { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-  .form-usuario input { padding: 10px; border-radius: 8px; border: none; background: #1e2230; color: #f0f0f0; font-size: 13px; }
-  .fila-usuario { display: flex; align-items: center; gap: 10px; background: #1e2230; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  .form-usuario input { padding: 10px; border-radius: 8px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 13px; }
+  .fila-usuario { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; border: 1px solid var(--borde); }
   .fila-usuario .info { flex: 1; }
   .fila-usuario .info .nom { font-size: 13px; font-weight: bold; }
-  .fila-usuario .info .usr { font-size: 12px; color: #8a9099; }
-  .btn-eliminar-usuario { background: #2e0a0a; color: #f04040; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+  .fila-usuario .info .usr { font-size: 12px; color: var(--muted); }
+  .btn-eliminar-usuario { background: #2e0a0a; color: var(--rojo); border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
 </style>
 </head>
 <body>
 
 <!-- LOGIN -->
 <div id="login" class="screen active">
-  <h1>Inventario Displays</h1>
+  <div class="login-logo">
+    <div class="logo-cpfr">CPFR</div>
+    <div class="logo-advisor">Advisor</div>
+    <div class="logo-sub">Control de Displays</div>
+  </div>
   <input type="text" id="inp-usuario" placeholder="Usuario" autocomplete="off">
   <input type="password" id="inp-password" placeholder="Contraseña">
   <div class="error" id="login-error"></div>
