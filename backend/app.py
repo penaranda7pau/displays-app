@@ -427,10 +427,11 @@ def cerrar_semana():
         ws4.cell(1, i).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws4.row_dimensions[1].height = 40
 
-    # Comentarios de la semana que se está cerrando ahora
+    # Comentarios de la semana que se está cerrando — directo del mapa de reportes
     comentarios_semana = {
-        (d.tienda, d.producto): d.comentario or ""
-        for d in Diferencia.query.filter_by(semana=semana).all()
+        key: (rep.comentario or "")
+        for key, rep in mapa.items()
+        if rep.comentario
     }
 
     # Calcular total por fila y ordenar de mayor a menor
