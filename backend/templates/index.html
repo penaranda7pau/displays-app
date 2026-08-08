@@ -158,7 +158,7 @@
       <div class="chip chip-foto"  id="chip-foto">0 con foto</div>
       <div class="chip chip-rojo"  id="chip-rojo">0 sin stock</div>
     </div>
-    <div class="tbl-head" style="grid-template-columns:1fr 1fr 60px 40px;">
+    <div class="tbl-head" style="grid-template-columns:1fr 1fr 60px 70px;">
       <span>Tienda</span><span>Producto</span><span>Coment.</span><span>Foto</span>
     </div>
     <div id="lista-reportes"></div>
@@ -441,12 +441,15 @@ function renderReportes() {
   reps.forEach(rep => {
     const d = document.createElement('div');
     d.className = 'tbl-row';
-    d.style.gridTemplateColumns = '1fr 1fr 60px 40px';
+    d.style.gridTemplateColumns = '1fr 1fr 60px 70px';
+    const fotoHtml = rep.foto_b64
+      ? `<img src="data:image/jpeg;base64,${rep.foto_b64}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer;" onclick="verFotoB64('${rep.foto_b64}')">`
+      : '<span class="muted">—</span>';
     d.innerHTML = `
       <div>${rep.tienda}</div>
       <div>${rep.producto}</div>
       <div class="muted">${rep.comentario || '—'}</div>
-      <div>${rep.foto ? `<button class="btn-ver-foto" onclick="verFoto(${rep.id})">Ver foto 🖼</button>` : '<span class="muted">—</span>'}</div>
+      <div style="text-align:center">${fotoHtml}</div>
     `;
     lista.appendChild(d);
   });
@@ -470,6 +473,13 @@ async function verFoto(id) {
     cerrarModalFoto();
     alert('Error al cargar la foto.');
   }
+}
+
+function verFotoB64(b64) {
+  const modal = document.getElementById('modal-foto');
+  const img = document.getElementById('modal-foto-img');
+  img.src = 'data:image/jpeg;base64,' + b64;
+  modal.classList.add('activo');
 }
 
 function cerrarModalFoto() {

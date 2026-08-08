@@ -226,7 +226,7 @@ def ver_reportes():
     rows = q.order_by(Reporte.id.desc()).all()
     return jsonify([{"id": r.id, "tienda": r.tienda, "producto": r.producto,
                      "comentario": r.comentario, "foto": r.foto,
-                     "usuario": r.usuario, "fecha": r.fecha} for r in rows])
+                     "foto_b64": r.foto_b64 or "", "usuario": r.usuario, "fecha": r.fecha} for r in rows])
 
 @app.route("/api/cerrar-semana", methods=["POST"])
 def cerrar_semana():
