@@ -568,6 +568,28 @@ def limpiar_reportes():
     db.session.commit()
     return jsonify({"ok": True, "borrados": count})
 
+@app.route("/api/limpiar-historial", methods=["POST"])
+def limpiar_historial():
+    data = request.json or {}
+    if data.get("rol") != "supervisor":
+        return jsonify({"error": "No autorizado"}), 403
+    count = Diferencia.query.count()
+    Diferencia.query.delete()
+    db.session.commit()
+    return jsonify({"ok": True, "borrados": count})
+
+@app.route("/api/limpiar-todo", methods=["POST"])
+def limpiar_todo():
+    data = request.json or {}
+    if data.get("rol") != "supervisor":
+        return jsonify({"error": "No autorizado"}), 403
+    r = Reporte.query.count()
+    d = Diferencia.query.count()
+    Reporte.query.delete()
+    Diferencia.query.delete()
+    db.session.commit()
+    return jsonify({"ok": True, "reportes_borrados": r, "historial_borrado": d})
+
 @app.route("/api/reporte/<int:reporte_id>/foto")
 def ver_foto_reporte(reporte_id):
     rep = Reporte.query.get_or_404(reporte_id)
