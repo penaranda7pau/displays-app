@@ -11,7 +11,7 @@
     --verde:   #6aaa4f;
     --verde2:  #558a3e;
     --rojo:    #f04040;
-    --fondo:   #0f1923;
+    --fondo:   #0d1a26;
     --card:    #172130;
     --card2:   #1e2d3d;
     --borde:   #253448;
@@ -26,16 +26,71 @@
     #panel { max-width: 1100px; padding: 24px 32px; }
   }
 
-  /* LOGIN */
-  #login { display: flex; flex-direction: column; justify-content: center; min-height: 100vh; gap: 14px; }
-  .login-logo { text-align: center; margin-bottom: 8px; }
-  .login-logo .logo-cpfr { font-size: 42px; font-weight: 900; color: var(--azul); letter-spacing: -1px; }
-  .login-logo .logo-advisor { font-size: 13px; letter-spacing: 5px; color: var(--muted); text-transform: uppercase; margin-top: -4px; }
-  .login-logo .logo-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
-  input[type=text], input[type=password] { width: 100%; padding: 13px; border-radius: 8px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 16px; }
-  .btn { width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
-  .btn-verde { background: var(--azul); color: #fff; }
-  .btn-verde:hover { background: var(--azul2); }
+  /* ── LOGIN ────────────────────────────────────────────────────── */
+  #login {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh; padding: 24px;
+    background: linear-gradient(145deg, #0d1f30 0%, #0f2e3a 45%, #102a1e 100%);
+  }
+  .login-card {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 20px;
+    padding: 48px 32px 36px;
+    width: 100%; max-width: 360px;
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    position: relative;
+  }
+  .login-avatar {
+    width: 74px; height: 74px; border-radius: 50%;
+    background: linear-gradient(135deg, #1e4060, #2a7a5a);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 24px rgba(30,64,96,0.5);
+  }
+  .login-avatar svg { width: 36px; height: 36px; stroke: #fff; fill: none; stroke-width: 1.6; }
+  .login-card h1 {
+    font-size: 22px; font-weight: 700; color: #fff; letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .login-card .login-sub {
+    font-size: 12px; color: var(--muted); letter-spacing: 3px;
+    text-transform: uppercase; margin-bottom: 32px;
+  }
+  .login-field {
+    width: 100%; position: relative; margin-bottom: 20px;
+  }
+  .login-field input {
+    width: 100%; background: transparent; border: none;
+    border-bottom: 1.5px solid rgba(255,255,255,0.2);
+    color: #fff; font-size: 15px; padding: 10px 10px 10px 36px;
+    outline: none; transition: border-color 0.2s;
+  }
+  .login-field input:focus { border-bottom-color: var(--verde); }
+  .login-field input::placeholder { color: rgba(255,255,255,0.35); font-size: 14px; }
+  .login-field .field-icon {
+    position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+    opacity: 0.45; font-size: 16px; pointer-events: none;
+  }
+  .btn-login {
+    width: 100%; padding: 14px; border-radius: 50px; border: none;
+    font-size: 14px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    background: linear-gradient(90deg, #1e4060, #3a8a5a);
+    color: #fff; cursor: pointer; margin-top: 8px;
+    box-shadow: 0 6px 20px rgba(30,64,96,0.4);
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .btn-login:hover { opacity: 0.92; transform: translateY(-1px); }
+  .btn-login:active { transform: translateY(0); }
+
+  /* inputs globales (fuera del login) */
+  input[type=text], input[type=password] { width: 100%; padding: 13px; border-radius: 10px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 16px; }
+  .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: bold; cursor: pointer; transition: opacity 0.15s; }
+  .btn:hover { opacity: 0.88; }
+  .btn-verde { background: linear-gradient(90deg, #1e4060, #3a8a5a); color: #fff; }
   .btn-azul  { background: var(--azul2); color: #fff; }
   .btn-gris  { background: var(--card); color: var(--texto); }
   .error { color: var(--rojo); text-align: center; font-size: 14px; min-height: 20px; }
@@ -131,15 +186,28 @@
 
 <!-- LOGIN -->
 <div id="login" class="screen active">
-  <div class="login-logo">
-    <div class="logo-cpfr">CPFR</div>
-    <div class="logo-advisor">Advisor</div>
-    <div class="logo-sub">Control de Displays</div>
+  <div class="login-card">
+    <div class="login-avatar">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="8" r="4"/>
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+      </svg>
+    </div>
+    <h1>CPFR</h1>
+    <div class="login-sub">Control de Displays</div>
+    <div class="login-field">
+      <span class="field-icon">👤</span>
+      <input type="text" id="inp-usuario" placeholder="Usuario" autocomplete="off"
+             onkeydown="if(event.key==='Enter')document.getElementById('inp-password').focus()">
+    </div>
+    <div class="login-field">
+      <span class="field-icon">🔒</span>
+      <input type="password" id="inp-password" placeholder="Contraseña"
+             onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="error" id="login-error" style="width:100%;margin-bottom:8px;"></div>
+    <button class="btn-login" onclick="doLogin()">Ingresar</button>
   </div>
-  <input type="text" id="inp-usuario" placeholder="Usuario" autocomplete="off">
-  <input type="password" id="inp-password" placeholder="Contraseña">
-  <div class="error" id="login-error"></div>
-  <button class="btn btn-verde" onclick="doLogin()">Ingresar</button>
 </div>
 
 <!-- TIENDAS -->
@@ -886,17 +954,24 @@ function renderResultadosIA() {
   });
 }
 async function decidirValidacion(id, decision, btn) {
+  const row = btn ? btn.closest('.tbl-row') : null;
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  // Quitar la fila visualmente de inmediato
+  if (row) row.style.opacity = '0.3';
   try {
     const r = await fetch(API + '/api/validacion/' + id + '/decision', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({rol: usuario.rol, decision})
     });
     const d = await r.json();
-    if (d.error) { alert(d.error); return; }
-    await cargarProgreso();
+    if (d.error) { alert(d.error); if (row) row.style.opacity = '1'; return; }
+    // Quitar la fila de la lista sin recargar todo
+    if (row) row.remove();
+    // Actualizar chips en background sin bloquear UI
+    cargarProgreso();
   } catch(e) {
-    alert('Error de red — el servidor puede estar iniciando, espera 30 segundos e intenta de nuevo');
+    alert('Error de red — espera 30 segundos e intenta de nuevo');
+    if (row) row.style.opacity = '1';
     if (btn) { btn.disabled = false; btn.textContent = decision === 'APROBADO' ? '✓ Correcta' : '✗ Denegar'; }
   }
 }
