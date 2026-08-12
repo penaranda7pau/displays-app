@@ -3,6 +3,7 @@ import io
 import re
 import base64
 import zipfile
+import threading
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template, send_file
 from flask_cors import CORS
@@ -817,6 +818,149 @@ def validacion_resultados():
             "foto_b64": foto_b64,
         })
     return jsonify(resultado)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VALIDACIÓN IA — Fase 2: worker que llama a Claude Haiku
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+_worker_lock = threading.Lock()
+_worker_running = False
+
+
+def _procesar_validaciones():
+    """Procesa en background todos los registros PENDIENTE llamando a Claude Haiku."""
+    global _worker_running
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        with app.app_context():
+            while True:
+                val = ValidacionIA.query.filter_by(estado="PENDIENTE").first()
+                if not val:
+                    break
+
+                # Marcar como PROCESANDO para evitar doble proceso
+                val.estado = "PROCESANDO"
+                val.intentos = (val.intentos or 0) + 1
+                db.session.commit()
+
+                try:
+                    # Obtener foto del reporte
+                    rep = Reporte.query.get(val.reporte_id) if val.reporte_id else None
+                    if not rep or not rep.foto_b64:
+                        val.estado = "ERROR"
+                        val.motivo = "Sin foto disponible"
+                        val.procesado_en = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        db.session.commit()
+                        continue
+
+                    # Preparar imagen en base64
+                    foto_raw = rep.foto_b64
+                    if "," in foto_raw:
+                        foto_raw = foto_raw.split(",", 1)[1]
+
+                    prompt = f"""Eres un auditor de displays de productos en supermercados.
+Analiza esta foto y determina si muestra correctamente el producto "{val.producto}" exhibido en tienda.
+
+Responde EXACTAMENTE en este formato (sin texto adicional):
+ESTADO: [APROBADO|RECHAZADO|REVISAR]
+CONFIANZA: [alta|media|baja]
+MOTIVO: [una sola oración explicando tu decisión]
+
+Criterios:
+- APROBADO: la foto muestra claramente el producto correcto bien exhibido
+- RECHAZADO: foto incorrecta (selfie, piso, producto diferente, foto de otra cosa)
+- REVISAR: foto borrosa, muy oscura, o producto parcialmente visible — requiere revisión humana"""
+
+                    response = client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=150,
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/jpeg",
+                                        "data": foto_raw,
+                                    },
+                                },
+                                {"type": "text", "text": prompt},
+                            ],
+                        }],
+                    )
+
+                    texto = response.content[0].text.strip()
+                    tokens_in  = response.usage.input_tokens
+                    tokens_out = response.usage.output_tokens
+                    # Precio Haiku: $0.80/MTok input, $4.00/MTok output
+                    costo = (tokens_in * 0.80 + tokens_out * 4.00) / 1_000_000
+
+                    # Parsear respuesta
+                    estado_ia   = "REVISAR"
+                    confianza   = "baja"
+                    motivo      = texto
+
+                    for linea in texto.splitlines():
+                        linea = linea.strip()
+                        if linea.startswith("ESTADO:"):
+                            v = linea.split(":", 1)[1].strip().upper()
+                            if v in ("APROBADO", "RECHAZADO", "REVISAR"):
+                                estado_ia = v
+                        elif linea.startswith("CONFIANZA:"):
+                            c = linea.split(":", 1)[1].strip().lower()
+                            if c in ("alta", "media", "baja"):
+                                confianza = c
+                        elif linea.startswith("MOTIVO:"):
+                            motivo = linea.split(":", 1)[1].strip()
+
+                    val.estado       = estado_ia
+                    val.confianza    = confianza
+                    val.motivo       = motivo
+                    val.tokens_input = tokens_in
+                    val.tokens_output= tokens_out
+                    val.costo_usd    = costo
+                    val.procesado_en = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    db.session.commit()
+
+                except Exception as e:
+                    val.estado    = "ERROR"
+                    val.motivo    = str(e)[:300]
+                    val.procesado_en = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    db.session.commit()
+    finally:
+        with _worker_lock:
+            _worker_running = False
+
+
+@app.route("/api/validacion/procesar", methods=["POST"])
+def validacion_procesar():
+    """Lanza el worker en background para procesar fotos PENDIENTE con Claude Haiku."""
+    global _worker_running
+    if not ANTHROPIC_API_KEY:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada"}), 500
+
+    data = request.json or {}
+    if data.get("rol") != "supervisor":
+        return jsonify({"error": "No autorizado"}), 403
+
+    pendientes = ValidacionIA.query.filter_by(estado="PENDIENTE").count()
+    if pendientes == 0:
+        return jsonify({"ok": True, "mensaje": "No hay fotos pendientes", "iniciado": False})
+
+    with _worker_lock:
+        if _worker_running:
+            return jsonify({"ok": True, "mensaje": "Worker ya en ejecución", "iniciado": False})
+        _worker_running = True
+
+    t = threading.Thread(target=_procesar_validaciones, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "mensaje": f"Procesando {pendientes} fotos en background", "iniciado": True})
 
 
 if __name__ == "__main__":
