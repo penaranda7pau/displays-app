@@ -95,13 +95,48 @@
   .btn-gris  { background: var(--card); color: var(--texto); }
   .error { color: var(--rojo); text-align: center; font-size: 14px; min-height: 20px; }
 
-  .header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-  .header h2 { font-size: 18px; flex: 1; }
-  .back { background: var(--card); border: none; color: var(--texto); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 18px; }
-  .search { width: 100%; padding: 11px; border-radius: 8px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 15px; margin-bottom: 10px; }
-  .tienda-item { background: var(--card); padding: 14px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; font-size: 14px; border: 1px solid var(--borde); }
-  .tienda-item:hover { border-color: var(--azul2); }
+  /* ── HEADER ── */
+  .header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .header h2 { font-size: 18px; flex: 1; font-weight: 700; letter-spacing: 0.2px; }
+  .back { background: var(--card2); border: 1px solid var(--borde); color: var(--texto); padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 18px; transition: background 0.15s; }
+  .back:hover { background: var(--azul); }
+
+  /* ── SCREEN TIENDAS ── */
+  #tiendas { padding-top: 0; }
+  .tiendas-hero {
+    background: linear-gradient(135deg, var(--azul) 0%, var(--verde2) 100%);
+    margin: -16px -16px 16px -16px;
+    padding: 28px 20px 20px;
+    border-radius: 0 0 20px 20px;
+  }
+  .tiendas-hero .hero-title { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 2px; }
+  .tiendas-hero .hero-user  { font-size: 13px; color: rgba(255,255,255,0.65); margin-bottom: 14px; }
+  .search-wrap { position: relative; }
+  .search-wrap .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; opacity: 0.45; pointer-events: none; }
+  .search {
+    width: 100%; padding: 12px 12px 12px 40px;
+    border-radius: 12px; border: none;
+    background: rgba(255,255,255,0.12);
+    color: #fff; font-size: 14px;
+    backdrop-filter: blur(4px);
+  }
+  .search::placeholder { color: rgba(255,255,255,0.45); }
+  .search:focus { outline: none; background: rgba(255,255,255,0.18); }
+
   .subtexto { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+
+  /* ── TIENDA ITEM ── */
+  .tienda-item {
+    background: var(--card); padding: 14px 16px;
+    border-radius: 12px; margin-bottom: 8px; cursor: pointer;
+    font-size: 14px; font-weight: 500;
+    border: 1px solid var(--borde);
+    border-left: 3px solid var(--azul2);
+    display: flex; align-items: center; justify-content: space-between;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  }
+  .tienda-item:hover { border-left-color: var(--verde); background: var(--card2); transform: translateX(2px); }
+  .tienda-item .tienda-chevron { color: var(--muted); font-size: 16px; }
 
   .tabla-header { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; padding: 6px 4px; border-bottom: 1px solid var(--borde); margin-bottom: 6px; }
   .tabla-header span { font-size: 11px; color: var(--verde); font-weight: bold; text-align: center; }
@@ -212,11 +247,19 @@
 
 <!-- TIENDAS -->
 <div id="tiendas" class="screen">
-  <div class="header">
-    <h2>Seleccionar Tienda</h2>
-    <button id="btn-panel" class="btn-azul btn" style="width:auto;padding:8px 14px;display:none;" onclick="irPanel()">Panel admin</button>
+  <div class="tiendas-hero">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div>
+        <div class="hero-title">Seleccionar Tienda</div>
+        <div class="hero-user" id="hero-nombre-usuario">—</div>
+      </div>
+      <button id="btn-panel" class="btn-azul btn" style="width:auto;padding:8px 14px;display:none;border-radius:10px;font-size:13px;" onclick="irPanel()">Panel ⚙</button>
+    </div>
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="search" id="buscar-tienda" placeholder="Buscar tienda..." oninput="filtrarTiendas()">
+    </div>
   </div>
-  <input type="text" class="search" id="buscar-tienda" placeholder="Buscar tienda..." oninput="filtrarTiendas()">
   <div class="subtexto" id="status-tiendas">Cargando...</div>
   <div id="lista-tiendas"></div>
 </div>
@@ -413,6 +456,7 @@ async function doLogin() {
       usuario = data;
       document.getElementById('login-error').textContent = '';
       document.getElementById('btn-panel').style.display = data.rol === 'supervisor' ? 'block' : 'none';
+      document.getElementById('hero-nombre-usuario').textContent = 'Hola, ' + (data.nombre || data.usuario);
       mostrar('tiendas');
       cargarTiendas();
     } else {
@@ -442,14 +486,7 @@ function filtrarTiendas() {
   tiendas.filter(t => t.toLowerCase().includes(txt)).forEach(t => {
     const d = document.createElement('div');
     d.className = 'tienda-item';
-    d.textContent = t;
-    if (tiendasReportadas.has(t)) {
-      const check = document.createElement('span');
-      check.textContent = ' ✓';
-      check.style.color = '#00bf8f';
-      check.style.fontWeight = 'bold';
-      d.appendChild(check);
-    }
+    d.innerHTML = `<span>${t}${tiendasReportadas.has(t) ? ' <span style="color:#1a8a7a;font-weight:bold;">✓</span>' : ''}</span><span class="tienda-chevron">›</span>`;
     d.onclick = () => irProductos(t);
     lista.appendChild(d);
   });
