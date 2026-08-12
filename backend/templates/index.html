@@ -871,8 +871,8 @@ function renderResultadosIA() {
       : '<span class="muted">—</span>';
     const accionHtml = (v.estado === 'REVISAR' || v.estado === 'RECHAZADO')
       ? `<div style="display:flex;flex-direction:column;gap:3px;">
-           <button onclick="decidirValidacion(${v.id},'APROBADO')" style="background:#0a3a1a;color:#6aaa4f;border:none;border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✓ Correcta</button>
-           <button onclick="decidirValidacion(${v.id},'RECHAZADO')" style="background:#2e0a0a;color:#f04040;border:none;border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✗ Denegar</button>
+           <button onclick="decidirValidacion(${v.id},'APROBADO',this)" style="background:#0a3a1a;color:#6aaa4f;border:none;border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✓ Correcta</button>
+           <button onclick="decidirValidacion(${v.id},'RECHAZADO',this)" style="background:#2e0a0a;color:#f04040;border:none;border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✗ Denegar</button>
          </div>`
       : '<span class="muted" style="font-size:10px;text-align:center;display:block;">—</span>';
     row.innerHTML = `
@@ -885,7 +885,8 @@ function renderResultadosIA() {
     lista.appendChild(row);
   });
 }
-async function decidirValidacion(id, decision) {
+async function decidirValidacion(id, decision, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
   try {
     const r = await fetch(API + '/api/validacion/' + id + '/decision', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -894,7 +895,10 @@ async function decidirValidacion(id, decision) {
     const d = await r.json();
     if (d.error) { alert(d.error); return; }
     await cargarProgreso();
-  } catch(e) { alert('Error de red'); }
+  } catch(e) {
+    alert('Error de red — el servidor puede estar iniciando, espera 30 segundos e intenta de nuevo');
+    if (btn) { btn.disabled = false; btn.textContent = decision === 'APROBADO' ? '✓ Correcta' : '✗ Denegar'; }
+  }
 }
 // ── FIN VALIDACIÓN IA ──────────────────────────────────────────
 
