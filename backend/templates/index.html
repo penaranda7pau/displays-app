@@ -28,10 +28,11 @@
 
   /* ── LOGIN ────────────────────────────────────────────────────── */
   #login {
-    display: flex; flex-direction: column; align-items: center;
+    flex-direction: column; align-items: center;
     justify-content: center; min-height: 100vh; padding: 24px;
     background: linear-gradient(145deg, #0c1a24 0%, #0f2a38 50%, #0d2230 100%);
   }
+  #login.active { display: flex; }
   .login-card {
     background: rgba(255,255,255,0.05);
     backdrop-filter: blur(12px);
@@ -628,6 +629,21 @@ async function cargarPanel() {
     const ds = await rs.json();
     document.getElementById('label-semana').textContent = ds.semana_legible || ds.semana_activa || '—';
     document.getElementById('label-semana-codigo').textContent = ds.semana_activa || '';
+    // Advertencia si la semana ya fue cerrada
+    let aviso = document.getElementById('aviso-semana-cerrada');
+    if (!aviso) {
+      aviso = document.createElement('div');
+      aviso.id = 'aviso-semana-cerrada';
+      aviso.style.cssText = 'background:rgba(231,76,60,0.18);border:1px solid rgba(231,76,60,0.4);color:#f1948a;border-radius:10px;padding:10px 16px;font-size:13px;margin:0 0 12px;display:none;';
+      const hero = document.querySelector('#panel .panel-hero');
+      if (hero) hero.after(aviso);
+    }
+    if (ds.ya_cerrada) {
+      aviso.innerHTML = '⚠️ Esta semana (<b>' + (ds.semana_activa || '') + '</b>) ya fue cerrada. Los reportes que subas aquí no afectarán el historial. Usa <b>Restablecer automático</b> para volver a la semana actual.';
+      aviso.style.display = 'block';
+    } else {
+      aviso.style.display = 'none';
+    }
   } catch(e) {
     document.getElementById('label-semana').textContent = '—';
   }

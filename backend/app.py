@@ -197,7 +197,8 @@ def login():
 def get_semana_activa():
     codigo = semana_actual()
     _, legible = rango_de_codigo(codigo)
-    return jsonify({"semana_activa": codigo, "semana_legible": legible})
+    ya_cerrada = Diferencia.query.filter_by(semana=codigo).first() is not None
+    return jsonify({"semana_activa": codigo, "semana_legible": legible, "ya_cerrada": ya_cerrada})
 
 @app.route("/api/set-semana", methods=["POST"])
 def set_semana():
@@ -616,8 +617,12 @@ def cerrar_semana():
         if rep.foto_b64:
             fotos[(tienda, producto)] = rep.foto_b64
 
-    # Borrar reportes de la semana cerrada para empezar semana nueva limpia
-    Reporte.query.filter_by(semana=semana).delete()
+    # Borrar reportes de la semana cerrada y de cualquier semana anterior (limpieza completa)
+    Reporte.query.filter(Reporte.semana <= semana).delete()
+    # Limpiar override de semana para que la próxima semana sea automática
+    cfg_override = Config.query.get("semana_override")
+    if cfg_override:
+        cfg_override.valor = ""
     db.session.commit()
 
     # Construir ZIP: Excel + carpetas de fotos por tienda
