@@ -314,8 +314,8 @@
       <div class="chip chip-foto"  id="chip-foto">0 con foto</div>
       <div class="chip chip-rojo"  id="chip-rojo">0 sin foto</div>
     </div>
-    <div class="tbl-head" style="grid-template-columns:1fr 1fr 60px 70px;">
-      <span>Tienda</span><span>Producto</span><span>Coment.</span><span>Foto</span>
+    <div class="tbl-head" style="grid-template-columns:1fr 70px 100px;">
+      <span>Tienda / Producto</span><span style="text-align:center">Coment.</span><span style="text-align:center">Foto</span>
     </div>
     <div id="lista-reportes"></div>
   </div>
@@ -659,14 +659,17 @@ function renderReportes() {
   reps.forEach(rep => {
     const d = document.createElement('div');
     d.className = 'tbl-row';
-    d.style.gridTemplateColumns = '1fr 1fr 60px 70px';
+    d.style.gridTemplateColumns = '1fr 70px 100px';
+    d.style.alignItems = 'center';
     const fotoHtml = rep.foto_b64
-      ? `<img src="data:image/jpeg;base64,${rep.foto_b64}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer;" onclick="verFotoB64('${rep.foto_b64}')">`
-      : '<span class="muted">—</span>';
+      ? `<img src="data:image/jpeg;base64,${rep.foto_b64}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;cursor:pointer;display:block;" onclick="verFotoB64('${rep.foto_b64}')">`
+      : '<span class="muted" style="display:block;text-align:center;">—</span>';
     d.innerHTML = `
-      <div>${rep.tienda}</div>
-      <div>${rep.producto}</div>
-      <div class="muted">${rep.comentario || '—'}</div>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--texto);margin-bottom:3px;">${rep.tienda}</div>
+        <div style="font-size:11px;color:var(--muted);">${rep.producto}</div>
+      </div>
+      <div class="muted" style="font-size:11px;text-align:center;">${rep.comentario || '—'}</div>
       <div style="text-align:center">${fotoHtml}</div>
     `;
     lista.appendChild(d);
