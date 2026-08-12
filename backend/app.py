@@ -611,11 +611,17 @@ def cerrar_semana():
     wb.save(buf)
     buf.seek(0)
 
-    # Recopilar fotos antes de borrar reportes
+    # Recopilar fotos + estado de cada producto antes de borrar reportes
     fotos = {}  # {(tienda, producto): foto_b64_str}
     for (tienda, producto), rep in mapa.items():
         if rep.foto_b64:
             fotos[(tienda, producto)] = rep.foto_b64
+
+    # Mapa de estado por producto para separar carpetas en el ZIP
+    estado_cierre = {
+        (d.tienda, d.producto): d.estado
+        for d in Diferencia.query.filter_by(semana=semana).all()
+    }
 
     # Borrar reportes de la semana cerrada y de cualquier semana anterior (limpieza completa)
     Reporte.query.filter(Reporte.semana <= semana).delete()
@@ -625,21 +631,24 @@ def cerrar_semana():
         cfg_override.valor = ""
     db.session.commit()
 
-    # Construir ZIP: Excel + carpetas de fotos por tienda
+    # Construir ZIP: Excel + fotos separadas en Fotos_OK y Fotos_Diferencias
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # Excel dentro del ZIP
         zf.writestr(f"Diferencias_{rango_archivo}.xlsx", buf.getvalue())
 
-        # Fotos organizadas en carpetas: Fotos_<rango>/<Tienda>/<Producto>.jpg
+        # Fotos separadas por resultado:
+        #   Fotos_OK/<Tienda>/<Producto>.jpg        → estado OK (exhibido correctamente)
+        #   Fotos_Diferencias/<Tienda>/<Producto>.jpg → estado CON_JUSTIFICACION o SIN_FOTO con foto
         for (tienda, producto), foto_b64 in fotos.items():
             try:
-                # El frontend puede enviar "data:image/jpeg;base64,..." o solo base64 puro
                 raw = foto_b64.split(",", 1)[1] if "," in foto_b64 else foto_b64
                 foto_bytes = base64.b64decode(raw)
                 tienda_safe   = re.sub(r'[\\/:*?"<>|]', "_", tienda).strip()
                 producto_safe = re.sub(r'[\\/:*?"<>|]', "_", producto).strip()[:60]
-                path = f"Fotos_{rango_archivo}/{tienda_safe}/{producto_safe}.jpg"
+                estado = estado_cierre.get((tienda, producto), "OK")
+                carpeta = "Fotos_OK" if estado == "OK" else "Fotos_Diferencias"
+                path = f"{carpeta}_{rango_archivo}/{tienda_safe}/{producto_safe}.jpg"
                 zf.writestr(path, foto_bytes)
             except Exception:
                 pass  # foto corrupta o vacía, se omite
