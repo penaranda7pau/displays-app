@@ -955,8 +955,27 @@ def validacion_decision(val_id):
 
 @app.route("/api/validacion/procesar", methods=["POST"])
 def validacion_procesar():
-    """Procesamiento IA desactivado temporalmente — requiere plan Standard en Render."""
-    return jsonify({"error": "Procesamiento IA requiere plan Standard. Contacta al administrador."}), 503
+    """Lanza el worker en background para procesar fotos PENDIENTE con Claude Haiku."""
+    global _worker_running
+    if not ANTHROPIC_API_KEY:
+        return jsonify({"error": "ANTHROPIC_API_KEY no configurada"}), 500
+
+    data = request.json or {}
+    if data.get("rol") != "supervisor":
+        return jsonify({"error": "No autorizado"}), 403
+
+    pendientes = ValidacionIA.query.filter_by(estado="PENDIENTE").count()
+    if pendientes == 0:
+        return jsonify({"ok": True, "mensaje": "No hay fotos pendientes", "iniciado": False})
+
+    with _worker_lock:
+        if _worker_running:
+            return jsonify({"ok": True, "mensaje": "Worker ya en ejecución", "iniciado": False})
+        _worker_running = True
+
+    t = threading.Thread(target=_procesar_validaciones, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "mensaje": f"Procesando {pendientes} fotos en background", "iniciado": True})
 
 
 if __name__ == "__main__":
