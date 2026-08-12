@@ -177,11 +177,30 @@
   .badge-verde  { background: #0a1e10; color: var(--verde); padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: bold; }
   .badge-gris   { background: var(--card2); color: var(--muted); padding: 2px 7px; border-radius: 4px; font-size: 11px; }
 
-  .btn-refresh { background: var(--card); border: none; color: var(--texto); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .btn-refresh { background: var(--card2); border: 1px solid var(--borde); color: var(--texto); padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 14px; transition: background 0.15s; }
+  .btn-refresh:hover { background: var(--azul); }
   .seccion-vacia { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
-  .btn-cerrar { background: #8b0000; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; }
-  .btn-cerrar:hover { background: #a00000; }
-  .banner-cierre { background: var(--card); border: 1px solid var(--borde); border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: 13px; color: var(--muted); }
+  .btn-cerrar { background: linear-gradient(90deg,#7b0000,#a00000); color: #fff; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: bold; transition: opacity 0.15s; }
+  .btn-cerrar:hover { opacity: 0.88; }
+
+  /* ── PANEL HERO ── */
+  .panel-hero {
+    background: linear-gradient(135deg, var(--azul) 0%, var(--verde2) 100%);
+    margin: -16px -16px 0 -16px;
+    padding: 20px 20px 0;
+    border-radius: 0 0 20px 20px;
+  }
+  .panel-hero-top { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .panel-hero-top h2 { font-size: 18px; font-weight: 700; color: #fff; flex: 1; }
+  .panel-semana-badge {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px; padding: 6px 14px;
+    font-size: 12px; color: #fff;
+    margin-bottom: 12px; display: inline-block;
+  }
+  .panel-semana-badge strong { color: #a8e6cf; }
+  .banner-cierre { display: none; }
 
   .btn-ver-foto { background: var(--azul2); color: #fff; border: none; border-radius: 6px; padding: 5px 6px; font-size: 11px; cursor: pointer; width: 100%; }
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
@@ -281,31 +300,35 @@
 
 <!-- PANEL SUPERVISOR -->
 <div id="panel" class="screen" style="max-width:100%;">
-  <div class="header">
-    <button class="back" onclick="irTiendas()">←</button>
-    <h2>Panel supervisor</h2>
-    <button class="btn-refresh" onclick="cargarPanel()">↻</button>
-    <button class="btn-cerrar" onclick="cerrarSemana()">Cerrar semana ↓</button>
+  <div class="panel-hero">
+    <div class="panel-hero-top">
+      <button class="back" onclick="irTiendas()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;">←</button>
+      <h2>Panel Supervisor</h2>
+      <button class="btn-refresh" onclick="cargarPanel()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;">↻</button>
+      <button class="btn-cerrar" onclick="cerrarSemana()">Cerrar semana ↓</button>
+    </div>
+    <div class="panel-semana-badge">
+      Semana activa: <strong id="label-semana">—</strong>
+      <span id="label-semana-codigo" style="opacity:0.6;font-size:10px;margin-left:6px;"></span>
+    </div>
+    <div id="modo-prueba-bar" style="display:none;background:rgba(0,0,0,0.25);border:1px solid #f0b040;border-radius:8px;padding:8px 12px;margin-bottom:10px;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="color:#f0b040;font-size:12px;">🧪 Semana manual:</span>
+      <input id="input-semana-prueba" type="text" placeholder="ej: 2026-S30" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:4px 8px;font-size:12px;width:100px;">
+      <button onclick="setSemana()" style="background:#f0b040;color:#000;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:bold;">Usar</button>
+      <button onclick="setSemana(true)" style="background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">Restablecer</button>
+    </div>
+    <!-- TABS dentro del hero -->
+    <div class="tabs" style="border-bottom:none;margin-bottom:0;">
+      <button class="tab activo" onclick="cambiarTab('tab-reportes',this)">Reportes</button>
+      <button class="tab" onclick="cambiarTab('tab-tiendas',this)">Por tienda</button>
+      <button class="tab" onclick="cambiarTab('tab-diferencias',this)">Diferencias</button>
+      <button class="tab" onclick="cambiarTab('tab-displays',this)">Displays</button>
+      <button class="tab" onclick="cambiarTab('tab-usuarios',this)">Usuarios</button>
+      <button class="tab" onclick="cambiarTab('tab-ia',this);cargarProgreso()">Validación IA</button>
+    </div>
   </div>
-  <div class="banner-cierre" id="banner-semana">
-    Semana activa: <strong id="label-semana">—</strong> &nbsp;<span id="label-semana-codigo" style="opacity:0.5;font-size:11px;"></span>&nbsp;|&nbsp; Los reportes se archivan al cerrar semana.
-  </div>
-  <div id="modo-prueba-bar" style="display:none;background:#1a1a2e;border:1px solid #f0b040;border-radius:8px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-    <span style="color:#f0b040;font-size:12px;">🧪 Semana manual (pruebas):</span>
-    <input id="input-semana-prueba" type="text" placeholder="ej: 2026-S30" style="background:#0f1923;color:#fff;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:12px;width:100px;">
-    <button onclick="setSemana()" style="background:#f0b040;color:#000;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;">Usar</button>
-    <button onclick="setSemana(true)" style="background:#444;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;">Restablecer automático</button>
-  </div>
-
-  <!-- TABS -->
-  <div class="tabs">
-    <button class="tab activo" onclick="cambiarTab('tab-reportes',this)">Reportes</button>
-    <button class="tab" onclick="cambiarTab('tab-tiendas',this)">Por tienda</button>
-    <button class="tab" onclick="cambiarTab('tab-diferencias',this)">Diferencias</button>
-    <button class="tab" onclick="cambiarTab('tab-displays',this)">Displays</button>
-    <button class="tab" onclick="cambiarTab('tab-usuarios',this)">Usuarios</button>
-    <button class="tab" onclick="cambiarTab('tab-ia',this);cargarProgreso()">Validación IA</button>
-  </div>
+  <div id="banner-semana" style="display:none;"></div>
+  <div style="height:16px;"></div>
 
   <!-- TAB REPORTES -->
   <div id="tab-reportes">
