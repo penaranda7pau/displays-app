@@ -938,6 +938,23 @@ Criterios:
             _worker_running = False
 
 
+@app.route("/api/validacion/<int:val_id>/decision", methods=["POST"])
+def validacion_decision(val_id):
+    """Supervisor aprueba o deniega manualmente una validación REVISAR o RECHAZADO."""
+    data = request.json or {}
+    if data.get("rol") != "supervisor":
+        return jsonify({"error": "No autorizado"}), 403
+    decision = data.get("decision", "").upper()
+    if decision not in ("APROBADO", "RECHAZADO"):
+        return jsonify({"error": "decision debe ser APROBADO o RECHAZADO"}), 400
+    val = ValidacionIA.query.get_or_404(val_id)
+    val.estado = decision
+    val.motivo = (val.motivo or "") + f" [Revisado manualmente por supervisor]"
+    val.procesado_en = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.session.commit()
+    return jsonify({"ok": True, "estado": val.estado})
+
+
 @app.route("/api/validacion/procesar", methods=["POST"])
 def validacion_procesar():
     """Lanza el worker en background para procesar fotos PENDIENTE con Claude Haiku."""
