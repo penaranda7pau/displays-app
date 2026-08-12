@@ -336,6 +336,9 @@ def cerrar_semana():
             if d.estado != "OK":
                 difs_anteriores.add((d.tienda, d.producto))
 
+    # Mapa de validación IA: reporte_id → estado IA
+    validaciones_ia = {v.reporte_id: v.estado for v in ValidacionIA.query.filter_by(semana=semana).all()}
+
     # Calcular diferencias
     inventario = Inventario.query.all()
     Diferencia.query.filter_by(semana=semana).delete()
@@ -343,10 +346,17 @@ def cerrar_semana():
         if inv.cantidad <= 0:
             continue
         key = (inv.tienda, inv.producto)
-        if inv.cantidad <= 0:
-            continue  # sin stock en sistema, no es diferencia
         rep = mapa.get(key)
-        if rep and rep.foto:
+        estado_ia = validaciones_ia.get(rep.id) if rep else None
+        if rep and rep.foto and estado_ia == "RECHAZADO":
+            # Foto rechazada por IA → cuenta como diferencia
+            estado = "SIN_FOTO"
+            comentario = "Foto rechazada por validación IA"
+        elif rep and rep.foto and estado_ia == "REVISAR":
+            # Pendiente de revisión → justificación
+            estado = "CON_JUSTIFICACION"
+            comentario = "Foto pendiente de revisión IA"
+        elif rep and rep.foto:
             estado = "OK"
             comentario = rep.comentario or ""
         elif rep and rep.comentario:
