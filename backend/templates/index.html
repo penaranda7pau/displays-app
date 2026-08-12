@@ -6,17 +6,17 @@
 <title>CPFR Displays</title>
 <style>
   :root {
-    --azul:    #1e4060;
-    --azul2:   #2a5a80;
-    --verde:   #6aaa4f;
-    --verde2:  #558a3e;
-    --rojo:    #f04040;
-    --fondo:   #0d1a26;
-    --card:    #172130;
-    --card2:   #1e2d3d;
-    --borde:   #253448;
-    --texto:   #e8edf2;
-    --muted:   #7a8fa6;
+    --azul:    #1a4a6b;
+    --azul2:   #1f618d;
+    --verde:   #1a8a7a;
+    --verde2:  #147060;
+    --rojo:    #e74c3c;
+    --fondo:   #0c1a24;
+    --card:    #142030;
+    --card2:   #1a2d3e;
+    --borde:   #1f3548;
+    --texto:   #e4edf5;
+    --muted:   #7090a8;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', sans-serif; background: var(--fondo); color: var(--texto); min-height: 100vh; }
@@ -30,7 +30,7 @@
   #login {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; min-height: 100vh; padding: 24px;
-    background: linear-gradient(145deg, #0d1f30 0%, #0f2e3a 45%, #102a1e 100%);
+    background: linear-gradient(145deg, #0c1a24 0%, #0f2a38 50%, #0d2230 100%);
   }
   .login-card {
     background: rgba(255,255,255,0.05);
@@ -46,7 +46,7 @@
   }
   .login-avatar {
     width: 74px; height: 74px; border-radius: 50%;
-    background: linear-gradient(135deg, #1e4060, #2a7a5a);
+    background: linear-gradient(135deg, #1a4a6b, #1a8a7a);
     display: flex; align-items: center; justify-content: center;
     margin-bottom: 20px;
     box-shadow: 0 8px 24px rgba(30,64,96,0.5);
@@ -78,7 +78,7 @@
   .btn-login {
     width: 100%; padding: 14px; border-radius: 50px; border: none;
     font-size: 14px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
-    background: linear-gradient(90deg, #1e4060, #3a8a5a);
+    background: linear-gradient(90deg, #1a4a6b, #1a8a7a);
     color: #fff; cursor: pointer; margin-top: 8px;
     box-shadow: 0 6px 20px rgba(30,64,96,0.4);
     transition: opacity 0.2s, transform 0.1s;
@@ -90,7 +90,7 @@
   input[type=text], input[type=password] { width: 100%; padding: 13px; border-radius: 10px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 16px; }
   .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: bold; cursor: pointer; transition: opacity 0.15s; }
   .btn:hover { opacity: 0.88; }
-  .btn-verde { background: linear-gradient(90deg, #1e4060, #3a8a5a); color: #fff; }
+  .btn-verde { background: linear-gradient(90deg, #1a4a6b, #1a8a7a); color: #fff; }
   .btn-azul  { background: var(--azul2); color: #fff; }
   .btn-gris  { background: var(--card); color: var(--texto); }
   .error { color: var(--rojo); text-align: center; font-size: 14px; min-height: 20px; }
