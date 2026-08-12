@@ -113,6 +113,18 @@
   .fila-usuario .info .nom { font-size: 13px; font-weight: bold; }
   .fila-usuario .info .usr { font-size: 12px; color: var(--muted); }
   .btn-eliminar-usuario { background: #2e0a0a; color: var(--rojo); border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+  .btn-ia { padding: 10px 14px; border-radius: 8px; border: none; font-size: 13px; font-weight: bold; cursor: pointer; }
+  .btn-ia-encolar  { background: var(--azul2); color: #fff; }
+  .btn-ia-procesar { background: var(--verde); color: #fff; }
+  .btn-ia-procesar:disabled { background: #2a4a2a; color: #555; cursor: not-allowed; }
+  .chip-ia-pend   { background: #1a1a00; color: #f0b040; }
+  .chip-ia-apro   { background: #0a1e10; color: var(--verde); }
+  .chip-ia-rech   { background: #2e0a0a; color: var(--rojo); }
+  .chip-ia-rev    { background: #0a1a2e; color: #6ab0f0; }
+  .badge-aprobado { background:#0a1e10; color:var(--verde); padding:2px 7px; border-radius:4px; font-size:11px; font-weight:bold; }
+  .badge-rechazado{ background:#2e0a0a; color:var(--rojo);  padding:2px 7px; border-radius:4px; font-size:11px; font-weight:bold; }
+  .badge-revisar  { background:#0a1a2e; color:#6ab0f0;      padding:2px 7px; border-radius:4px; font-size:11px; font-weight:bold; }
+  .badge-pendiente{ background:var(--card2); color:var(--muted); padding:2px 7px; border-radius:4px; font-size:11px; }
 </style>
 </head>
 <body>
@@ -181,6 +193,7 @@
     <button class="tab" onclick="cambiarTab('tab-diferencias',this)">Diferencias</button>
     <button class="tab" onclick="cambiarTab('tab-displays',this)">Displays</button>
     <button class="tab" onclick="cambiarTab('tab-usuarios',this)">Usuarios</button>
+    <button class="tab" onclick="cambiarTab('tab-ia',this);cargarProgreso()">Validación IA</button>
   </div>
 
   <!-- TAB REPORTES -->
@@ -226,6 +239,35 @@
   <div id="tab-displays" style="display:none;">
     <div class="subtexto" style="margin-bottom:10px;">Actividad por display esta semana</div>
     <div id="lista-displays"></div>
+  </div>
+
+  <!-- TAB VALIDACIÓN IA -->
+  <div id="tab-ia" style="display:none;">
+    <div class="subtexto" style="margin-bottom:10px;">Validación automática de fotos con Claude IA</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <button class="btn-ia btn-ia-encolar" onclick="encolarValidacion()">📋 Encolar fotos</button>
+      <button class="btn-ia btn-ia-procesar" id="btn-procesar-ia" onclick="procesarValidacion()">▶ Procesar con IA</button>
+      <button class="btn-refresh" onclick="cargarProgreso()">↻ Actualizar</button>
+    </div>
+    <div class="chips" style="margin-bottom:14px;">
+      <div class="chip chip-ia-pend"  id="chip-ia-pend">0 pendientes</div>
+      <div class="chip chip-ia-apro"  id="chip-ia-apro">0 aprobadas</div>
+      <div class="chip chip-ia-rech"  id="chip-ia-rech">0 rechazadas</div>
+      <div class="chip chip-ia-rev"   id="chip-ia-rev">0 revisar</div>
+    </div>
+    <div id="ia-costo" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+      <button onclick="filtrarResultados('')"   style="background:var(--card2);color:var(--texto);border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;">Todos</button>
+      <button onclick="filtrarResultados('RECHAZADO')" style="background:#2e0a0a;color:var(--rojo);border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;">Rechazadas</button>
+      <button onclick="filtrarResultados('REVISAR')"   style="background:#0a1a2e;color:#6ab0f0;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;">Revisar</button>
+      <button onclick="filtrarResultados('APROBADO')"  style="background:#0a1e10;color:var(--verde);border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;">Aprobadas</button>
+    </div>
+
+    <div class="tbl-head" style="grid-template-columns:1fr 1fr 70px 60px;">
+      <span>Tienda</span><span>Producto</span><span>Estado</span><span>Foto</span>
+    </div>
+    <div id="lista-ia"></div>
   </div>
 
   <!-- TAB USUARIOS -->
@@ -279,7 +321,7 @@ function mostrar(id) {
 }
 
 function cambiarTab(id, btn) {
-  ['tab-reportes','tab-tiendas','tab-diferencias','tab-displays','tab-usuarios'].forEach(t => {
+  ['tab-reportes','tab-tiendas','tab-diferencias','tab-displays','tab-usuarios','tab-ia'].forEach(t => {
     const el = document.getElementById(t);
     if (el) el.style.display = 'none';
   });
@@ -472,7 +514,7 @@ async function cargarPanel() {
 }
 
 async function cerrarSemana() {
-  if (!confirm('¿Cerrar la semana actual?\n\nEsto generará el Excel de diferencias y archivará los reportes. No se pueden deshacer.')) return;
+  if (!confirm('¿Cerrar la semana actual?\n\nSe descargará un archivo ZIP con:\n• Excel de diferencias\n• Carpeta de fotos por tienda\n\nLos reportes se borran de la base de datos al cerrar. No se puede deshacer.')) return;
   const btn = document.querySelector('.btn-cerrar');
   btn.textContent = 'Generando...';
   btn.disabled = true;
@@ -733,6 +775,110 @@ async function agregarUsuario() {
     errorEl.textContent = 'Error de red al crear el usuario';
   }
 }
+
+// ── VALIDACIÓN IA ──────────────────────────────────────────────
+let resultadosIA = [];
+
+async function encolarValidacion() {
+  try {
+    const r = await fetch(API + '/api/validacion/encolar', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({rol: usuario.rol})
+    });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    alert('✓ ' + d.encolados + ' fotos encoladas para validación');
+    cargarProgreso();
+  } catch(e) { alert('Error de red'); }
+}
+
+async function procesarValidacion() {
+  const btn = document.getElementById('btn-procesar-ia');
+  btn.disabled = true;
+  btn.textContent = '⏳ Procesando...';
+  try {
+    const r = await fetch(API + '/api/validacion/procesar', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({rol: usuario.rol})
+    });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    alert(d.mensaje);
+    // Actualizar progreso cada 5s mientras procesa
+    let checks = 0;
+    const intervalo = setInterval(async () => {
+      await cargarProgreso();
+      checks++;
+      const pend = parseInt(document.getElementById('chip-ia-pend').textContent);
+      if (pend === 0 || checks > 60) clearInterval(intervalo);
+    }, 5000);
+  } catch(e) { alert('Error de red'); }
+  finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Procesar con IA';
+  }
+}
+
+async function cargarProgreso() {
+  try {
+    const r = await fetch(API + '/api/validacion/progreso');
+    const d = await r.json();
+    document.getElementById('chip-ia-pend').textContent = (d.pendientes + d.procesando) + ' pendientes';
+    document.getElementById('chip-ia-apro').textContent = d.aprobados  + ' aprobadas';
+    document.getElementById('chip-ia-rech').textContent = d.rechazados + ' rechazadas';
+    document.getElementById('chip-ia-rev').textContent  = d.revisar    + ' revisar';
+    document.getElementById('ia-costo').textContent = d.total
+      ? `Total procesadas: ${d.procesadas}/${d.total} · Costo: $${d.costo_usd.toFixed(4)} USD`
+      : 'No hay validaciones para esta semana. Encolá primero las fotos.';
+    await cargarResultadosIA('');
+  } catch(e) {}
+}
+
+async function cargarResultadosIA(estadoFiltro) {
+  let url = API + '/api/validacion/resultados';
+  if (estadoFiltro) url += '?estado=' + estadoFiltro;
+  const r = await fetch(url);
+  resultadosIA = await r.json();
+  renderResultadosIA();
+}
+
+function filtrarResultados(estado) {
+  cargarResultadosIA(estado);
+}
+
+function renderResultadosIA() {
+  const lista = document.getElementById('lista-ia');
+  lista.innerHTML = '';
+  if (!resultadosIA.length) {
+    lista.innerHTML = '<div class="seccion-vacia">Sin resultados</div>';
+    return;
+  }
+  resultadosIA.forEach(v => {
+    const row = document.createElement('div');
+    row.className = 'tbl-row';
+    row.style.gridTemplateColumns = '1fr 1fr 70px 60px';
+    const badgeMap = {
+      APROBADO:  '<span class="badge-aprobado">✓ OK</span>',
+      RECHAZADO: '<span class="badge-rechazado">✗ No</span>',
+      REVISAR:   '<span class="badge-revisar">? Revisar</span>',
+      PENDIENTE: '<span class="badge-pendiente">Pendiente</span>',
+      PROCESANDO:'<span class="badge-pendiente">...</span>',
+      ERROR:     '<span class="badge-rechazado">Error</span>',
+    };
+    const badge = badgeMap[v.estado] || v.estado;
+    const fotoHtml = v.foto_b64
+      ? `<img src="data:image/jpeg;base64,${v.foto_b64}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;" onclick="verFotoB64('${v.foto_b64}')" title="${v.motivo || ''}">`
+      : '<span class="muted">—</span>';
+    row.innerHTML = `
+      <div style="font-size:11px">${v.tienda}</div>
+      <div style="font-size:11px" title="${v.motivo || ''}">${v.producto}</div>
+      <div style="text-align:center">${badge}</div>
+      <div style="text-align:center">${fotoHtml}</div>
+    `;
+    lista.appendChild(row);
+  });
+}
+// ── FIN VALIDACIÓN IA ──────────────────────────────────────────
 
 async function eliminarUsuario(id) {
   if (!confirm('¿Eliminar este display? No podrá volver a iniciar sesión.')) return;
