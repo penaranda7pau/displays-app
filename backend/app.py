@@ -64,6 +64,25 @@ class Config(db.Model):
     clave = db.Column(db.String(50), primary_key=True)
     valor = db.Column(db.String(100))
 
+class ValidacionIA(db.Model):
+    __tablename__ = "validacion_ia"
+    id           = db.Column(db.Integer, primary_key=True)
+    reporte_id   = db.Column(db.Integer, db.ForeignKey("reporte.id"), nullable=True)
+    semana       = db.Column(db.String(20), index=True)
+    tienda       = db.Column(db.String(200))
+    producto     = db.Column(db.String(200))
+    marca        = db.Column(db.String(200))
+    # PENDIENTE / PROCESANDO / APROBADO / RECHAZADO / REVISAR / ERROR
+    estado       = db.Column(db.String(20), default="PENDIENTE", index=True)
+    confianza    = db.Column(db.String(10))   # alta / media / baja
+    motivo       = db.Column(db.Text)         # explicación corta de Claude
+    tokens_input = db.Column(db.Integer, default=0)
+    tokens_output= db.Column(db.Integer, default=0)
+    costo_usd    = db.Column(db.Float, default=0.0)
+    intentos     = db.Column(db.Integer, default=0)
+    creado_en    = db.Column(db.String(30))
+    procesado_en = db.Column(db.String(30))
+
 USUARIOS_INICIALES = [
     {"nombre": "Display 1", "usuario": "display1", "password": "1234",     "rol": "display"},
     {"nombre": "Supervisor", "usuario": "admin",    "password": "admin123", "rol": "supervisor"}
@@ -77,6 +96,32 @@ def _migrar_columnas():
                 conn.execute(db.text("ALTER TABLE reporte ADD COLUMN IF NOT EXISTS foto_b64 TEXT"))
             else:
                 conn.execute(db.text("ALTER TABLE reporte ADD COLUMN foto_b64 TEXT"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        # Migrar tabla validacion_ia si no existe (db.create_all la crea, pero por si acaso)
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("""
+                    CREATE TABLE IF NOT EXISTS validacion_ia (
+                        id SERIAL PRIMARY KEY,
+                        reporte_id INTEGER REFERENCES reporte(id) ON DELETE SET NULL,
+                        semana VARCHAR(20),
+                        tienda VARCHAR(200),
+                        producto VARCHAR(200),
+                        marca VARCHAR(200),
+                        estado VARCHAR(20) DEFAULT 'PENDIENTE',
+                        confianza VARCHAR(10),
+                        motivo TEXT,
+                        tokens_input INTEGER DEFAULT 0,
+                        tokens_output INTEGER DEFAULT 0,
+                        costo_usd FLOAT DEFAULT 0,
+                        intentos INTEGER DEFAULT 0,
+                        creado_en VARCHAR(30),
+                        procesado_en VARCHAR(30)
+                    )
+                """))
             conn.commit()
         except Exception:
             conn.rollback()
@@ -673,6 +718,106 @@ def eliminar_reporte(reporte_id):
     db.session.delete(rep)
     db.session.commit()
     return jsonify({"ok": True})
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VALIDACIÓN IA — Fase 1: encolar y consultar progreso
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/validacion/encolar", methods=["POST"])
+def validacion_encolar():
+    """Crea registros PENDIENTE en ValidacionIA para todos los reportes con foto de la semana actual."""
+    data = request.json or {}
+    if data.get("rol") != "supervisor":
+        return jsonify({"error": "No autorizado"}), 403
+
+    semana = semana_actual()
+    reportes = Reporte.query.filter_by(semana=semana).all()
+
+    encolados = 0
+    for rep in reportes:
+        if not rep.foto_b64:
+            continue
+        # Evitar duplicados
+        existe = ValidacionIA.query.filter_by(reporte_id=rep.id).first()
+        if existe:
+            continue
+        # Buscar marca en inventario (por ahora vacía, se enriquece luego)
+        val = ValidacionIA(
+            reporte_id   = rep.id,
+            semana       = semana,
+            tienda       = rep.tienda,
+            producto     = rep.producto,
+            marca        = "",
+            estado       = "PENDIENTE",
+            creado_en    = datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        db.session.add(val)
+        encolados += 1
+
+    db.session.commit()
+    return jsonify({"ok": True, "encolados": encolados, "semana": semana})
+
+
+@app.route("/api/validacion/progreso")
+def validacion_progreso():
+    """Retorna el progreso de validación IA de la semana actual."""
+    semana = request.args.get("semana", semana_actual())
+    total      = ValidacionIA.query.filter_by(semana=semana).count()
+    pendientes = ValidacionIA.query.filter_by(semana=semana, estado="PENDIENTE").count()
+    procesando = ValidacionIA.query.filter_by(semana=semana, estado="PROCESANDO").count()
+    aprobados  = ValidacionIA.query.filter_by(semana=semana, estado="APROBADO").count()
+    rechazados = ValidacionIA.query.filter_by(semana=semana, estado="RECHAZADO").count()
+    revisar    = ValidacionIA.query.filter_by(semana=semana, estado="REVISAR").count()
+    errores    = ValidacionIA.query.filter_by(semana=semana, estado="ERROR").count()
+
+    costo_total = db.session.query(db.func.sum(ValidacionIA.costo_usd))\
+        .filter_by(semana=semana).scalar() or 0.0
+
+    return jsonify({
+        "semana": semana,
+        "total": total,
+        "pendientes": pendientes,
+        "procesando": procesando,
+        "aprobados": aprobados,
+        "rechazados": rechazados,
+        "revisar": revisar,
+        "errores": errores,
+        "procesadas": aprobados + rechazados + revisar + errores,
+        "costo_usd": round(costo_total, 4),
+    })
+
+
+@app.route("/api/validacion/resultados")
+def validacion_resultados():
+    """Lista de validaciones con filtro por estado para revisión manual."""
+    semana = request.args.get("semana", semana_actual())
+    estado = request.args.get("estado", "")  # RECHAZADO, REVISAR, etc.
+
+    q = ValidacionIA.query.filter_by(semana=semana)
+    if estado:
+        q = q.filter_by(estado=estado)
+    q = q.order_by(ValidacionIA.estado, ValidacionIA.tienda)
+
+    rows = q.all()
+    resultado = []
+    for v in rows:
+        foto_b64 = ""
+        if v.reporte_id:
+            rep = Reporte.query.get(v.reporte_id)
+            if rep:
+                foto_b64 = rep.foto_b64 or ""
+        resultado.append({
+            "id": v.id,
+            "tienda": v.tienda,
+            "producto": v.producto,
+            "estado": v.estado,
+            "confianza": v.confianza or "",
+            "motivo": v.motivo or "",
+            "costo_usd": v.costo_usd or 0,
+            "foto_b64": foto_b64,
+        })
+    return jsonify(resultado)
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
