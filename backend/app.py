@@ -336,9 +336,6 @@ def cerrar_semana():
             if d.estado != "OK":
                 difs_anteriores.add((d.tienda, d.producto))
 
-    # Mapa de validación IA: reporte_id → estado IA
-    validaciones_ia = {v.reporte_id: v.estado for v in ValidacionIA.query.filter_by(semana=semana).all()}
-
     # Calcular diferencias
     inventario = Inventario.query.all()
     Diferencia.query.filter_by(semana=semana).delete()
@@ -347,16 +344,7 @@ def cerrar_semana():
             continue
         key = (inv.tienda, inv.producto)
         rep = mapa.get(key)
-        estado_ia = validaciones_ia.get(rep.id) if rep else None
-        if rep and rep.foto and estado_ia == "RECHAZADO":
-            # Foto rechazada por IA → cuenta como diferencia
-            estado = "SIN_FOTO"
-            comentario = "Foto rechazada por validación IA"
-        elif rep and rep.foto and estado_ia == "REVISAR":
-            # Pendiente de revisión → justificación
-            estado = "CON_JUSTIFICACION"
-            comentario = "Foto pendiente de revisión IA"
-        elif rep and rep.foto:
+        if rep and rep.foto:
             estado = "OK"
             comentario = rep.comentario or ""
         elif rep and rep.comentario:
@@ -967,27 +955,8 @@ def validacion_decision(val_id):
 
 @app.route("/api/validacion/procesar", methods=["POST"])
 def validacion_procesar():
-    """Lanza el worker en background para procesar fotos PENDIENTE con Claude Haiku."""
-    global _worker_running
-    if not ANTHROPIC_API_KEY:
-        return jsonify({"error": "ANTHROPIC_API_KEY no configurada"}), 500
-
-    data = request.json or {}
-    if data.get("rol") != "supervisor":
-        return jsonify({"error": "No autorizado"}), 403
-
-    pendientes = ValidacionIA.query.filter_by(estado="PENDIENTE").count()
-    if pendientes == 0:
-        return jsonify({"ok": True, "mensaje": "No hay fotos pendientes", "iniciado": False})
-
-    with _worker_lock:
-        if _worker_running:
-            return jsonify({"ok": True, "mensaje": "Worker ya en ejecución", "iniciado": False})
-        _worker_running = True
-
-    t = threading.Thread(target=_procesar_validaciones, daemon=True)
-    t.start()
-    return jsonify({"ok": True, "mensaje": f"Procesando {pendientes} fotos en background", "iniciado": True})
+    """Procesamiento IA desactivado temporalmente — requiere plan Standard en Render."""
+    return jsonify({"error": "Procesamiento IA requiere plan Standard. Contacta al administrador."}), 503
 
 
 if __name__ == "__main__":
