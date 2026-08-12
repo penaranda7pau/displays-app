@@ -996,21 +996,27 @@ function renderResultadosIA() {
 async function decidirValidacion(id, decision, btn) {
   const row = btn ? btn.closest('.tbl-row') : null;
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
-  // Quitar la fila visualmente de inmediato
-  if (row) row.style.opacity = '0.3';
+  if (row) row.style.opacity = '0.4';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
   try {
     const r = await fetch(API + '/api/validacion/' + id + '/decision', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({rol: usuario.rol, decision})
+      body: JSON.stringify({rol: usuario.rol, decision}),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
+    if (!r.ok) { throw new Error('HTTP ' + r.status); }
     const d = await r.json();
     if (d.error) { alert(d.error); if (row) row.style.opacity = '1'; return; }
-    // Quitar la fila de la lista sin recargar todo
     if (row) row.remove();
-    // Actualizar chips en background sin bloquear UI
     cargarProgreso();
   } catch(e) {
-    alert('Error de red — espera 30 segundos e intenta de nuevo');
+    clearTimeout(timeout);
+    const msg = e.name === 'AbortError'
+      ? 'El servidor tardó demasiado. Intenta de nuevo.'
+      : 'Error: ' + e.message;
+    alert(msg);
     if (row) row.style.opacity = '1';
     if (btn) { btn.disabled = false; btn.textContent = decision === 'APROBADO' ? '✓ Correcta' : '✗ Denegar'; }
   }
