@@ -312,9 +312,14 @@ def ver_reportes():
     if tienda:
         q = q.filter_by(tienda=tienda)
     rows = q.order_by(Reporte.id.desc()).all()
+    # Cuando se filtra por tienda (pantalla del display, pocas fotos) se incluye foto_b64.
+    # Sin filtro (panel supervisor, carga masiva) solo se indica si tiene foto para ahorrar bandwidth.
+    include_b64 = bool(tienda)
     return jsonify([{"id": r.id, "tienda": r.tienda, "producto": r.producto,
                      "comentario": r.comentario, "foto": r.foto,
-                     "foto_b64": r.foto_b64 or "", "usuario": r.usuario, "fecha": r.fecha} for r in rows])
+                     "tiene_foto": bool(r.foto_b64 or r.foto),
+                     "foto_b64": (r.foto_b64 or "") if include_b64 else "",
+                     "usuario": r.usuario, "fecha": r.fecha} for r in rows])
 
 @app.route("/api/cerrar-semana", methods=["POST"])
 def cerrar_semana():
@@ -821,13 +826,14 @@ def validacion_resultados():
                 foto_b64 = rep.foto_b64 or ""
         resultado.append({
             "id": v.id,
+            "reporte_id": v.reporte_id,
             "tienda": v.tienda,
             "producto": v.producto,
             "estado": v.estado,
             "confianza": v.confianza or "",
             "motivo": v.motivo or "",
             "costo_usd": v.costo_usd or 0,
-            "foto_b64": foto_b64,
+            "tiene_foto": bool(foto_b64),
         })
     return jsonify(resultado)
 
