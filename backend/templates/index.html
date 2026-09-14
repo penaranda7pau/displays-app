@@ -822,6 +822,8 @@
       <div style="font-size:13px;color:var(--texto);margin-bottom:4px;">Borrar historial de semanas anteriores</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Elimina todas las diferencias, reportes y validaciones de semanas pasadas. Los datos de la semana actual se conservan. No se puede deshacer.</div>
       <button onclick="resetHistorial()" style="background:#7a1a1a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;">🗑 Borrar historial viejo</button>
+      <button onclick="resetSemanaActual()" style="background:#1a4a7a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;margin-top:8px;">↺ Restablecer semana actual</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;">Quita el estado "semana cerrada" para poder seguir reportando en la semana activa.</div>
     </div>
   </div>
 
@@ -1944,6 +1946,21 @@ async function toggleCadena(clave, trackId, knobId, ocultar) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({clave, ocultar})
   });
+}
+
+async function resetSemanaActual() {
+  if (!confirm('¿Restablecer la semana actual? Esto quitará el estado "cerrada" y podrás seguir reportando.')) return;
+  try {
+    const r = await fetch(API + '/api/reset-semana-actual', { method: 'POST' });
+    if (r.ok) {
+      alert('Semana restablecida correctamente.');
+      cargarSistema();
+      cargarSemanaActiva();
+    } else {
+      const d = await r.json().catch(() => ({}));
+      alert('Error: ' + (d.error || r.status));
+    }
+  } catch(e) { alert('Error de red: ' + e.message); }
 }
 
 async function resetHistorial() {

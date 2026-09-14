@@ -416,6 +416,17 @@ def get_ocultar_cadena():
     cfg = Config.query.get(clave)
     return jsonify({"ocultar": cfg.valor == "1" if cfg else False})
 
+@app.route("/api/reset-semana-actual", methods=["POST"])
+def reset_semana_actual():
+    try:
+        sem = semana_actual()
+        Diferencia.query.filter_by(semana=sem).delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/reset-historial", methods=["POST"])
 def reset_historial():
     data = request.get_json(force=True)
