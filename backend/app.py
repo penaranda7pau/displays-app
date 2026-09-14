@@ -424,8 +424,8 @@ def reset_historial():
     try:
         sem = semana_actual()
         Diferencia.query.filter(Diferencia.semana != sem).delete(synchronize_session=False)
-        Reporte.query.filter(Reporte.semana != sem).delete(synchronize_session=False)
         ValidacionIA.query.filter(ValidacionIA.semana != sem).delete(synchronize_session=False)
+        Reporte.query.filter(Reporte.semana != sem).delete(synchronize_session=False)
         Liquidacion.query.filter(Liquidacion.semana != sem).delete(synchronize_session=False)
         db.session.commit()
         return jsonify({"ok": True})
