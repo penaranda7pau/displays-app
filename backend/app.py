@@ -421,13 +421,17 @@ def reset_historial():
     data = request.get_json(force=True)
     if data.get("confirmar") != "BORRAR":
         return jsonify({"error": "Confirmación incorrecta"}), 400
-    sem = semana_actual()
-    Diferencia.query.filter(Diferencia.semana != sem).delete()
-    Reporte.query.filter(Reporte.semana != sem).delete()
-    ValidacionIA.query.filter(ValidacionIA.semana != sem).delete()
-    Liquidacion.query.filter(Liquidacion.semana != sem).delete()
-    db.session.commit()
-    return jsonify({"ok": True})
+    try:
+        sem = semana_actual()
+        Diferencia.query.filter(Diferencia.semana != sem).delete(synchronize_session=False)
+        Reporte.query.filter(Reporte.semana != sem).delete(synchronize_session=False)
+        ValidacionIA.query.filter(ValidacionIA.semana != sem).delete(synchronize_session=False)
+        Liquidacion.query.filter(Liquidacion.semana != sem).delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/tiendas-reportadas")
 def tiendas_reportadas():
