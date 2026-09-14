@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -6,18 +6,28 @@
 <title>CPFR Displays</title>
 <style>
   :root {
-    --azul:    #1a4a6b;
-    --azul2:   #1f618d;
-    --verde:   #1a8a7a;
-    --verde2:  #147060;
-    --rojo:    #e74c3c;
-    --fondo:   #0c1a24;
-    --card:    #142030;
-    --card2:   #1a2d3e;
-    --borde:   #1f3548;
-    --texto:   #e4edf5;
-    --muted:   #7090a8;
+    /* ── Paleta azul CPFR ── */
+    --principal: #304A6E;   /* azul principal */
+    --secundario: #668BCD;  /* azul medio */
+    --claro:     #C0DDEF;   /* azul claro */
+    --neutro:    #C2C6CE;   /* gris neutro */
+    --oscuro:    #0F1C30;   /* azul muy oscuro */
+
+    /* Roles funcionales */
+    --azul:      #304A6E;
+    --azul2:     #668BCD;
+    --verde:     #668BCD;
+    --verde2:    #304A6E;
+    --rojo:      #e05c5c;
+    --amarillo:  #e8a838;
+    --fondo:     #0F1C30;
+    --card:      #162340;
+    --card2:     #1d2e50;
+    --borde:     #2a3f64;
+    --texto:     #e8edf5;
+    --muted:     #8099bb;
   }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', sans-serif; background: var(--fondo); color: var(--texto); min-height: 100vh; }
   .screen { display: none; padding: 16px; max-width: 640px; margin: 0 auto; }
@@ -26,103 +36,96 @@
     #panel { max-width: 1100px; padding: 24px 32px; }
   }
 
-  /* ── LOGIN ────────────────────────────────────────────────────── */
+  /* ── LOGIN ── */
   #login {
     flex-direction: column; align-items: center;
     justify-content: center; min-height: 100vh; padding: 24px;
-    background: linear-gradient(145deg, #0c1a24 0%, #0f2a38 50%, #0d2230 100%);
+    background: linear-gradient(145deg, #0F1C30 0%, #162340 60%, #1d2e50 100%);
   }
   #login.active { display: flex; }
   .login-card {
     background: rgba(255,255,255,0.05);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 20px;
-    padding: 48px 32px 36px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(192,221,239,0.15);
+    border-radius: 24px;
+    padding: 52px 36px 40px;
     width: 100%; max-width: 360px;
-    display: flex; flex-direction: column; align-items: center; gap: 0;
+    display: flex; flex-direction: column; align-items: center;
     box-shadow: 0 24px 64px rgba(0,0,0,0.5);
-    position: relative;
   }
   .login-avatar {
-    width: 74px; height: 74px; border-radius: 50%;
-    background: linear-gradient(135deg, #1a4a6b, #1a8a7a);
+    width: 110px; height: 110px; border-radius: 16px;
+    background: #fff;
     display: flex; align-items: center; justify-content: center;
-    margin-bottom: 20px;
-    box-shadow: 0 8px 24px rgba(30,64,96,0.5);
+    margin-bottom: 22px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+    overflow: hidden;
+    padding: 8px;
+    box-sizing: border-box;
   }
-  .login-avatar svg { width: 36px; height: 36px; stroke: #fff; fill: none; stroke-width: 1.6; }
-  .login-card h1 {
-    font-size: 22px; font-weight: 700; color: #fff; letter-spacing: 0.5px;
-    margin-bottom: 4px;
-  }
-  .login-card .login-sub {
-    font-size: 12px; color: var(--muted); letter-spacing: 3px;
-    text-transform: uppercase; margin-bottom: 32px;
-  }
-  .login-field {
-    width: 100%; position: relative; margin-bottom: 20px;
-  }
+  .login-avatar img { width: 100%; height: 100%; object-fit: contain; }
+  .login-card h1 { font-size: 24px; font-weight: 700; color: #fff; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .login-card .login-sub { font-size: 11px; color: var(--claro); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 36px; opacity: 0.7; }
+  .login-field { width: 100%; position: relative; margin-bottom: 22px; }
   .login-field input {
     width: 100%; background: transparent; border: none;
-    border-bottom: 1.5px solid rgba(255,255,255,0.2);
+    border-bottom: 1.5px solid rgba(192,221,239,0.25);
     color: #fff; font-size: 15px; padding: 10px 10px 10px 36px;
     outline: none; transition: border-color 0.2s;
   }
-  .login-field input:focus { border-bottom-color: var(--verde); }
-  .login-field input::placeholder { color: rgba(255,255,255,0.35); font-size: 14px; }
-  .login-field .field-icon {
-    position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
-    opacity: 0.45; font-size: 16px; pointer-events: none;
-  }
+  .login-field input:focus { border-bottom-color: var(--claro); }
+  .login-field input::placeholder { color: rgba(255,255,255,0.3); font-size: 14px; }
+  .login-field .field-icon { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); opacity: 0.4; font-size: 16px; pointer-events: none; }
   .btn-login {
     width: 100%; padding: 14px; border-radius: 50px; border: none;
-    font-size: 14px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
-    background: linear-gradient(90deg, #1a4a6b, #1a8a7a);
+    font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    background: linear-gradient(90deg, #304A6E, #668BCD);
     color: #fff; cursor: pointer; margin-top: 8px;
-    box-shadow: 0 6px 20px rgba(30,64,96,0.4);
+    box-shadow: 0 6px 20px rgba(48,74,110,0.5);
     transition: opacity 0.2s, transform 0.1s;
   }
   .btn-login:hover { opacity: 0.92; transform: translateY(-1px); }
   .btn-login:active { transform: translateY(0); }
 
-  /* inputs globales (fuera del login) */
-  input[type=text], input[type=password] { width: 100%; padding: 13px; border-radius: 10px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 16px; }
-  .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 15px; font-weight: bold; cursor: pointer; transition: opacity 0.15s; }
-  .btn:hover { opacity: 0.88; }
-  .btn-verde { background: linear-gradient(90deg, #1a4a6b, #1a8a7a); color: #fff; }
-  .btn-azul  { background: var(--azul2); color: #fff; }
-  .btn-gris  { background: var(--card); color: var(--texto); }
-  .error { color: var(--rojo); text-align: center; font-size: 14px; min-height: 20px; }
+  /* inputs globales */
+  input[type=text], input[type=password] { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 15px; transition: border-color 0.2s; }
+  input[type=text]:focus, input[type=password]:focus { outline: none; border-color: var(--secundario); }
+  .btn { width: 100%; padding: 13px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+  .btn:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn-verde { background: linear-gradient(90deg, #304A6E, #668BCD); color: #fff; }
+  .btn-azul  { background: var(--secundario); color: #fff; }
+  .btn-gris  { background: var(--card2); color: var(--texto); border: 1px solid var(--borde); }
+  .error { color: var(--rojo); text-align: center; font-size: 13px; min-height: 20px; }
 
   /* ── HEADER ── */
   .header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
   .header h2 { font-size: 18px; flex: 1; font-weight: 700; letter-spacing: 0.2px; }
   .back { background: var(--card2); border: 1px solid var(--borde); color: var(--texto); padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 18px; transition: background 0.15s; }
-  .back:hover { background: var(--azul); }
+  .back:hover { background: var(--principal); }
 
-  /* ── SCREEN TIENDAS ── */
+  /* ── TIENDAS ── */
   #tiendas { padding-top: 0; }
   .tiendas-hero {
-    background: linear-gradient(135deg, var(--azul) 0%, var(--verde2) 100%);
+    background: linear-gradient(135deg, #304A6E 0%, #1d2e50 100%);
     margin: -16px -16px 16px -16px;
     padding: 28px 20px 20px;
-    border-radius: 0 0 20px 20px;
+    border-radius: 0 0 24px 24px;
+    box-shadow: 0 4px 20px rgba(15,28,48,0.4);
   }
-  .tiendas-hero .hero-title { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 2px; }
-  .tiendas-hero .hero-user  { font-size: 13px; color: rgba(255,255,255,0.65); margin-bottom: 14px; }
+  .tiendas-hero .hero-title { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 3px; }
+  .tiendas-hero .hero-user  { font-size: 13px; color: rgba(192,221,239,0.7); margin-bottom: 16px; }
   .search-wrap { position: relative; }
-  .search-wrap .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; opacity: 0.45; pointer-events: none; }
+  .search-wrap .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; opacity: 0.5; pointer-events: none; }
   .search {
     width: 100%; padding: 12px 12px 12px 40px;
-    border-radius: 12px; border: none;
-    background: rgba(255,255,255,0.12);
+    border-radius: 12px; border: 1px solid rgba(192,221,239,0.2);
+    background: rgba(255,255,255,0.08);
     color: #fff; font-size: 14px;
-    backdrop-filter: blur(4px);
   }
-  .search::placeholder { color: rgba(255,255,255,0.45); }
-  .search:focus { outline: none; background: rgba(255,255,255,0.18); }
+  .search::placeholder { color: rgba(255,255,255,0.4); }
+  .search:focus { outline: none; background: rgba(255,255,255,0.13); }
 
   .subtexto { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
 
@@ -132,131 +135,306 @@
     border-radius: 12px; margin-bottom: 8px; cursor: pointer;
     font-size: 14px; font-weight: 500;
     border: 1px solid var(--borde);
-    border-left: 3px solid var(--azul2);
+    border-left: 3px solid var(--secundario);
     display: flex; align-items: center; justify-content: space-between;
     transition: border-color 0.15s, background 0.15s, transform 0.1s;
   }
-  .tienda-item:hover { border-left-color: var(--verde); background: var(--card2); transform: translateX(2px); }
+  .tienda-item:hover { border-left-color: var(--claro); background: var(--card2); transform: translateX(3px); }
   .tienda-item .tienda-chevron { color: var(--muted); font-size: 16px; }
 
   .tabla-header { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; padding: 6px 4px; border-bottom: 1px solid var(--borde); margin-bottom: 6px; }
-  .tabla-header span { font-size: 11px; color: var(--verde); font-weight: bold; text-align: center; }
+  .tabla-header span { font-size: 11px; color: var(--claro); font-weight: 700; text-align: center; letter-spacing: 0.5px; text-transform: uppercase; }
   .tabla-header span:first-child { text-align: left; }
-  .fila { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; align-items: center; background: var(--card); border-radius: 6px; padding: 8px 4px; margin-bottom: 4px; border: 1px solid var(--borde); }
+  .fila { display: grid; grid-template-columns: 1fr 50px 60px 90px; gap: 4px; align-items: center; background: var(--card); border-radius: 8px; padding: 8px 4px; margin-bottom: 4px; border: 1px solid var(--borde); transition: background 0.15s; }
+  .fila:hover { background: var(--card2); }
   .fila .nombre { font-size: 11px; padding-left: 4px; word-break: break-word; }
-  .fila .cant { font-size: 13px; font-weight: bold; text-align: center; }
+  .fila .cant { font-size: 13px; font-weight: 700; text-align: center; color: var(--claro); }
   .cant.cero { color: var(--rojo); }
-  .btn-foto { padding: 6px; border-radius: 6px; border: none; background: var(--card2); color: var(--texto); cursor: pointer; font-size: 16px; width: 100%; }
-  .btn-foto.ok { background: var(--verde); color: #fff; }
-  .fila textarea { font-size: 11px; padding: 4px; border-radius: 6px; border: 1px solid var(--borde); background: var(--fondo); color: var(--texto); resize: none; height: 38px; width: 100%; }
+  .btn-foto { padding: 6px; border-radius: 8px; border: none; background: var(--card2); color: var(--texto); cursor: pointer; font-size: 16px; width: 100%; transition: background 0.15s; }
+  .btn-foto:hover { background: var(--principal); }
+  .btn-foto.ok { background: var(--principal); color: var(--claro); }
+  .fila textarea { font-size: 11px; padding: 5px; border-radius: 6px; border: 1px solid var(--borde); background: var(--card2); color: var(--texto); resize: none; height: 38px; width: 100%; }
   .btn-enviar { margin-top: 12px; }
   .status-envio { text-align: center; font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 20px; }
 
-  /* TABS */
+  /* ── TABS ── */
   .tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--borde); overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
-  .tab { padding: 8px 9px; font-size: 12px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; flex-shrink: 0; white-space: nowrap; }
-  .tab.activo { color: var(--verde); border-bottom: 2px solid var(--verde); font-weight: bold; }
+  .tab { padding: 9px 11px; font-size: 12px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; flex-shrink: 0; white-space: nowrap; transition: color 0.15s; font-weight: 500; }
+  .tab:hover { color: var(--claro); }
+  .tab.activo { color: var(--claro); border-bottom: 2px solid var(--secundario); font-weight: 700; }
 
-  /* CHIPS */
+  /* ── CHIPS ── */
   .chips { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-  .chip { flex: 1; padding: 10px 8px; border-radius: 8px; text-align: center; font-size: 12px; font-weight: bold; min-width: 80px; }
-  .chip-total { background: var(--card); }
-  .chip-foto  { background: #0a1e10; color: var(--verde); }
-  .chip-rojo  { background: #2e0a0a; color: var(--rojo); }
-  .chip-amarillo { background: #2e2500; color: #f0b040; }
+  .chip { flex: 1; padding: 10px 8px; border-radius: 10px; text-align: center; font-size: 12px; font-weight: 700; min-width: 80px; }
+  .chip-total { background: var(--card2); color: var(--texto); border: 1px solid var(--borde); }
+  .chip-foto  { background: rgba(102,139,205,0.15); color: var(--claro); border: 1px solid rgba(102,139,205,0.3); }
+  .chip-rojo  { background: rgba(224,92,92,0.12); color: var(--rojo); border: 1px solid rgba(224,92,92,0.25); }
+  .chip-amarillo { background: rgba(232,168,56,0.12); color: var(--amarillo); border: 1px solid rgba(232,168,56,0.25); }
 
-  /* TABLA GENERICA */
-  .tbl-head { display: grid; gap: 4px; padding: 6px 4px; border-bottom: 1px solid var(--borde); margin-bottom: 6px; }
-  .tbl-head span { font-size: 11px; color: var(--verde); font-weight: bold; }
-  .tbl-row  { display: grid; gap: 4px; background: var(--card); border-radius: 6px; padding: 8px 4px; margin-bottom: 4px; font-size: 11px; align-items: center; border: 1px solid var(--borde); }
+  /* ── TABLA GENÉRICA ── */
+  .tbl-head { display: grid; gap: 4px; padding: 7px 6px; border-bottom: 2px solid var(--borde); margin-bottom: 6px; }
+  .tbl-head span { font-size: 10px; color: var(--claro); font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
+  .tbl-row  { display: grid; gap: 4px; background: var(--card); border-radius: 8px; padding: 9px 6px; margin-bottom: 4px; font-size: 12px; align-items: center; border: 1px solid var(--borde); transition: background 0.15s; }
+  .tbl-row:hover { background: var(--card2); }
   .tbl-row .muted { color: var(--muted); }
-  .tbl-row .verde { color: var(--verde); text-align: center; }
-  .tbl-row .rojo  { color: var(--rojo); text-align: center; font-weight: bold; }
+  .tbl-row .verde { color: var(--claro); text-align: center; font-weight: 600; }
+  .tbl-row .rojo  { color: var(--rojo); text-align: center; font-weight: 700; }
   .tbl-row .center { text-align: center; }
-  .badge-rojo   { background: #2e0a0a; color: var(--rojo); padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-  .badge-verde  { background: #0a1e10; color: var(--verde); padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-  .badge-gris   { background: var(--card2); color: var(--muted); padding: 2px 7px; border-radius: 4px; font-size: 11px; }
 
-  .btn-refresh { background: var(--card2); border: 1px solid var(--borde); color: var(--texto); padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 14px; transition: background 0.15s; }
-  .btn-refresh:hover { background: var(--azul); }
-  .seccion-vacia { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
-  .btn-cerrar { background: linear-gradient(90deg,#7b0000,#a00000); color: #fff; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: bold; transition: opacity 0.15s; }
+  .badge-rojo     { background: rgba(224,92,92,0.15); color: var(--rojo); padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid rgba(224,92,92,0.3); }
+  .badge-verde    { background: rgba(102,139,205,0.15); color: var(--claro); padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid rgba(102,139,205,0.3); }
+  .badge-gris     { background: var(--card2); color: var(--muted); padding: 3px 8px; border-radius: 6px; font-size: 11px; border: 1px solid var(--borde); }
+
+  .btn-refresh { background: var(--card2); border: 1px solid var(--borde); color: var(--texto); padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 13px; transition: background 0.15s, border-color 0.15s; }
+  .btn-refresh:hover { background: var(--principal); border-color: var(--secundario); }
+  .seccion-vacia { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
+  .btn-cerrar { background: linear-gradient(90deg,#7b1a1a,#a02020); color: #fff; border: none; padding: 10px 18px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 700; transition: opacity 0.15s; box-shadow: 0 4px 12px rgba(160,32,32,0.3); }
   .btn-cerrar:hover { opacity: 0.88; }
 
   /* ── PANEL HERO ── */
   .panel-hero {
-    background: linear-gradient(135deg, var(--azul) 0%, var(--verde2) 100%);
+    background: linear-gradient(135deg, #304A6E 0%, #1d2e50 100%);
     margin: -16px -16px 0 -16px;
-    padding: 20px 20px 0;
-    border-radius: 0 0 20px 20px;
+    padding: 20px 24px 0;
+    border-radius: 0 0 24px 24px;
+    box-shadow: 0 4px 20px rgba(15,28,48,0.4);
   }
   .panel-hero-top { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
   .panel-hero-top h2 { font-size: 18px; font-weight: 700; color: #fff; flex: 1; }
   .panel-semana-badge {
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 20px; padding: 6px 14px;
+    background: rgba(192,221,239,0.12);
+    border: 1px solid rgba(192,221,239,0.25);
+    border-radius: 20px; padding: 6px 16px;
     font-size: 12px; color: #fff;
     margin-bottom: 12px; display: inline-block;
   }
-  .panel-semana-badge strong { color: #a8e6cf; }
+  .panel-semana-badge strong { color: var(--claro); }
   .banner-cierre { display: none; }
 
-  .btn-ver-foto { background: var(--azul2); color: #fff; border: none; border-radius: 6px; padding: 5px 6px; font-size: 11px; cursor: pointer; width: 100%; }
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+  .btn-ver-foto { background: var(--principal); color: var(--claro); border: none; border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer; width: 100%; transition: background 0.15s; font-weight: 600; }
+  .btn-ver-foto:hover { background: var(--secundario); color: #fff; }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
   .modal-overlay.activo { display: flex; }
   .modal-foto-box { max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-  .modal-foto-box img { max-width: 100%; max-height: 78vh; border-radius: 8px; }
-  .modal-cerrar { background: var(--card); color: var(--texto); border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .modal-foto-box img { max-width: 100%; max-height: 78vh; border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
+  .modal-cerrar { background: var(--card2); color: var(--texto); border: 1px solid var(--borde); padding: 10px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; transition: background 0.15s; }
+  .modal-cerrar:hover { background: var(--principal); }
 
-  .modal-instrucciones-box { background: var(--card); border-radius: 12px; padding: 22px; max-width: 340px; width: 100%; border: 1px solid var(--borde); }
-  .modal-instrucciones-box h3 { font-size: 16px; margin-bottom: 12px; color: var(--verde); }
-  .modal-instrucciones-box ul { margin: 0 0 16px 18px; font-size: 13px; line-height: 1.7; color: #d0d3d8; }
+  .modal-instrucciones-box { background: var(--card); border-radius: 16px; padding: 24px; max-width: 340px; width: 100%; border: 1px solid var(--borde); box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+  .modal-instrucciones-box h3 { font-size: 16px; margin-bottom: 12px; color: var(--claro); font-weight: 700; }
+  .modal-instrucciones-box ul { margin: 0 0 16px 18px; font-size: 13px; line-height: 1.8; color: #d0d3d8; }
   .modal-instrucciones-box label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
   .modal-instrucciones-box label input { width: auto; }
 
   .form-usuario { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-  .form-usuario input { padding: 10px; border-radius: 8px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 13px; }
-  .fila-usuario { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; border: 1px solid var(--borde); }
+  .form-usuario input { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--borde); background: var(--card); color: var(--texto); font-size: 13px; }
+  .fila-usuario { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 10px; padding: 12px 14px; margin-bottom: 6px; border: 1px solid var(--borde); }
   .fila-usuario .info { flex: 1; }
-  .fila-usuario .info .nom { font-size: 13px; font-weight: bold; }
+  .fila-usuario .info .nom { font-size: 13px; font-weight: 700; }
   .fila-usuario .info .usr { font-size: 12px; color: var(--muted); }
-  .btn-eliminar-usuario { background: #2e0a0a; color: var(--rojo); border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
-  .btn-ia { padding: 10px 14px; border-radius: 8px; border: none; font-size: 13px; font-weight: bold; cursor: pointer; }
-  .btn-ia-encolar  { background: var(--azul2); color: #fff; }
-  .btn-ia-procesar { background: var(--verde); color: #fff; }
-  .btn-ia-procesar:disabled { background: #2a4a2a; color: #555; cursor: not-allowed; }
-  .chip-ia-pend   { background: #1a1a00; color: #f0b040; }
-  .chip-ia-apro   { background: #0a1e10; color: var(--verde); }
-  .chip-ia-rech   { background: #2e0a0a; color: var(--rojo); }
-  .chip-ia-rev    { background: #0a1a2e; color: #6ab0f0; }
-  .badge-aprobado { background:#0a1e10; color:var(--verde); padding:2px 7px; border-radius:4px; font-size:11px; font-weight:bold; }
-  .badge-rechazado{ background:#2e0a0a; color:var(--rojo);  padding:2px 7px; border-radius:4px; font-size:11px; font-weight:bold; }
-  .badge-revisar  { background:#0a1a2e; color:#6ab0f0;      padding:2px 7px; border-radius:4px; font-size:11px; font-weight:bold; }
-  .badge-pendiente{ background:var(--card2); color:var(--muted); padding:2px 7px; border-radius:4px; font-size:11px; }
+  .btn-eliminar-usuario { background: rgba(224,92,92,0.12); color: var(--rojo); border: 1px solid rgba(224,92,92,0.25); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: 600; transition: background 0.15s; }
+  .btn-eliminar-usuario:hover { background: rgba(224,92,92,0.25); }
+
+  .btn-ia { padding: 10px 16px; border-radius: 10px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+  .btn-ia:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn-ia-encolar  { background: var(--card2); color: var(--claro); border: 1px solid var(--borde); }
+  .btn-ia-procesar { background: linear-gradient(90deg, #304A6E, #668BCD); color: #fff; box-shadow: 0 4px 12px rgba(48,74,110,0.4); }
+  .btn-ia-procesar:disabled { background: var(--card2); color: var(--muted); cursor: not-allowed; box-shadow: none; transform: none; }
+
+  .chip-ia-pend   { background: rgba(232,168,56,0.12); color: var(--amarillo); border: 1px solid rgba(232,168,56,0.25); }
+  .chip-ia-apro   { background: rgba(102,139,205,0.15); color: var(--claro); border: 1px solid rgba(102,139,205,0.3); }
+  .chip-ia-rech   { background: rgba(224,92,92,0.12); color: var(--rojo); border: 1px solid rgba(224,92,92,0.25); }
+  .chip-ia-rev    { background: rgba(192,221,239,0.08); color: var(--neutro); border: 1px solid rgba(192,221,239,0.2); }
+
+  .badge-aprobado  { background: rgba(106,170,79,0.15); color: #6aaa4f; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid rgba(106,170,79,0.35); }
+  .badge-rechazado { background: rgba(224,92,92,0.15); color: var(--rojo); padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid rgba(224,92,92,0.3); }
+  .badge-revisar   { background: rgba(232,168,56,0.12); color: var(--amarillo); padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid rgba(232,168,56,0.25); }
+  .badge-pendiente { background: var(--card2); color: var(--muted); padding: 3px 8px; border-radius: 6px; font-size: 11px; border: 1px solid var(--borde); }
+
+  /* ── MARCA DE AGUA CPFR ── */
+  #cpfr-watermark {
+    position: fixed;
+    bottom: 14px;
+    right: 18px;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0.45;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  #cpfr-watermark:hover { opacity: 0.8; }
+  #cpfr-watermark .wm-logo {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  #cpfr-watermark .wm-logo img { width: 28px; height: 28px; object-fit: contain; }
+  #cpfr-watermark .wm-text {
+    font-size: 11px; font-weight: 700; color: #fff;
+    letter-spacing: 0.5px; line-height: 1.2;
+  }
+  #cpfr-watermark .wm-text span {
+    display: block; font-size: 9px; font-weight: 400;
+    color: rgba(255,255,255,0.6); letter-spacing: 1px;
+  }
+
+  /* ── SIDEBAR ── */
+  #app-layout { display: flex; min-height: 100vh; }
+
+  #sidebar {
+    display: none;
+    width: 220px; min-width: 220px;
+    background: #111f35;
+    border-right: 1px solid #1e3050;
+    flex-direction: column;
+    padding: 0;
+    position: fixed; top: 0; left: 0; bottom: 0;
+    z-index: 50;
+  }
+  #sidebar.visible { display: flex; }
+
+  .sb-logo {
+    padding: 20px 18px 16px;
+    border-bottom: 1px solid #1e3050;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .sb-logo-icon {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: linear-gradient(135deg, #304A6E, #668BCD);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .sb-logo-text { font-size: 13px; font-weight: 700; color: #fff; line-height: 1.2; }
+  .sb-logo-text span { display: block; font-size: 10px; font-weight: 400; color: #8099bb; letter-spacing: 0.5px; }
+
+  .sb-section { padding: 16px 10px 6px; }
+  .sb-section-label { font-size: 10px; font-weight: 700; color: #4a6080; letter-spacing: 1.2px; text-transform: uppercase; padding: 0 8px; margin-bottom: 4px; }
+
+  .sb-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px; border-radius: 8px;
+    font-size: 13px; color: #8099bb; font-weight: 500;
+    cursor: pointer; transition: background 0.15s, color 0.15s;
+    margin-bottom: 2px;
+    background: none; border: none; width: 100%; text-align: left;
+  }
+  .sb-item:hover { background: rgba(102,139,205,0.1); color: #C0DDEF; }
+  .sb-item.activo { background: rgba(102,139,205,0.18); color: #C0DDEF; font-weight: 700; }
+  .sb-item .sb-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+
+  .sb-divider { height: 1px; background: #1e3050; margin: 8px 10px; }
+
+  .sb-bottom {
+    margin-top: auto; padding: 12px 10px;
+    border-top: 1px solid #1e3050;
+  }
+  .sb-user {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+  }
+  .sb-avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: linear-gradient(135deg, #304A6E, #668BCD);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .sb-user-info { flex: 1; overflow: hidden; }
+  .sb-user-info .sb-user-name { font-size: 12px; font-weight: 700; color: #e8edf5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sb-user-info .sb-user-role { font-size: 10px; color: #8099bb; }
+  .sb-logout { background: none; border: none; color: #8099bb; cursor: pointer; font-size: 16px; padding: 4px; border-radius: 6px; transition: color 0.15s, background 0.15s; }
+  .sb-logout:hover { color: var(--rojo); background: rgba(224,92,92,0.1); }
+
+  /* Cuando sidebar está visible, el contenido se desplaza */
+  #main-content { flex: 1; }
+  #sidebar.visible ~ #main-content { margin-left: 220px; }
+
+  @media (max-width: 768px) {
+    #sidebar { width: 100%; min-width: unset; height: auto; position: relative; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid #1e3050; display: none; }
+    #sidebar.visible { display: none; } /* en móvil no mostramos sidebar lateral */
+    #sidebar.visible ~ #main-content { margin-left: 0; }
+  }
 </style>
 </head>
 <body>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon" style="font-size:11px;font-weight:800;color:#fff;letter-spacing:-0.5px;">CT</div>
+    <div class="sb-logo-text">Displays App<span>CPFR Consultor</span></div>
+  </div>
+
+  <div class="sb-section">
+    <div class="sb-section-label">Principal</div>
+    <button class="sb-item activo" onclick="sbNav('tiendas')" id="sb-tiendas">
+       Tiendas
+    </button>
+    <button class="sb-item" onclick="sbNav('panel')" id="sb-panel-item">
+       Panel
+    </button>
+  </div>
+
+  <div class="sb-divider" id="sb-divider-gestion"></div>
+
+  <div class="sb-section" id="sb-seccion-gestion">
+    <div class="sb-section-label">Gestión</div>
+    <button class="sb-item" onclick="sbNavTab('panel','tab-inventario')" id="sb-inventario">
+       Inventario
+    </button>
+    <button class="sb-item" onclick="sbNavTab('panel','tab-ia')" id="sb-ia">
+       Validación
+    </button>
+    <button class="sb-item" onclick="sbNavTab('panel','tab-diferencias')" id="sb-diferencias">
+       Diferencias
+    </button>
+    <button class="sb-item" onclick="sbNavTab('panel','tab-reportes')" id="sb-reportes">
+       Reportes
+    </button>
+  </div>
+
+  <div class="sb-divider" id="sb-divider-sistema"></div>
+
+  <div class="sb-section" id="sb-seccion-sistema">
+    <button class="sb-item" onclick="sbNavTab('panel','tab-sistema');cargarSistema();cargarConfigDiaInicio();" id="sb-sistema">
+       Sistema
+    </button>
+  </div>
+
+  <div class="sb-bottom">
+    <div class="sb-user">
+      <div class="sb-avatar" id="sb-avatar-letra">U</div>
+      <div class="sb-user-info">
+        <div class="sb-user-name" id="sb-nombre-usuario">Usuario</div>
+        <div class="sb-user-role" id="sb-rol-usuario">Promotor</div>
+      </div>
+      <button class="sb-logout" onclick="cerrarSesion()" title="Cerrar sesión">Salir</button>
+    </div>
+  </div>
+</nav>
+
+<div id="main-content">
 
 <!-- LOGIN -->
 <div id="login" class="screen active">
   <div class="login-card">
     <div class="login-avatar">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="8" r="4"/>
-        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
-      </svg>
+      <img src="/static/cpfr_logo.jpg" alt="CPFR">
     </div>
     <h1>CPFR</h1>
     <div class="login-sub">Control de Displays</div>
     <div class="login-field">
-      <span class="field-icon">👤</span>
+      
       <input type="text" id="inp-usuario" placeholder="Usuario" autocomplete="off"
              onkeydown="if(event.key==='Enter')document.getElementById('inp-password').focus()">
     </div>
     <div class="login-field">
-      <span class="field-icon">🔒</span>
+      
       <input type="password" id="inp-password" placeholder="Contraseña"
              onkeydown="if(event.key==='Enter')doLogin()">
     </div>
@@ -270,18 +448,54 @@
   <div class="tiendas-hero">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <div>
-        <div class="hero-title">Seleccionar Tienda</div>
+        <div class="hero-title" id="hero-titulo-tiendas">Seleccionar Cadena</div>
         <div class="hero-user" id="hero-nombre-usuario">—</div>
+        <div id="display-semana-badge" style="font-size:11px;color:var(--claro);margin-top:4px;opacity:0.8;display:none;">Semana: <span id="display-semana-label">—</span></div>
       </div>
-      <button id="btn-panel" class="btn-azul btn" style="width:auto;padding:8px 14px;display:none;border-radius:10px;font-size:13px;" onclick="irPanel()">Panel ⚙</button>
+      <button id="btn-panel" class="btn-azul btn" style="width:auto;padding:8px 14px;display:none;border-radius:10px;font-size:13px;" onclick="irPanel()">Panel</button>
     </div>
-    <div class="search-wrap">
-      <span class="search-icon">🔍</span>
+    <div class="search-wrap" id="buscar-wrap" style="display:none;">
       <input type="text" class="search" id="buscar-tienda" placeholder="Buscar tienda..." oninput="filtrarTiendas()">
     </div>
   </div>
-  <div class="subtexto" id="status-tiendas">Cargando...</div>
-  <div id="lista-tiendas"></div>
+
+  <!-- HUB DE CADENAS -->
+  <div id="hub-cadenas" style="padding:20px 0;display:flex;flex-direction:column;gap:16px;">
+    <div class="cadena-card" onclick="seleccionarCadena('walmart')" id="card-walmart"
+         style="background:var(--card);border:1px solid var(--borde);border-radius:18px;overflow:hidden;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;">
+      <div id="wm-card-img" style="height:160px;overflow:hidden;position:relative;">
+        <img src="/static/walmart.png" style="width:100%;height:100%;object-fit:cover;display:block;">
+      </div>
+      <div style="padding:14px 18px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--texto);">Walmart & aliados</div>
+          <div id="count-walmart" style="font-size:12px;color:var(--muted);margin-top:2px;">Cargando tiendas...</div>
+        </div>
+        <div style="background:#0071ce;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;">Ver tiendas</div>
+      </div>
+    </div>
+
+    <div class="cadena-card" onclick="seleccionarCadena('automercado')" id="card-automercado"
+         style="background:var(--card);border:1px solid var(--borde);border-radius:18px;overflow:hidden;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;">
+      <div id="am-card-img" style="height:160px;overflow:hidden;position:relative;background:#fff;display:flex;align-items:center;justify-content:center;">
+        <img src="/static/automercado.png" style="max-width:70%;max-height:120px;object-fit:contain;display:block;">
+      </div>
+      <div style="padding:14px 18px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--texto);">Auto Mercado</div>
+          <div id="count-automercado" style="font-size:12px;color:var(--muted);margin-top:2px;">Cargando tiendas...</div>
+        </div>
+        <div style="background:#e8281e;color:#fff;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;">Ver tiendas</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LISTA TIENDAS (se muestra al seleccionar cadena) -->
+  <div id="lista-cadena-wrap" style="display:none;">
+    <button onclick="volverHub()" style="background:var(--card2);border:1px solid var(--borde);color:var(--texto);padding:8px 14px;border-radius:10px;cursor:pointer;font-size:16px;margin-bottom:14px;">←</button>
+    <div class="subtexto" id="status-tiendas" style="margin-bottom:8px;">Cargando...</div>
+    <div id="lista-tiendas"></div>
+  </div>
 </div>
 
 <!-- PRODUCTOS -->
@@ -297,6 +511,36 @@
   <div id="lista-productos"></div>
   <button class="btn btn-verde btn-enviar" onclick="enviarTodos()">✓ Enviar todos los reportes</button>
   <div class="status-envio" id="status-envio"></div>
+
+  <!-- SECCIÓN LIQUIDACIÓN -->
+  <div style="margin:24px 0 8px;border-top:1px solid var(--borde);padding-top:20px;">
+    <div style="font-size:13px;font-weight:700;color:var(--amarillo);margin-bottom:4px;">Novedades</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Si hay productos con novedad, elegí el tipo y subí hasta 3 fotos. Opcional.</div>
+    <select id="liq-tipo" onchange="cambiarTipoNovedad()" style="width:100%;box-sizing:border-box;background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:10px;font-size:13px;margin-bottom:10px;">
+      <option value="Liquidación">Liquidación</option>
+      <option value="Vencidos">Vencidos</option>
+      <option value="Dañados">Dañados</option>
+      <option value="Otro">Otro</option>
+    </select>
+    <textarea id="liq-comentario" placeholder="Nombre del producto..." style="width:100%;box-sizing:border-box;background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:10px;font-size:13px;resize:none;height:60px;margin-bottom:12px;"></textarea>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+      <div id="liq-slot-0" onclick="selLiqFoto(0)" style="aspect-ratio:1;background:var(--card2);border:2px dashed var(--borde);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;">
+        <span id="liq-slot-0-label" style="font-size:24px;color:var(--muted);">+</span>
+        <img id="liq-slot-0-img" src="" style="display:none;width:100%;height:100%;object-fit:cover;">
+      </div>
+      <div id="liq-slot-1" onclick="selLiqFoto(1)" style="aspect-ratio:1;background:var(--card2);border:2px dashed var(--borde);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;">
+        <span id="liq-slot-1-label" style="font-size:24px;color:var(--muted);">+</span>
+        <img id="liq-slot-1-img" src="" style="display:none;width:100%;height:100%;object-fit:cover;">
+      </div>
+      <div id="liq-slot-2" onclick="selLiqFoto(2)" style="aspect-ratio:1;background:var(--card2);border:2px dashed var(--borde);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;">
+        <span id="liq-slot-2-label" style="font-size:24px;color:var(--muted);">+</span>
+        <img id="liq-slot-2-img" src="" style="display:none;width:100%;height:100%;object-fit:cover;">
+      </div>
+    </div>
+    <input type="file" id="liq-file-input" accept="image/*" capture="environment" style="display:none;" onchange="liqFotoSeleccionada(this)">
+    <button onclick="guardarLiquidacion()" style="width:100%;background:var(--amarillo);color:#000;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;">Guardar novedad</button>
+    <div id="liq-status" style="font-size:12px;color:var(--claro);margin-top:8px;text-align:center;"></div>
+  </div>
 </div>
 
 <!-- PANEL SUPERVISOR -->
@@ -308,24 +552,27 @@
       <button class="btn-refresh" onclick="cargarPanel()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;">↻</button>
       <button class="btn-cerrar" onclick="cerrarSemana()">Cerrar semana ↓</button>
     </div>
-    <div class="panel-semana-badge">
+    <div class="panel-semana-badge" style="cursor:pointer;" onclick="toggleCambiarSemana()" title="Toca para cambiar semana manualmente">
       Semana activa: <strong id="label-semana">—</strong>
       <span id="label-semana-codigo" style="opacity:0.6;font-size:10px;margin-left:6px;"></span>
     </div>
-    <div id="modo-prueba-bar" style="display:none;background:rgba(0,0,0,0.25);border:1px solid #f0b040;border-radius:8px;padding:8px 12px;margin-bottom:10px;align-items:center;gap:8px;flex-wrap:wrap;">
-      <span style="color:#f0b040;font-size:12px;">🧪 Semana manual:</span>
-      <input id="input-semana-prueba" type="text" placeholder="ej: 2026-S30" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:4px 8px;font-size:12px;width:100px;">
-      <button onclick="setSemana()" style="background:#f0b040;color:#000;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:bold;">Usar</button>
-      <button onclick="setSemana(true)" style="background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">Restablecer</button>
+    <!-- Barra cambio manual: oculta por defecto, aparece si el supervisor la necesita -->
+    <div id="modo-prueba-bar" style="display:none;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 12px;margin-bottom:10px;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="color:var(--claro);font-size:12px;">Cambiar a:</span>
+      <select id="input-semana-prueba" style="background:#1a2a40;color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:4px 8px;font-size:12px;flex:1;min-width:200px;max-width:280px;"></select>
+      <button onclick="setSemana()" style="background:var(--secundario);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:bold;">Usar</button>
+      <button onclick="toggleCambiarSemana()" style="background:rgba(255,255,255,0.1);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">✕</button>
     </div>
     <!-- TABS dentro del hero -->
     <div class="tabs" style="border-bottom:none;margin-bottom:0;">
-      <button class="tab activo" onclick="cambiarTab('tab-reportes',this)">Reportes</button>
+      <button class="tab activo" onclick="cambiarTab('tab-reportes',this);recargarLiquidaciones()">Reportes</button>
       <button class="tab" onclick="cambiarTab('tab-tiendas',this)">Por tienda</button>
       <button class="tab" onclick="cambiarTab('tab-diferencias',this)">Diferencias</button>
       <button class="tab" onclick="cambiarTab('tab-displays',this)">Displays</button>
       <button class="tab" onclick="cambiarTab('tab-usuarios',this)">Usuarios</button>
-      <button class="tab" onclick="cambiarTab('tab-ia',this);cargarProgreso()">Validación IA</button>
+      <button class="tab" onclick="cambiarTab('tab-ia',this);cargarProgreso()">Validación</button>
+      <button class="tab" onclick="cambiarTab('tab-inventario',this)">Inventario</button>
+      <button class="tab" onclick="cambiarTab('tab-sistema',this);cargarSistema();cargarConfigDiaInicio()">Sistema</button>
     </div>
   </div>
   <div id="banner-semana" style="display:none;"></div>
@@ -355,17 +602,15 @@
 
   <!-- TAB DIFERENCIAS -->
   <div id="tab-diferencias" style="display:none;">
-    <div class="subtexto" style="margin-bottom:10px;">Productos con stock en sistema que aún no tienen foto esta semana</div>
+    <div class="subtexto" style="margin-bottom:10px;">Avance de visitas esta semana</div>
     <div class="chips">
-      <div class="chip chip-rojo"  id="chip-dif-sin">0 sin foto</div>
-      <div class="chip chip-amarillo" id="chip-dif-just">0 con justificación</div>
-      <div class="chip chip-foto"  id="chip-dif-ok">0 exhibidos</div>
+      <div class="chip chip-foto"   id="chip-dif-visitadas">0 visitadas</div>
+      <div class="chip chip-rojo"   id="chip-dif-sinvisita">0 sin visita</div>
     </div>
-    <div class="tbl-head" style="grid-template-columns:1fr 1fr 60px 90px;">
-      <span>Tienda</span><span>Producto</span><span>Stock</span><span>Estado</span>
+    <div class="tbl-head" style="grid-template-columns:1fr 90px 70px 70px 90px;">
+      <span>Tienda</span><span>Visita</span><span>Productos</span><span>Con foto</span><span>Con comentario</span>
     </div>
     <div id="lista-diferencias"></div>
-    <div id="lista-sin-visita" style="margin-top:16px;"></div>
   </div>
 
   <!-- TAB CRÍTICOS (renombrado a Displays) ya no aparece, fue reemplazado -->
@@ -378,10 +623,11 @@
 
   <!-- TAB VALIDACIÓN IA -->
   <div id="tab-ia" style="display:none;">
-    <div class="subtexto" style="margin-bottom:10px;">Validación automática de fotos con Claude IA</div>
+    <div class="subtexto" style="margin-bottom:10px;">Validación automática de fotos</div>
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-      <button class="btn-ia btn-ia-encolar" onclick="encolarValidacion()">📋 Encolar fotos</button>
-      <button class="btn-ia btn-ia-procesar" id="btn-procesar-ia" onclick="procesarValidacion()">▶ Procesar con IA</button>
+      <button class="btn-ia btn-ia-encolar" onclick="encolarValidacion()">Encolar fotos</button>
+      <button class="btn-ia btn-ia-procesar" id="btn-procesar-ia" onclick="procesarValidacion()">Procesar fotos</button>
+      <button class="btn-ia btn-ia-encolar" onclick="reprocesarTodo()" style="color:#e8a838;border-color:rgba(232,168,56,0.4);" title="Resetea TODAS las validaciones y las reprocesa con los criterios actualizados">↻ Reprocesar todo</button>
       <button class="btn-refresh" onclick="cargarProgreso()">↻ Actualizar</button>
     </div>
     <div class="chips" style="margin-bottom:14px;">
@@ -392,11 +638,26 @@
     </div>
     <div id="ia-costo" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
 
+    <!-- Card de progreso IA -->
+    <div id="ia-progreso-card" style="display:none;background:var(--card);border:1px solid var(--borde);border-radius:14px;padding:18px 20px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-size:13px;font-weight:600;color:var(--texto);">Procesando...</span>
+        <span id="ia-prog-tiempo" style="font-size:12px;color:var(--muted);">0s</span>
+      </div>
+      <div style="background:var(--card2);border-radius:999px;height:10px;overflow:hidden;margin-bottom:10px;">
+        <div id="ia-prog-barra" style="height:100%;width:0%;background:linear-gradient(90deg,#304A6E,#668BCD);border-radius:999px;transition:width 0.5s ease;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span id="ia-prog-texto" style="font-size:12px;color:var(--muted);">Iniciando...</span>
+        <span id="ia-prog-pct" style="font-size:18px;font-weight:700;color:#C0DDEF;">0%</span>
+      </div>
+    </div>
+
     <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
       <button onclick="filtrarResultados('')"   style="background:var(--card2);color:var(--texto);border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;">Todos</button>
-      <button onclick="filtrarResultados('RECHAZADO')" style="background:#2e0a0a;color:var(--rojo);border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;">Rechazadas</button>
-      <button onclick="filtrarResultados('REVISAR')"   style="background:#0a1a2e;color:#6ab0f0;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;">Revisar</button>
-      <button onclick="filtrarResultados('APROBADO')"  style="background:#0a1e10;color:var(--verde);border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;">Aprobadas</button>
+      <button onclick="filtrarResultados('RECHAZADO')" style="background:rgba(224,92,92,0.12);color:var(--rojo);border:1px solid rgba(224,92,92,0.25);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:600;">Rechazadas</button>
+      <button onclick="filtrarResultados('REVISAR')"   style="background:rgba(232,168,56,0.12);color:#e8a838;border:1px solid rgba(232,168,56,0.25);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:600;">Revisar</button>
+      <button onclick="filtrarResultados('APROBADO')"  style="background:rgba(102,139,205,0.15);color:var(--claro);border:1px solid rgba(102,139,205,0.3);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:600;">Aprobadas</button>
     </div>
 
     <div class="tbl-head" style="grid-template-columns:1fr 1fr 70px 55px 90px;">
@@ -419,6 +680,164 @@
   </div>
 </div>
 
+  <!-- TAB INVENTARIO -->
+  <div id="tab-inventario" style="display:none;">
+    <div class="subtexto" style="margin-bottom:18px;">Cargá los inventarios de la semana. Podés subir uno o ambos. Al presionar <strong>Actualizar Inventario</strong> se reemplaza la semana actual con los productos de los archivos cargados.</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+
+      <!-- Zona Walmart / Mega Super -->
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--texto);margin-bottom:8px;">Walmart · Mega Super · otros</div>
+        <div id="inv-zone-wm" onclick="document.getElementById('inv-file-wm').click()"
+          style="border:2px dashed var(--borde);border-radius:14px;padding:32px 16px;text-align:center;cursor:pointer;background:var(--card);transition:all 0.2s;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          
+          <div id="inv-label-wm" style="font-size:13px;font-weight:600;color:var(--muted);">Arrastrá o hacé clic</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">.xlsx</div>
+          <input type="file" id="inv-file-wm" accept=".xlsx,.xls" style="display:none;" onchange="invSeleccionarArchivo('wm', this.files[0])">
+        </div>
+        <div id="inv-badge-wm" style="display:none;margin-top:8px;font-size:12px;color:var(--claro);text-align:center;font-weight:600;"></div>
+      </div>
+
+      <!-- Zona Automercado -->
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--texto);margin-bottom:8px;">Automercado · Vindi</div>
+        <div id="inv-zone-am" onclick="document.getElementById('inv-file-am').click()"
+          style="border:2px dashed var(--borde);border-radius:14px;padding:32px 16px;text-align:center;cursor:pointer;background:var(--card);transition:all 0.2s;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          
+          <div id="inv-label-am" style="font-size:13px;font-weight:600;color:var(--muted);">Arrastrá o hacé clic</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">.xlsx</div>
+          <input type="file" id="inv-file-am" accept=".xlsx,.xls" style="display:none;" onchange="invSeleccionarArchivo('am', this.files[0])">
+        </div>
+        <div id="inv-badge-am" style="display:none;margin-top:8px;font-size:12px;color:var(--claro);text-align:center;font-weight:600;"></div>
+      </div>
+
+    </div>
+
+    <button id="btn-actualizar-inv" onclick="actualizarInventario()"
+      style="width:100%;padding:14px;border-radius:12px;border:none;background:var(--card2);color:var(--muted);font-size:15px;font-weight:700;cursor:not-allowed;opacity:0.5;">
+      Actualizar Inventario
+    </button>
+    <div style="margin-top:10px;font-size:12px;color:var(--muted);text-align:center;">
+      Borra los registros sin foto de la semana actual y los reemplaza con los productos de los archivos cargados.
+    </div>
+
+    <div id="inv-resultado" style="display:none;margin-top:20px;background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:18px 20px;">
+    </div>
+
+    <div style="margin-top:24px;border-top:1px solid var(--borde);padding-top:16px;">
+      <div style="font-size:12px;font-weight:700;color:var(--amarillo);margin-bottom:10px;">Historial de actualizaciones</div>
+      <div id="inv-historial" style="font-size:12px;color:var(--muted);">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- TAB SISTEMA -->
+  <div id="tab-sistema" style="display:none;">
+    <div class="subtexto" style="margin-bottom:14px;">Estado del sistema y recursos</div>
+
+    <!-- Base de datos -->
+    <div style="background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px;">BASE DE DATOS</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:13px;">Almacenamiento usado</span>
+        <span id="sis-db-size" style="font-size:13px;font-weight:700;color:#C0DDEF;">—</span>
+      </div>
+      <div style="background:var(--card2);border-radius:999px;height:8px;overflow:hidden;margin-bottom:6px;">
+        <div id="sis-db-barra" style="height:100%;width:0%;background:linear-gradient(90deg,#304A6E,#668BCD);border-radius:999px;transition:width 0.5s;"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);" id="sis-db-detalle">— de 1024 MB disponibles</div>
+    </div>
+
+    <!-- IA -->
+    <div style="background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px;">VALIDACIÓN AUTOMÁTICA (acumulado)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="text-align:center;background:var(--card2);border-radius:8px;padding:12px;">
+          <div id="sis-ia-fotos" style="font-size:22px;font-weight:700;color:#C0DDEF;">—</div>
+          <div style="font-size:11px;color:var(--muted);">fotos procesadas</div>
+        </div>
+        <div style="text-align:center;background:var(--card2);border-radius:8px;padding:12px;">
+          <div id="sis-ia-costo" style="font-size:22px;font-weight:700;color:#f0a040;">—</div>
+          <div style="font-size:11px;color:var(--muted);">USD gastados (llave)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Registros -->
+    <div style="background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px;">REGISTROS EN BASE DE DATOS</div>
+      <div id="sis-registros" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+    </div>
+
+    <!-- Configuración de semana -->
+    <div style="background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:14px;">CONFIGURACIÓN DE SEMANA</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <label style="font-size:13px;color:var(--texto);">La semana empieza el</label>
+        <select id="sel-dia-inicio" onchange="guardarDiaInicio()" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">
+          <option value="0">Domingo</option>
+          <option value="1" selected>Lunes</option>
+          <option value="2">Martes</option>
+          <option value="3">Miércoles</option>
+          <option value="4">Jueves</option>
+          <option value="5">Viernes</option>
+          <option value="6">Sábado</option>
+        </select>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px;">Esta configuración define las opciones que aparecen al activar una nueva semana después del cierre.</div>
+    </div>
+
+    <button onclick="cargarSistema()" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;">↻ Actualizar</button>
+
+    <!-- Automercado -->
+    <div id="sis-bloque-automercado" style="display:none;background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:12px;margin-top:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:12px;">TIENDAS VISIBLES PARA DISPLAYS</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <div style="font-size:13px;color:var(--texto);margin-bottom:3px;">Ocultar tiendas Automercado</div>
+          <div style="font-size:11px;color:var(--muted);">Los displays no verán tiendas AM en su lista</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;">
+          <input type="checkbox" id="toggle-ocultar-am" onchange="toggleCadena('ocultar_automercado','toggle-am-track','toggle-am-knob',this.checked)" style="opacity:0;width:0;height:0;">
+          <span id="toggle-am-track" style="position:absolute;inset:0;background:var(--card2);border-radius:999px;border:1px solid var(--borde);transition:0.2s;"></span>
+          <span id="toggle-am-knob" style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#888;border-radius:50%;transition:0.2s;"></span>
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:13px;color:var(--texto);margin-bottom:3px;">Ocultar tiendas Walmart</div>
+          <div style="font-size:11px;color:var(--muted);">Los displays no verán tiendas WM en su lista</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;">
+          <input type="checkbox" id="toggle-ocultar-wm" onchange="toggleCadena('ocultar_walmart','toggle-wm-track','toggle-wm-knob',this.checked)" style="opacity:0;width:0;height:0;">
+          <span id="toggle-wm-track" style="position:absolute;inset:0;background:var(--card2);border-radius:999px;border:1px solid var(--borde);transition:0.2s;"></span>
+          <span id="toggle-wm-knob" style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#888;border-radius:50%;transition:0.2s;"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Reset historial -->
+    <div id="sis-bloque-reset" style="display:none;background:var(--card);border:1px solid rgba(180,40,40,0.3);border-radius:12px;padding:16px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:#dc3c3c;margin-bottom:8px;">ZONA DE PELIGRO</div>
+      <div style="font-size:13px;color:var(--texto);margin-bottom:4px;">Borrar historial de semanas anteriores</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Elimina todas las diferencias, reportes y validaciones de semanas pasadas. Los datos de la semana actual se conservan. No se puede deshacer.</div>
+      <button onclick="resetHistorial()" style="background:#7a1a1a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;">🗑 Borrar historial viejo</button>
+    </div>
+  </div>
+
+<!-- MODAL ACTIVAR SEMANA (aparece después del cierre) -->
+<div class="modal-overlay" id="modal-activar-semana" style="z-index:200;">
+  <div style="background:var(--card);border:1px solid var(--borde);border-radius:16px;padding:24px;width:100%;max-width:420px;max-height:85vh;overflow-y:auto;">
+    <div style="font-size:18px;font-weight:700;color:var(--texto);margin-bottom:4px;">Semana cerrada</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px;">Selecciona la semana que inicia ahora para continuar.</div>
+    <div id="modal-semana-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;"></div>
+    <div style="display:flex;gap:10px;">
+      <button id="btn-usar-semana" onclick="confirmarSemanaSeleccionada()" style="flex:1;background:var(--principal);color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;">Usar semana seleccionada</button>
+      <button onclick="cerrarModalSemana()" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:10px;padding:12px 16px;font-size:14px;cursor:pointer;">Luego</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-foto">
   <div class="modal-foto-box">
     <img id="modal-foto-img" src="" alt="Foto del reporte">
@@ -428,7 +847,7 @@
 
 <div class="modal-overlay" id="modal-instrucciones">
   <div class="modal-instrucciones-box">
-    <h3>📸 Instrucciones para la foto</h3>
+    <h3>Instrucciones para la foto</h3>
     <ul>
       <li>Toma la foto de FRENTE al display</li>
       <li>El producto debe verse claramente y completo</li>
@@ -443,11 +862,23 @@
 <script>
 const API = '';
 let usuario = {};
+
+// Calcula el número de semana ISO 8601 (igual que Python %V / fromisocalendar)
+function isoSemana(fecha) {
+  const d = new Date(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()));
+  const dia = d.getUTCDay() || 7; // lunes=1 ... domingo=7
+  d.setUTCDate(d.getUTCDate() + 4 - dia); // mover al jueves de esta semana
+  const añoISO = d.getUTCFullYear();
+  const inicioAño = new Date(Date.UTC(añoISO, 0, 1));
+  const semNum = Math.ceil((((d - inicioAño) / 86400000) + 1) / 7);
+  return { año: añoISO, semana: semNum, codigo: añoISO + '-S' + String(semNum).padStart(2, '0') };
+}
 let tiendas = [];
 let tiendasReportadas = new Set();
 let filas = [];
 let tiendaActual = '';
 let todosReportes = [];
+let todasLiquidaciones = [];
 let usuariosDB = [];
 
 function mostrar(id) {
@@ -456,7 +887,7 @@ function mostrar(id) {
 }
 
 function cambiarTab(id, btn) {
-  ['tab-reportes','tab-tiendas','tab-diferencias','tab-displays','tab-usuarios','tab-ia'].forEach(t => {
+  ['tab-reportes','tab-tiendas','tab-diferencias','tab-displays','tab-usuarios','tab-ia','tab-inventario','tab-sistema'].forEach(t => {
     const el = document.getElementById(t);
     if (el) el.style.display = 'none';
   });
@@ -464,6 +895,8 @@ function cambiarTab(id, btn) {
   document.getElementById(id).style.display = 'block';
   btn.classList.add('activo');
   if (id === 'tab-diferencias') renderDiferencias();
+  if (id === 'tab-displays')   renderDisplays();
+  if (id === 'tab-usuarios')   cargarUsuarios();
 }
 
 async function doLogin() {
@@ -482,7 +915,17 @@ async function doLogin() {
       document.getElementById('btn-panel').style.display = data.rol === 'supervisor' ? 'block' : 'none';
       document.getElementById('hero-nombre-usuario').textContent = 'Hola, ' + (data.nombre || data.usuario);
       mostrar('tiendas');
+      sbMostrar(data.nombre || data.usuario, data.rol);
       cargarTiendas();
+      // Mostrar semana activa para displays
+      fetch(API + '/api/semana-activa').then(r => r.json()).then(ds => {
+        const badge = document.getElementById('display-semana-badge');
+        const label = document.getElementById('display-semana-label');
+        if (badge && label && ds.semana_activa) {
+          label.textContent = ds.semana_legible || ds.semana_activa;
+          badge.style.display = 'block';
+        }
+      }).catch(() => {});
     } else {
       document.getElementById('login-error').textContent = data.error || 'Error al ingresar';
     }
@@ -499,25 +942,99 @@ async function cargarTiendas() {
   ]);
   tiendas = await rTiendas.json();
   tiendasReportadas = new Set(await rReportadas.json());
-  document.getElementById('status-tiendas').textContent = tiendas.length + ' tiendas';
+  actualizarContadoresCadenas();
+  if (cadenaActual) filtrarTiendas();
+}
+
+let cadenaActual = ''; // 'walmart' | 'automercado'
+
+function esVindi(t) {
+  const n = t.toUpperCase();
+  return n.includes('VINDI') || /^C\d/.test(t);
+}
+function esTiendaWalmart(t) {
+  if (esVindi(t)) return false;
+  if (esTiendaAutomercado(t)) return false;
+  return true;
+}
+function esTiendaAutomercado(t) {
+  if (esVindi(t)) return false;
+  const n = t.toUpperCase();
+  return n.includes('AUTO MERCADO') || n.includes('AUTOMERCADO') || /^A\d/.test(t);
+}
+
+function actualizarContadoresCadenas() {
+  const am = tiendas.filter(esTiendaAutomercado).length;
+  const wm = tiendas.filter(esTiendaWalmart).length;
+  document.getElementById('count-walmart').textContent = wm + ' tiendas';
+  document.getElementById('count-automercado').textContent = am + ' tiendas';
+}
+
+function seleccionarCadena(cadena) {
+  cadenaActual = cadena;
+  document.getElementById('hub-cadenas').style.display = 'none';
+  document.getElementById('lista-cadena-wrap').style.display = 'block';
+  document.getElementById('buscar-wrap').style.display = 'block';
+  document.getElementById('buscar-tienda').value = '';
+  document.getElementById('hero-titulo-tiendas').textContent =
+    cadena === 'walmart' ? 'Walmart & Mega Super' : 'Auto Mercado & Vindi';
   filtrarTiendas();
+}
+
+function volverHub() {
+  cadenaActual = '';
+  document.getElementById('hub-cadenas').style.display = 'flex';
+  document.getElementById('hub-cadenas').style.flexDirection = 'column';
+  document.getElementById('lista-cadena-wrap').style.display = 'none';
+  document.getElementById('buscar-wrap').style.display = 'none';
+  document.getElementById('hero-titulo-tiendas').textContent = 'Seleccionar Cadena';
 }
 
 function filtrarTiendas() {
   const txt = document.getElementById('buscar-tienda').value.toLowerCase();
   const lista = document.getElementById('lista-tiendas');
   lista.innerHTML = '';
-  tiendas.filter(t => t.toLowerCase().includes(txt)).forEach(t => {
+  let fuente = tiendas;
+  if (cadenaActual === 'automercado') fuente = tiendas.filter(esTiendaAutomercado);
+  else if (cadenaActual === 'walmart')  fuente = tiendas.filter(esTiendaWalmart);
+  fuente.filter(t => t.toLowerCase().includes(txt)).forEach(t => {
+    const visitada = tiendasReportadas.has(t);
     const d = document.createElement('div');
     d.className = 'tienda-item';
-    d.innerHTML = `<span>${t}${tiendasReportadas.has(t) ? ' <span style="color:#1a8a7a;font-weight:bold;">✓</span>' : ''}</span><span class="tienda-chevron">›</span>`;
+    d.style.display = 'flex';
+    d.style.alignItems = 'center';
+    d.style.justifyContent = 'space-between';
+    d.innerHTML = `
+      <span style="font-weight:600;">${t}</span>
+      <span style="font-size:12px;font-weight:600;flex-shrink:0;margin-left:10px;color:${visitada ? '#6aaa4f' : '#e05c5c'};">
+        ${visitada ? '✓ Visitada' : '✗ Sin visita'}
+      </span>`;
     d.onclick = () => irProductos(t);
     lista.appendChild(d);
   });
+  document.getElementById('status-tiendas').textContent = fuente.filter(t => t.toLowerCase().includes(txt)).length + ' tiendas';
 }
 
-function irTiendas() { mostrar('tiendas'); }
-function irPanel()   { mostrar('panel'); cargarPanel(); }
+function irTiendas() {
+  mostrar('tiendas');
+  document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('activo'));
+  document.getElementById('sb-tiendas')?.classList.add('activo');
+  // Si había una cadena seleccionada, vuelve a la lista de esa cadena; si no, al hub
+  if (cadenaActual) {
+    document.getElementById('hub-cadenas').style.display = 'none';
+    document.getElementById('lista-cadena-wrap').style.display = 'block';
+    document.getElementById('buscar-wrap').style.display = 'block';
+  } else {
+    document.getElementById('hub-cadenas').style.display = 'flex';
+    document.getElementById('lista-cadena-wrap').style.display = 'none';
+    document.getElementById('buscar-wrap').style.display = 'none';
+  }
+}
+function irPanel() {
+  mostrar('panel'); cargarPanel();
+  document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('activo'));
+  document.getElementById('sb-panel-item')?.classList.add('activo');
+}
 
 async function irProductos(tienda) {
   tiendaActual = tienda;
@@ -526,6 +1043,7 @@ async function irProductos(tienda) {
   document.getElementById('status-envio').textContent = '';
   document.getElementById('lista-productos').innerHTML = '';
   filas = [];
+  limpiarLiquidacion();
   mostrar('productos');
 
   const [rProds, rReps] = await Promise.all([
@@ -535,28 +1053,154 @@ async function irProductos(tienda) {
   const productos = await rProds.json();
   const reportes  = await rReps.json();
 
-  // mapa producto → reporte más reciente con foto
-  const mapaFotos = {};
-  reportes.forEach(r => { if (r.foto_b64) mapaFotos[r.producto] = r.foto_b64; });
+  // mapa producto → reporte existente
+  const mapaReportes = {};
+  reportes.forEach(r => { mapaReportes[r.producto] = r; });
+  const yaReportada = reportes.length > 0;
 
   document.getElementById('status-productos').textContent = productos.length + ' productos';
+  cargarLiquidacionExistente(tienda);
   const lista = document.getElementById('lista-productos');
+
+  // Aviso si ya enviaron reportes antes
+  if (yaReportada) {
+    const aviso = document.createElement('div');
+    aviso.style.cssText = 'background:rgba(100,139,205,0.15);border:1px solid var(--secundario);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:var(--claro);';
+    aviso.innerHTML = 'Ya enviaste reportes para esta tienda. Podés modificar foto o comentario y volver a enviar — solo quedará la versión más reciente.';
+    lista.appendChild(aviso);
+  }
+
   productos.forEach((p, i) => {
-    const fotoExistente = mapaFotos[p.nombre] || '';
-    filas.push({nombre: p.nombre, cantidad: p.cantidad, foto_b64: fotoExistente, comentario: ''});
+    const rep = mapaReportes[p.nombre];
+    const fotoExistente = rep?.foto_b64 || '';
+    const comentarioExistente = rep?.comentario || '';
+    filas.push({nombre: p.nombre, cantidad: p.cantidad, foto_b64: fotoExistente, comentario: comentarioExistente});
     const fila = document.createElement('div');
     fila.className = 'fila';
     const btnFoto = fotoExistente
-      ? `<img src="data:image/jpeg;base64,${fotoExistente}" id="foto-${i}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #00bf8f;" onclick="selFoto(${i})">`
-      : `<button class="btn-foto" id="foto-${i}" onclick="selFoto(${i})">📷</button>`;
+      ? `<img src="data:image/jpeg;base64,${fotoExistente}" id="foto-${i}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #668BCD;" onclick="selFoto(${i})">`
+      : `<button class="btn-foto" id="foto-${i}" onclick="selFoto(${i})">+</button>`;
     fila.innerHTML = `
       <div class="nombre">${p.nombre}</div>
       <div class="cant ${p.cantidad <= 0 ? 'cero' : ''}">${p.cantidad}</div>
       <div id="foto-wrap-${i}">${btnFoto}</div>
-      <textarea placeholder="Comentario..." oninput="filas[${i}].comentario=this.value"></textarea>
+      <textarea placeholder="Comentario..." oninput="filas[${i}].comentario=this.value">${comentarioExistente}</textarea>
     `;
     lista.appendChild(fila);
   });
+}
+
+// --- LIQUIDACIÓN ---
+let liqSlotActual = 0;
+const liqFotos = [null, null, null]; // base64 de cada slot
+
+function selLiqFoto(idx) {
+  liqSlotActual = idx;
+  document.getElementById('liq-file-input').click();
+}
+
+function liqFotoSeleccionada(input) {
+  const file = input.files[0];
+  if (!file) return;
+  comprimirFoto(file, 800, 0.70, dataUrl => {
+    const b64 = dataUrl.split(',')[1];
+    liqFotos[liqSlotActual] = b64;
+    const img = document.getElementById('liq-slot-' + liqSlotActual + '-img');
+    const lbl = document.getElementById('liq-slot-' + liqSlotActual + '-label');
+    img.src = dataUrl;
+    img.style.display = 'block';
+    lbl.style.display = 'none';
+    input.value = '';
+  });
+}
+
+function limpiarLiquidacion(resetTipo = true) {
+  liqFotos[0] = liqFotos[1] = liqFotos[2] = null;
+  [0,1,2].forEach(i => {
+    document.getElementById('liq-slot-' + i + '-img').style.display = 'none';
+    document.getElementById('liq-slot-' + i + '-label').style.display = 'block';
+  });
+  document.getElementById('liq-comentario').value = '';
+  document.getElementById('liq-status').textContent = '';
+  if (resetTipo) document.getElementById('liq-tipo').value = 'Liquidación';
+}
+
+async function cambiarTipoNovedad() {
+  limpiarLiquidacion(false);
+  const tipo = document.getElementById('liq-tipo').value;
+  await cargarLiquidacionExistente(tiendaActual, tipo);
+}
+
+async function guardarLiquidacion() {
+  const comentario = document.getElementById('liq-comentario').value.trim();
+  const tipo = document.getElementById('liq-tipo').value;
+  const tieneFotos = liqFotos.some(f => f);
+  if (!tieneFotos && !comentario) {
+    document.getElementById('liq-status').textContent = 'Agregá al menos una foto o comentario.';
+    return;
+  }
+  document.getElementById('liq-status').textContent = 'Guardando...';
+  try {
+    const r = await fetch(API + '/api/liquidacion', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        tienda: tiendaActual, comentario, tipo,
+        usuario: usuario.nombre || usuario.usuario || '',
+        foto1: liqFotos[0], foto2: liqFotos[1], foto3: liqFotos[2]
+      })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('liq-status').textContent = '✓ ' + tipo + ' guardada';
+      document.getElementById('liq-status').style.color = '#6aaa4f';
+    }
+  } catch(e) {
+    document.getElementById('liq-status').textContent = 'Error al guardar';
+  }
+}
+
+async function cargarLiquidacionExistente(tienda, tipo) {
+  try {
+    const tipoParam = tipo || document.getElementById('liq-tipo').value || 'Liquidación';
+    const r = await fetch(API + '/api/liquidacion?tienda=' + encodeURIComponent(tienda));
+    const lista = await r.json();
+    const liq = lista.find(l => l.tipo === tipoParam);
+    if (!liq) return;
+    document.getElementById('liq-comentario').value = liq.comentario || '';
+    [liq.foto1_b64, liq.foto2_b64, liq.foto3_b64].forEach((f, i) => {
+      if (f) {
+        liqFotos[i] = f;
+        const img = document.getElementById('liq-slot-' + i + '-img');
+        const lbl = document.getElementById('liq-slot-' + i + '-label');
+        img.src = 'data:image/jpeg;base64,' + f;
+        img.style.display = 'block';
+        lbl.style.display = 'none';
+      }
+    });
+    document.getElementById('liq-status').textContent = 'Ya tenés una liquidación guardada para esta tienda.';
+    document.getElementById('liq-status').style.color = 'var(--muted)';
+  } catch(e) {}
+}
+// --- FIN LIQUIDACIÓN ---
+
+function comprimirFoto(file, maxPx, calidad, callback) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else       { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      callback(canvas.toDataURL('image/jpeg', calidad));
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 function selFoto(i) {
@@ -565,13 +1209,11 @@ function selFoto(i) {
   inp.onchange = e => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      filas[i].foto_b64 = ev.target.result.split(',')[1];
+    comprimirFoto(file, 800, 0.70, dataUrl => {
+      filas[i].foto_b64 = dataUrl.split(',')[1];
       const wrap = document.getElementById('foto-wrap-' + i);
-      wrap.innerHTML = `<img src="${ev.target.result}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #00bf8f;" onclick="selFoto(${i})">`;
-    };
-    reader.readAsDataURL(file);
+      wrap.innerHTML = `<img src="${dataUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #668BCD;" onclick="selFoto(${i})">`;
+    });
   };
   if (localStorage.getItem('ocultarInstruccionesFoto') === '1') {
     inp.click();
@@ -607,21 +1249,71 @@ async function enviarTodos() {
     } catch(e) {}
   }
   document.getElementById('status-envio').textContent = '✓ ' + enviados + '/' + filas.length + ' reportes enviados';
-  document.getElementById('status-envio').style.color = '#00bf8f';
+  document.getElementById('status-envio').style.color = '#C0DDEF';
+  // Actualizar estado visitada/sin visita inmediatamente
+  tiendasReportadas.add(tiendaActual);
+  filtrarTiendas();
+}
+
+function toggleCambiarSemana() {
+  const bar = document.getElementById('modo-prueba-bar');
+  if (bar.style.display === 'flex') {
+    bar.style.display = 'none';
+  } else {
+    bar.style.display = 'flex';
+    const rs = document.getElementById('label-semana-codigo').textContent;
+    llenarSelectSemanas(rs);
+  }
+}
+
+function llenarSelectSemanas(semanaActivaCodigo) {
+  const diaInicio = parseInt(localStorage.getItem('semana_dia_inicio') || '1');
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const ahora = new Date();
+  // Normalizar a medianoche local para evitar desfases de timezone
+  const hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  const opciones = [];
+
+  // Calcular inicio de semana actual
+  let inicioRef = new Date(hoy);
+  const diff = (hoy.getDay() - diaInicio + 7) % 7;
+  inicioRef.setDate(hoy.getDate() - diff);
+
+  // 12 semanas atrás hasta la semana actual (sin futuro)
+  for (let i = -12; i <= 0; i++) {
+    const ini = new Date(inicioRef);
+    ini.setDate(inicioRef.getDate() + i * 7);
+    const fin = new Date(ini);
+    fin.setDate(ini.getDate() + 6);
+    const { codigo } = isoSemana(ini);
+    const label = ini.getDate() + ' ' + meses[ini.getMonth()] + ' – ' + fin.getDate() + ' ' + meses[fin.getMonth()] + ' ' + ini.getFullYear();
+    opciones.push({codigo, label, esActual: i === 0});
+  }
+
+  const sel = document.getElementById('input-semana-prueba');
+  sel.innerHTML = opciones.map(op =>
+    `<option value="${op.codigo}" ${op.codigo === semanaActivaCodigo ? 'selected' : ''}>${op.label}</option>`
+  ).join('');
 }
 
 async function setSemana(restablecer) {
-  const semana = restablecer ? '' : document.getElementById('input-semana-prueba').value.trim();
+  let semana = '';
+  if (!restablecer) {
+    semana = document.getElementById('input-semana-prueba').value.trim();
+  }
   const res = await fetch(API + '/api/set-semana', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({semana})});
   await res.json();
-  if (restablecer) document.getElementById('input-semana-prueba').value = '';
   cargarPanel();
+  // Recargar tiendas reportadas para que los checks reflejen la nueva semana
+  const rr = await fetch(API + '/api/tiendas-reportadas');
+  tiendasReportadas = new Set(await rr.json());
+  filtrarTiendas();
 }
 
 async function cargarPanel() {
   // Mostrar barra de pruebas solo para supervisores
   if (usuario.rol === 'supervisor') {
-    document.getElementById('modo-prueba-bar').style.display = 'flex';
+    // La barra de cambio manual solo aparece si el supervisor la activa manualmente
   }
   // Obtener semana activa del backend
   try {
@@ -629,6 +1321,7 @@ async function cargarPanel() {
     const ds = await rs.json();
     document.getElementById('label-semana').textContent = ds.semana_legible || ds.semana_activa || '—';
     document.getElementById('label-semana-codigo').textContent = ds.semana_activa || '';
+    llenarSelectSemanas(ds.semana_activa || '');
     // Advertencia si la semana ya fue cerrada
     let aviso = document.getElementById('aviso-semana-cerrada');
     if (!aviso) {
@@ -639,7 +1332,7 @@ async function cargarPanel() {
       if (hero) hero.after(aviso);
     }
     if (ds.ya_cerrada) {
-      aviso.innerHTML = '⚠️ Esta semana (<b>' + (ds.semana_activa || '') + '</b>) ya fue cerrada. Los reportes que subas aquí no afectarán el historial. Usa <b>Restablecer automático</b> para volver a la semana actual.';
+      aviso.innerHTML = 'Aviso: Esta semana (<b>' + (ds.semana_activa || '') + '</b>) ya fue cerrada. Los reportes que subas aquí no afectarán el historial. Usa <b>Restablecer automático</b> para volver a la semana actual.';
       aviso.style.display = 'block';
     } else {
       aviso.style.display = 'none';
@@ -648,8 +1341,12 @@ async function cargarPanel() {
     document.getElementById('label-semana').textContent = '—';
   }
 
-  const r = await fetch(API + '/api/reportes');
-  todosReportes = await r.json();
+  const [rRep, rLiq] = await Promise.all([
+    fetch(API + '/api/reportes'),
+    fetch(API + '/api/liquidacion')
+  ]);
+  todosReportes = await rRep.json();
+  todasLiquidaciones = await rLiq.json();
   renderReportes();
   renderPorTienda();
   renderCriticos();
@@ -657,12 +1354,58 @@ async function cargarPanel() {
   cargarUsuarios();
 }
 
+function calcularProximaSemana() {
+  const diaInicio = parseInt(localStorage.getItem('semana_dia_inicio') || '1');
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const _ahora = new Date();
+  const hoy = new Date(_ahora.getFullYear(), _ahora.getMonth(), _ahora.getDate());
+  // Inicio de la semana actual
+  const diffActual = (hoy.getDay() - diaInicio + 7) % 7;
+  const iniActual = new Date(hoy);
+  iniActual.setDate(hoy.getDate() - diffActual);
+  const finActual = new Date(iniActual);
+  finActual.setDate(iniActual.getDate() + 6);
+  // Próxima semana
+  const iniProx = new Date(iniActual);
+  iniProx.setDate(iniActual.getDate() + 7);
+  const finProx = new Date(iniProx);
+  finProx.setDate(iniProx.getDate() + 6);
+  const { codigo } = isoSemana(iniProx);
+  const fmt = d => d.getDate() + ' ' + meses[d.getMonth()];
+  return {
+    semanaActual: fmt(iniActual) + ' – ' + fmt(finActual) + ' ' + iniActual.getFullYear(),
+    nombre:  fmt(iniProx) + ' – ' + fmt(finProx) + ' ' + iniProx.getFullYear(),
+    codigo,
+    fecha_ini: iniProx.toISOString().split('T')[0],
+    fecha_fin: finProx.toISOString().split('T')[0]
+  };
+}
+
 async function cerrarSemana() {
-  if (!confirm('¿Cerrar la semana actual?\n\nSe descargará un archivo ZIP con:\n• Excel de diferencias\n• Carpeta de fotos por tienda\n\nLos reportes se borran de la base de datos al cerrar. No se puede deshacer.')) return;
+  const proxima = calcularProximaSemana();
+  const semanaActivaBadge = document.getElementById('label-semana')?.textContent || '';
+  const msg = `¿Cerrar semana activa (${semanaActivaBadge}) y activar ${proxima.nombre}?\n\nSe descargará un ZIP con el Excel de diferencias y las fotos.\nLos reportes se borran al cerrar. No se puede deshacer.`;
+  const ok = await new Promise(res => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    ov.innerHTML = `<div style="background:var(--card);border-radius:14px;padding:24px;max-width:340px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+      <div style="font-size:15px;font-weight:700;color:var(--texto);margin-bottom:12px;">⚠ Cerrar semana</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5;">${msg.replace(/\n/g,'<br>')}</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button id="_cerrar-no" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px;">Cancelar</button>
+        <button id="_cerrar-si" style="background:#a02020;color:#fff;border:none;border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:700;">Sí, cerrar</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    document.getElementById('_cerrar-si').onclick = () => { document.body.removeChild(ov); res(true); };
+    document.getElementById('_cerrar-no').onclick = () => { document.body.removeChild(ov); res(false); };
+  });
+  if (!ok) return;
   const btn = document.querySelector('.btn-cerrar');
   btn.textContent = 'Generando...';
   btn.disabled = true;
   try {
+    // 1. Cerrar semana actual
     const r = await fetch(API + '/api/cerrar-semana', {method: 'POST'});
     if (!r.ok) { alert('Error al cerrar semana: ' + r.status); return; }
     const blob = await r.blob();
@@ -676,13 +1419,154 @@ async function cerrarSemana() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    setTimeout(() => cargarPanel(), 500);
+
+    // 2. Crear la próxima semana en SemanaConfig (si no existe) y activarla
+    btn.textContent = 'Activando semana...';
+    try {
+      await fetch(API + '/api/semanas', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(proxima)
+      });
+    } catch(_) {}
+    const r2 = await fetch(API + '/api/semanas');
+    const lista = await r2.json();
+    const encontrada = lista.find(s => s.codigo === proxima.codigo);
+    if (encontrada) {
+      await fetch(API + '/api/semanas/' + encontrada.id + '/activar', {method: 'POST'});
+    } else {
+      await fetch(API + '/api/set-semana', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({semana: proxima.codigo})
+      });
+    }
+
+    // 3. Actualizar badge y recargar
+    if (document.getElementById('label-semana')) {
+      document.getElementById('label-semana').textContent = proxima.nombre;
+      document.getElementById('label-semana-codigo').textContent = proxima.codigo;
+    }
+    setTimeout(() => cargarPanel(), 400);
   } catch(e) {
     alert('Error de red al cerrar semana');
   } finally {
     btn.textContent = 'Cerrar semana ↓';
     btn.disabled = false;
   }
+}
+
+let _semanaSeleccionada = null;
+
+function generarOpcionesSemanas() {
+  const diaInicio = parseInt(localStorage.getItem('semana_dia_inicio') || '1');
+  const _n = new Date();
+  const hoy = new Date(_n.getFullYear(), _n.getMonth(), _n.getDate());
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const opciones = [];
+  // Encontrar el inicio de la semana actual según el día configurado
+  let inicioSemana = new Date(hoy);
+  const diffDia = (hoy.getDay() - diaInicio + 7) % 7;
+  inicioSemana.setDate(hoy.getDate() - diffDia);
+  // Generar la semana actual + las 3 siguientes
+  for (let i = 0; i < 4; i++) {
+    const ini = new Date(inicioSemana);
+    ini.setDate(inicioSemana.getDate() + i * 7);
+    const fin = new Date(ini);
+    fin.setDate(ini.getDate() + 6);
+    const { codigo } = isoSemana(ini);
+    const año = ini.getFullYear();
+    const nombre = `Semana del ${ini.getDate()} al ${fin.getDate()} de ${meses[fin.getMonth()]} ${año}`;
+    opciones.push({
+      codigo,
+      nombre,
+      fecha_ini: ini.toISOString().split('T')[0],
+      fecha_fin: fin.toISOString().split('T')[0]
+    });
+  }
+  return opciones;
+}
+
+function abrirModalActivarSemana() {
+  _semanaSeleccionada = null;
+  const opciones = generarOpcionesSemanas();
+  const lista = document.getElementById('modal-semana-lista');
+  lista.innerHTML = opciones.map((op, i) => `
+    <div class="sem-opcion" data-idx="${i}" onclick="seleccionarOpcionSemana(${i})"
+      style="background:var(--card2);border:2px solid var(--borde);border-radius:10px;padding:12px 16px;cursor:pointer;transition:border-color 0.15s;">
+      <div style="font-size:14px;font-weight:600;color:var(--texto);">${op.nombre}</div>
+      <div style="font-size:11px;color:var(--muted);">${op.fecha_ini} → ${op.fecha_fin} · ${op.codigo}</div>
+    </div>
+  `).join('');
+  // Preseleccionar la primera (semana actual)
+  seleccionarOpcionSemana(0);
+  document.getElementById('modal-activar-semana').classList.add('activo');
+}
+
+function seleccionarOpcionSemana(idx) {
+  const opciones = generarOpcionesSemanas();
+  _semanaSeleccionada = opciones[idx];
+  document.querySelectorAll('.sem-opcion').forEach((el, i) => {
+    el.style.borderColor = i === idx ? 'var(--secundario)' : 'var(--borde)';
+    el.style.background  = i === idx ? 'var(--card)' : 'var(--card2)';
+  });
+}
+
+async function confirmarSemanaSeleccionada() {
+  if (!_semanaSeleccionada) return;
+  try {
+    // Guardar en SemanaConfig si no existe
+    await fetch(API + '/api/semanas', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(_semanaSeleccionada)
+    });
+    // Buscar el id recién creado y activarlo
+    const r2 = await fetch(API + '/api/semanas');
+    const lista = await r2.json();
+    const encontrada = lista.find(s => s.codigo === _semanaSeleccionada.codigo);
+    if (encontrada) {
+      await fetch(API + '/api/semanas/' + encontrada.id + '/activar', {method: 'POST'});
+    } else {
+      // Fallback: usar set-semana directamente
+      await fetch(API + '/api/set-semana', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({semana: _semanaSeleccionada.codigo})
+      });
+    }
+    // Actualizar badge
+    if (document.getElementById('label-semana')) {
+      document.getElementById('label-semana').textContent = _semanaSeleccionada.nombre;
+      document.getElementById('label-semana-codigo').textContent = _semanaSeleccionada.codigo;
+    }
+    cerrarModalSemana();
+    cargarPanel();
+  } catch(e) { alert('Error al activar semana'); }
+}
+
+function cerrarModalSemana() {
+  document.getElementById('modal-activar-semana').classList.remove('activo');
+  _semanaSeleccionada = null;
+}
+
+async function guardarDiaInicio() {
+  const val = document.getElementById('sel-dia-inicio').value;
+  localStorage.setItem('semana_dia_inicio', val);
+}
+
+function cargarConfigDiaInicio() {
+  const val = localStorage.getItem('semana_dia_inicio') || '1';
+  const sel = document.getElementById('sel-dia-inicio');
+  if (sel) sel.value = val;
+}
+
+function formatearFechaReporte(fecha) {
+  if (!fecha) return '—';
+  // formato: 20260907_143022
+  const m = fecha.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/);
+  if (!m) return fecha;
+  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
 }
 
 function renderReportes() {
@@ -694,25 +1578,89 @@ function renderReportes() {
   document.getElementById('chip-rojo').textContent  = sinStock + ' sin comentario';
   const lista = document.getElementById('lista-reportes');
   lista.innerHTML = '';
-  if (!reps.length) { lista.innerHTML = '<div class="seccion-vacia">No hay reportes aún</div>'; return; }
+  if (!reps.length) {
+    lista.innerHTML = '<div class="seccion-vacia">No hay reportes aún</div>';
+  } else {
   reps.forEach(rep => {
     const d = document.createElement('div');
     d.className = 'tbl-row';
     d.style.gridTemplateColumns = '1fr 70px 100px';
     d.style.alignItems = 'center';
     const fotoHtml = (rep.foto || rep.tiene_foto)
-      ? `<div onclick="verFoto(${rep.id})" style="width:90px;height:90px;border-radius:8px;cursor:pointer;background:var(--card2);border:1px solid var(--borde);display:flex;align-items:center;justify-content:center;font-size:22px;" title="Ver foto">🖼️</div>`
+      ? `<img data-src="${rep.id}" onclick="verFoto(${rep.id})" src="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--borde);background:var(--card2);" title="Ver foto">`
       : '<span class="muted" style="display:block;text-align:center;">—</span>';
     d.innerHTML = `
       <div>
         <div style="font-size:12px;font-weight:600;color:var(--texto);margin-bottom:3px;">${rep.tienda}</div>
         <div style="font-size:11px;color:var(--muted);">${rep.producto}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">${rep.usuario || ''} · ${formatearFechaReporte(rep.fecha)}</div>
+        ${rep.modificaciones > 0 ? `<div style="font-size:10px;color:#e8a838;margin-top:1px;">Modificado ${rep.modificaciones}x</div>` : ''}
       </div>
       <div class="muted" style="font-size:11px;text-align:center;">${rep.comentario || '—'}</div>
       <div style="text-align:center">${fotoHtml}</div>
     `;
     lista.appendChild(d);
   });
+  // Cargar miniaturas en paralelo (lazy, igual que tab IA)
+  lista.querySelectorAll('img[data-src]').forEach(async img => {
+    try {
+      const r = await fetch(API + '/api/reporte/' + img.dataset.src + '/foto');
+      const d = await r.json();
+      if (d.foto_b64) img.src = 'data:image/jpeg;base64,' + d.foto_b64;
+    } catch(e) {}
+  });
+  } // cierre else reps
+
+  // Novedades (liquidación, vencidos, etc.) — sección siempre visible
+  {
+    const liqs = todasLiquidaciones;
+    const sep = document.createElement('div');
+    sep.style.cssText = 'margin-top:20px;border-top:2px solid var(--amarillo);padding-top:14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;';
+    sep.innerHTML = `<span style="font-size:13px;font-weight:700;color:var(--amarillo);">★ Novedades (${liqs.length})</span><button onclick="recargarLiquidaciones()" style="background:none;border:1px solid var(--amarillo);color:var(--amarillo);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">↻ Actualizar</button>`;
+    lista.appendChild(sep);
+    if (!liqs.length) {
+      const empty = document.createElement('div');
+      empty.className = 'seccion-vacia';
+      empty.textContent = 'Sin novedades esta semana';
+      lista.appendChild(empty);
+    } else {
+    liqs.forEach((liq, li) => {
+      const d = document.createElement('div');
+      d.className = 'tbl-row';
+      d.style.cssText = 'grid-template-columns:1fr 72px 72px 72px;align-items:center;border-left:3px solid var(--amarillo);';
+      const mkFoto = (b64, fi) => b64
+        ? `<img src="data:image/jpeg;base64,${b64}" onclick="verLiqFoto(${li},${fi})" style="width:60px;height:60px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--borde);">`
+        : '<span class="muted" style="display:block;text-align:center;font-size:18px;">—</span>';
+      d.innerHTML = `
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--amarillo);margin-bottom:2px;">${liq.tipo || 'Liquidación'}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--texto);">${liq.tienda}</div>
+          <div style="font-size:11px;color:var(--muted);">${liq.comentario || '—'}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">${liq.usuario || ''} · ${formatearFechaReporte(liq.fecha)}</div>
+        </div>
+        <div style="text-align:center">${mkFoto(liq.foto1_b64, 1)}</div>
+        <div style="text-align:center">${mkFoto(liq.foto2_b64, 2)}</div>
+        <div style="text-align:center">${mkFoto(liq.foto3_b64, 3)}</div>
+      `;
+      lista.appendChild(d);
+    });
+    } // cierre else
+  } // cierre bloque novedades
+}
+
+async function recargarLiquidaciones() {
+  try {
+    const r = await fetch(API + '/api/liquidacion');
+    todasLiquidaciones = await r.json();
+    renderReportes();
+  } catch(e) {}
+}
+
+function verLiqFoto(li, fi) {
+  const liq = todasLiquidaciones[li];
+  if (!liq) return;
+  const b64 = fi === 1 ? liq.foto1_b64 : fi === 2 ? liq.foto2_b64 : liq.foto3_b64;
+  if (b64) verFotoB64(b64);
 }
 
 async function verFoto(id) {
@@ -796,78 +1744,77 @@ function renderCriticos() {
 
 async function renderDiferencias() {
   const lista = document.getElementById('lista-diferencias');
-  const listaSV = document.getElementById('lista-sin-visita');
   lista.innerHTML = '<div class="seccion-vacia">Cargando...</div>';
   try {
     const res = await fetch(API + '/api/diferencias-semana');
     const data = await res.json();
-    const difs = data.diferencias || [];
-    const sinVisita = data.tiendas_sin_visita || [];
+    const tiendas = data.tiendas || [];
 
-    document.getElementById('chip-dif-sin').textContent = difs.filter(d=>d.estado==='sin_foto').length + ' sin foto';
-    document.getElementById('chip-dif-just').textContent = difs.filter(d=>d.estado==='justificado').length + ' justificados';
-    document.getElementById('chip-dif-ok').textContent = difs.filter(d=>d.estado==='ok').length + ' exhibidos';
+    const visitadas  = tiendas.filter(t => t.visitada).length;
+    const sinVisita  = tiendas.filter(t => !t.visitada).length;
+    document.getElementById('chip-dif-visitadas').textContent = visitadas + ' visitadas';
+    document.getElementById('chip-dif-sinvisita').textContent = sinVisita + ' sin visita';
 
     lista.innerHTML = '';
-    if (!difs.length) {
-      lista.innerHTML = '<div class="seccion-vacia">Todo al día esta semana ✓</div>';
-    } else {
-      difs.forEach(d => {
-        const row = document.createElement('div');
-        row.className = 'tbl-row';
-        row.style.gridTemplateColumns = '1fr 1fr 60px 90px';
-        const color = d.estado === 'sin_foto' ? 'color:#e74c3c' : d.estado === 'justificado' ? 'color:#f39c12' : 'color:#6aaa4f';
-        row.innerHTML = `
-          <div>${d.tienda}</div>
-          <div style="font-size:12px">${d.producto}</div>
-          <div class="center">${d.stock ?? '—'}</div>
-          <div class="center" style="${color};font-size:11px">${d.estado === 'sin_foto' ? 'Sin foto' : d.estado === 'justificado' ? 'Justificado' : 'Exhibido'}</div>
-        `;
-        lista.appendChild(row);
-      });
+    if (!tiendas.length) {
+      lista.innerHTML = '<div class="seccion-vacia">No hay tiendas en inventario</div>';
+      return;
     }
-
-    listaSV.innerHTML = '';
-    if (sinVisita.length) {
-      listaSV.innerHTML = `<div class="subtexto" style="color:#e74c3c;margin-bottom:6px;">⚠ Tiendas sin visita esta semana (${sinVisita.length})</div>`;
-      sinVisita.forEach(t => {
-        const row = document.createElement('div');
-        row.className = 'tbl-row';
-        row.style.gridTemplateColumns = '1fr';
-        row.innerHTML = `<div>${t}</div>`;
-        listaSV.appendChild(row);
-      });
-    }
+    tiendas.forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'tbl-row';
+      row.style.gridTemplateColumns = '1fr 90px 70px 70px 90px';
+      const visitaIcon = t.visitada
+        ? '<span style="color:#6aaa4f">✓ Visitada</span>'
+        : '<span style="color:#e05c5c">✗ Sin visita</span>';
+      row.innerHTML = `
+        <div>${t.tienda}</div>
+        <div class="center" style="font-size:12px">${visitaIcon}</div>
+        <div class="center">${t.productos}</div>
+        <div class="center">${t.con_foto}</div>
+        <div class="center">${t.con_comentario}</div>
+      `;
+      lista.appendChild(row);
+    });
   } catch(e) {
     lista.innerHTML = '<div class="seccion-vacia">Error al cargar diferencias</div>';
   }
 }
 
-function renderDisplays() {
+async function renderDisplays() {
+  const lista = document.getElementById('lista-displays');
+  lista.innerHTML = '<div class="seccion-vacia">Cargando...</div>';
+  // Asegurar que todosReportes esté cargado
+  if (!todosReportes.length) {
+    try {
+      const res = await fetch(API + '/api/reportes');
+      todosReportes = await res.json();
+    } catch(e) {}
+  }
   const mapa = {};
   todosReportes.forEach(r => {
     const u = r.usuario || 'Desconocido';
     if (!mapa[u]) mapa[u] = {};
-    if (!mapa[u][r.tienda]) mapa[u][r.tienda] = {count: 0, ultima: ''};
+    if (!mapa[u][r.tienda]) mapa[u][r.tienda] = {count: 0, fotos: 0, ultima: ''};
     mapa[u][r.tienda].count++;
+    if (r.tiene_foto || r.foto_b64) mapa[u][r.tienda].fotos++;
     if (r.fecha > mapa[u][r.tienda].ultima) mapa[u][r.tienda].ultima = r.fecha;
   });
-  const lista = document.getElementById('lista-displays');
   lista.innerHTML = '';
-  if (!Object.keys(mapa).length) { lista.innerHTML = '<div class="seccion-vacia">Sin datos</div>'; return; }
+  if (!Object.keys(mapa).length) { lista.innerHTML = '<div class="seccion-vacia">Sin actividad esta semana</div>'; return; }
   Object.entries(mapa).forEach(([disp, tiendasMap]) => {
     const bloque = document.createElement('div');
     bloque.style.marginBottom = '14px';
     const titulo = document.createElement('div');
-    titulo.style.cssText = 'font-size:13px;font-weight:bold;color:#00bf8f;margin-bottom:6px;padding:4px 0;border-bottom:1px solid #2a2f3e;';
+    titulo.style.cssText = 'font-size:13px;font-weight:bold;color:#C0DDEF;margin-bottom:6px;padding:4px 0;border-bottom:1px solid #2a3f64;';
     titulo.textContent = disp + ' — ' + Object.keys(tiendasMap).length + ' tiendas visitadas';
     bloque.appendChild(titulo);
     Object.entries(tiendasMap).sort((a,b) => b[1].ultima.localeCompare(a[1].ultima)).forEach(([tienda, info]) => {
       const row = document.createElement('div');
       row.className = 'tbl-row';
-      row.style.gridTemplateColumns = '1fr 60px 80px';
+      row.style.gridTemplateColumns = '1fr 70px 70px 80px';
       const fecha = info.ultima ? info.ultima.substring(0,8).replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1') : '—';
-      row.innerHTML = `<div>${tienda}</div><div class="center badge-gris">${info.count} rep.</div><div class="muted center">${fecha}</div>`;
+      row.innerHTML = `<div>${tienda}</div><div class="center badge-gris">${info.count} prod.</div><div class="center" style="color:#C0DDEF;font-weight:600;">${info.fotos} fotos</div><div class="muted center">${fecha}</div>`;
       bloque.appendChild(row);
     });
     lista.appendChild(bloque);
@@ -891,7 +1838,7 @@ function renderUsuarios() {
     fila.innerHTML = `
       <div class="info">
         <div class="nom">${u.nombre}</div>
-        <div class="usr">@${u.usuario} &nbsp;·&nbsp; 🔑 ${u.password}</div>
+        <div class="usr">@${u.usuario} &nbsp;·&nbsp; ${u.password}</div>
       </div>
       <button class="btn-eliminar-usuario" onclick="eliminarUsuario(${u.id})">Eliminar</button>
     `;
@@ -926,6 +1873,225 @@ async function agregarUsuario() {
 // ── VALIDACIÓN IA ──────────────────────────────────────────────
 let resultadosIA = [];
 
+async function cargarSistema() {
+  // Ocultar bloques solo-supervisor si el usuario no lo es
+  const esSupervisor = usuario && usuario.rol === 'supervisor';
+  ['sis-bloque-automercado','sis-bloque-reset'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = esSupervisor ? 'block' : 'none';
+  });
+  try {
+    const r = await fetch(API + '/api/sistema/stats?rol=' + usuario.rol);
+    const d = await r.json();
+    if (d.error) return;
+
+    // DB
+    const mb = d.db.size_mb || 0;
+    const pct = Math.min(Math.round((mb / d.db.limit_mb) * 100), 100);
+    const color = pct > 80 ? '#e05c5c' : pct > 60 ? '#e8a838' : '#668BCD';
+    document.getElementById('sis-db-size').textContent = mb + ' MB';
+    document.getElementById('sis-db-size').style.color = color;
+    document.getElementById('sis-db-barra').style.width = pct + '%';
+    document.getElementById('sis-db-barra').style.background = `linear-gradient(90deg,${color},${color})`;
+    document.getElementById('sis-db-detalle').textContent =
+      `${mb} MB de ${d.db.limit_mb} MB disponibles (${pct}%) · ${d.db.semanas_historial} semanas en historial`;
+
+    // IA
+    document.getElementById('sis-ia-fotos').textContent = d.ia.fotos_procesadas;
+    document.getElementById('sis-ia-costo').textContent = '$' + d.ia.costo_usd.toFixed(4);
+
+    // Registros
+    const nombres = {
+      reportes: 'Reportes semana actual', diferencias: 'Diferencias historial',
+      inventario: 'Productos inventario', usuarios: 'Usuarios', validaciones: 'Validaciones IA'
+    };
+    const el = document.getElementById('sis-registros');
+    el.innerHTML = '';
+    Object.entries(d.registros).forEach(([k, v]) => {
+      el.innerHTML += `<div style="background:var(--card2);border-radius:8px;padding:10px;">
+        <div style="font-size:18px;font-weight:700;color:var(--texto);">${v}</div>
+        <div style="font-size:11px;color:var(--muted);">${nombres[k] || k}</div>
+      </div>`;
+    });
+    // Cargar estado toggles cadenas
+    const rAm = await fetch(API + '/api/config/ocultar-cadena?clave=ocultar_automercado');
+    const dAm = await rAm.json();
+    const rWm = await fetch(API + '/api/config/ocultar-cadena?clave=ocultar_walmart');
+    const dWm = await rWm.json();
+    [['toggle-ocultar-am','toggle-am-track','toggle-am-knob', dAm.ocultar],
+     ['toggle-ocultar-wm','toggle-wm-track','toggle-wm-knob', dWm.ocultar]].forEach(([cbId, trackId, knobId, val]) => {
+      const cb = document.getElementById(cbId);
+      const track = document.getElementById(trackId);
+      const knob = document.getElementById(knobId);
+      if (cb) {
+        cb.checked = val;
+        track.style.background = val ? 'var(--principal)' : 'var(--card2)';
+        knob.style.background = val ? '#fff' : '#888';
+        knob.style.left = val ? '23px' : '3px';
+      }
+    });
+  } catch(e) {}
+}
+
+async function toggleCadena(clave, trackId, knobId, ocultar) {
+  const track = document.getElementById(trackId);
+  const knob = document.getElementById(knobId);
+  track.style.background = ocultar ? 'var(--principal)' : 'var(--card2)';
+  knob.style.background = ocultar ? '#fff' : '#888';
+  knob.style.left = ocultar ? '23px' : '3px';
+  await fetch(API + '/api/config/ocultar-cadena', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({clave, ocultar})
+  });
+}
+
+async function resetHistorial() {
+  const ok = await new Promise(res => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    ov.innerHTML = `<div style="background:var(--card);border-radius:14px;padding:24px;max-width:320px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+      <div style="font-size:15px;font-weight:700;color:#dc3c3c;margin-bottom:10px;">🗑 Borrar historial</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5;">Se eliminarán todas las diferencias, reportes y validaciones de semanas anteriores.<br><br>Los datos de la semana actual se conservan.<br><br><b style="color:var(--texto);">Esta acción no se puede deshacer.</b></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button id="_reset-no" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px;">Cancelar</button>
+        <button id="_reset-si" style="background:#7a1a1a;color:#fff;border:none;border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:700;">Sí, borrar</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    document.getElementById('_reset-si').onclick = () => { document.body.removeChild(ov); res(true); };
+    document.getElementById('_reset-no').onclick = () => { document.body.removeChild(ov); res(false); };
+  });
+  if (!ok) return;
+  try {
+    const r = await fetch(API + '/api/reset-historial', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirmar: 'BORRAR'})
+    });
+    if (r.ok) {
+      alert('Historial borrado. La semana actual se conservó.');
+      cargarSistema();
+    } else {
+      alert('Error al borrar historial');
+    }
+  } catch(e) { alert('Error de red'); }
+}
+
+async function cargarSemanas() {
+  try {
+    const r = await fetch(API + '/api/semanas');
+    const semanas = await r.json();
+    const activa = semanas.find(s => s.activa);
+
+    // Badge semana activa
+    if (activa) {
+      document.getElementById('sis-semana-activa-nombre').textContent = activa.nombre;
+      document.getElementById('sis-semana-activa-fechas').textContent =
+        activa.fecha_ini && activa.fecha_fin ? activa.fecha_ini + ' al ' + activa.fecha_fin : activa.codigo;
+    } else {
+      document.getElementById('sis-semana-activa-nombre').textContent = 'Sin semana activa';
+      document.getElementById('sis-semana-activa-fechas').textContent = '—';
+    }
+
+    // Lista
+    const lista = document.getElementById('sis-semanas-lista');
+    if (!semanas.length) {
+      lista.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px;">Sin semanas creadas</div>';
+      return;
+    }
+    lista.innerHTML = semanas.map(s => `
+      <div style="background:var(--card2);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;border:1px solid ${s.activa ? 'var(--secundario)' : 'var(--borde)'};">
+        <div style="width:8px;height:8px;border-radius:50%;background:${s.activa ? '#4caf50' : '#555'};flex-shrink:0;"></div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:var(--texto);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.nombre}</div>
+          <div style="font-size:11px;color:var(--muted);">${s.fecha_ini && s.fecha_fin ? s.fecha_ini + ' al ' + s.fecha_fin : s.codigo}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          ${s.activa
+            ? '<span style="font-size:11px;color:#4caf50;font-weight:600;padding:4px 10px;border:1px solid #4caf5055;border-radius:99px;">ACTIVA</span>'
+            : `<button onclick="activarSemana(${s.id})" style="background:var(--principal);color:#fff;border:none;border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600;">Activar</button>
+               <button onclick="eliminarSemana(${s.id})" style="background:transparent;color:var(--muted);border:1px solid var(--borde);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">✕</button>`
+          }
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    document.getElementById('sis-semanas-lista').innerHTML = '<div style="color:var(--rojo);font-size:13px;padding:8px;">Error cargando semanas</div>';
+  }
+}
+
+async function crearSemana() {
+  const nombre = document.getElementById('sem-nombre').value.trim();
+  const codigoInput = document.getElementById('sem-codigo').value.trim();
+  const fechaIni = document.getElementById('sem-ini').value;
+  const fechaFin = document.getElementById('sem-fin').value;
+  if (!nombre) { alert('Escribe un nombre para la semana'); return; }
+
+  // Generar código automático si está vacío
+  let codigo = codigoInput;
+  if (!codigo) {
+    const base = fechaIni || new Date().toISOString().split('T')[0];
+    const d = new Date(base);
+    codigo = isoSemana(new Date(d.getFullYear(), d.getMonth(), d.getDate())).codigo;
+  }
+
+  try {
+    const r = await fetch(API + '/api/semanas', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({codigo, nombre, fecha_ini: fechaIni, fecha_fin: fechaFin})
+    });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    document.getElementById('sem-nombre').value = '';
+    document.getElementById('sem-codigo').value = '';
+    document.getElementById('sem-ini').value = '';
+    document.getElementById('sem-fin').value = '';
+    cargarSemanas();
+  } catch(e) { alert('Error al crear semana'); }
+}
+
+async function activarSemana(id) {
+  if (!confirm('¿Activar esta semana? Los reportes que se suban a partir de ahora quedarán asociados a ella.')) return;
+  try {
+    const r = await fetch(API + '/api/semanas/' + id + '/activar', {method:'POST'});
+    const d = await r.json();
+    if (d.ok) {
+      // Actualizar badge de semana activa en el header del panel
+      if (document.getElementById('label-semana')) {
+        document.getElementById('label-semana').textContent = d.nombre || d.semana_activa;
+        document.getElementById('label-semana-codigo').textContent = d.semana_activa;
+      }
+      cargarSemanas();
+    }
+  } catch(e) { alert('Error al activar semana'); }
+}
+
+async function eliminarSemana(id) {
+  if (!confirm('¿Eliminar esta semana? Solo se elimina el registro, no los reportes.')) return;
+  try {
+    const r = await fetch(API + '/api/semanas/' + id, {method:'DELETE'});
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    cargarSemanas();
+  } catch(e) { alert('Error al eliminar semana'); }
+}
+
+async function reprocesarTodo() {
+  if (!confirm('¿Resetear TODAS las validaciones de esta semana y reprocesarlas con los criterios actualizados?\n\nEsto borrará los resultados actuales.')) return;
+  try {
+    const r = await fetch(API + '/api/validacion/encolar', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({rol: usuario.rol, forzar: true})
+    });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    alert('✓ ' + d.encolados + ' fotos puestas en cola. Ahora presioná "Procesar fotos".');
+    cargarProgreso();
+  } catch(e) { alert('Error de red'); }
+}
+
 async function encolarValidacion() {
   try {
     const r = await fetch(API + '/api/validacion/encolar', {
@@ -943,6 +2109,29 @@ async function procesarValidacion() {
   const btn = document.getElementById('btn-procesar-ia');
   btn.disabled = true;
   btn.textContent = '⏳ Procesando...';
+
+  const card  = document.getElementById('ia-progreso-card');
+  const barra = document.getElementById('ia-prog-barra');
+  const pct   = document.getElementById('ia-prog-pct');
+  const texto = document.getElementById('ia-prog-texto');
+  const tEl   = document.getElementById('ia-prog-tiempo');
+
+  let totalInicial = 0, inicioMs = Date.now(), intervalo = null;
+
+  function actualizarCard(d) {
+    const total     = d.total || 1;
+    const procesadas = d.procesadas || 0;
+    const porcentaje = Math.round((procesadas / total) * 100);
+    const segs       = Math.round((Date.now() - inicioMs) / 1000);
+    barra.style.width = porcentaje + '%';
+    pct.textContent   = porcentaje + '%';
+    tEl.textContent   = segs + 's';
+    const pend = (d.pendientes || 0) + (d.procesando || 0);
+    texto.textContent = pend > 0
+      ? `${procesadas} procesadas · ${pend} pendientes`
+      : `✓ Completado — ${procesadas} fotos analizadas`;
+  }
+
   try {
     const r = await fetch(API + '/api/validacion/procesar', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -950,19 +2139,44 @@ async function procesarValidacion() {
     });
     const d = await r.json();
     if (d.error) { alert(d.error); return; }
-    alert(d.mensaje);
-    // Actualizar progreso cada 5s mientras procesa
+
+    // Obtener total inicial
+    const rp = await fetch(API + '/api/validacion/progreso');
+    const dp = await rp.json();
+    totalInicial = dp.total || 0;
+    card.style.display = 'block';
+    barra.style.width = '0%';
+    pct.textContent = '0%';
+    texto.textContent = 'Iniciando...';
+    tEl.textContent = '0s';
+
     let checks = 0;
-    const intervalo = setInterval(async () => {
-      await cargarProgreso();
+    intervalo = setInterval(async () => {
       checks++;
-      const pend = parseInt(document.getElementById('chip-ia-pend').textContent);
-      if (pend === 0 || checks > 60) clearInterval(intervalo);
-    }, 5000);
-  } catch(e) { alert('Error de red'); }
-  finally {
+      const rr = await fetch(API + '/api/validacion/progreso');
+      const dd = await rr.json();
+      actualizarCard(dd);
+      document.getElementById('chip-ia-pend').textContent = (dd.pendientes + dd.procesando) + ' pendientes';
+      document.getElementById('chip-ia-apro').textContent = dd.aprobados  + ' aprobadas';
+      document.getElementById('chip-ia-rech').textContent = dd.rechazados + ' rechazadas';
+      document.getElementById('chip-ia-rev').textContent  = dd.revisar    + ' revisar';
+      document.getElementById('ia-costo').textContent = dd.total
+        ? `Total procesadas: ${dd.procesadas}/${dd.total} · Costo: $${dd.costo_usd.toFixed(4)} USD`
+        : '';
+      const pend = (dd.pendientes || 0) + (dd.procesando || 0);
+      if (pend === 0 || checks > 120) {
+        clearInterval(intervalo);
+        actualizarCard(dd);
+        await cargarResultadosIA('');
+        setTimeout(() => { card.style.display = 'none'; }, 4000);
+        btn.disabled = false;
+        btn.textContent = 'Procesar fotos';
+      }
+    }, 3000);
+  } catch(e) {
+    alert('Error de red');
     btn.disabled = false;
-    btn.textContent = '▶ Procesar con IA';
+    btn.textContent = 'Procesar fotos';
   }
 }
 
@@ -1013,25 +2227,89 @@ function renderResultadosIA() {
       ERROR:     '<span class="badge-rechazado">Error</span>',
     };
     const badge = badgeMap[v.estado] || v.estado;
+    // Miniaturas para todos los que tienen foto
+    const borderColor = v.estado === 'RECHAZADO' ? '#e05c5c' : v.estado === 'REVISAR' ? '#e8a838' : '#6aaa4f';
     const fotoHtml = v.tiene_foto && v.reporte_id
-      ? `<div onclick="verFoto(${v.reporte_id})" style="width:52px;height:52px;border-radius:6px;cursor:pointer;background:var(--card2);border:1px solid var(--borde);display:flex;align-items:center;justify-content:center;font-size:18px;" title="${v.motivo || 'Ver foto'}">🖼️</div>`
+      ? `<img id="miniatura-${v.reporte_id}" src="" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid ${borderColor};background:var(--card2);" onclick="verFoto(${v.reporte_id})" title="${v.motivo || 'Ver foto'}" data-src="${v.reporte_id}">`
       : '<span class="muted">—</span>';
-    const accionHtml = (v.estado === 'REVISAR' || v.estado === 'RECHAZADO')
-      ? `<div style="display:flex;flex-direction:column;gap:3px;">
+    let accionHtml;
+    if (v.estado === 'REVISAR') {
+      accionHtml = `<div style="display:flex;flex-direction:column;gap:3px;">
            <button onclick="decidirValidacion(${v.id},'APROBADO',this)" style="background:#0a3a1a;color:#6aaa4f;border:none;border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✓ Correcta</button>
-           <button onclick="decidirValidacion(${v.id},'RECHAZADO',this)" style="background:#2e0a0a;color:#f04040;border:none;border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✗ Denegar</button>
-         </div>`
-      : '<span class="muted" style="font-size:10px;text-align:center;display:block;">—</span>';
+           <button onclick="decidirValidacion(${v.id},'RECHAZADO',this)" style="background:rgba(224,92,92,0.15);color:#e05c5c;border:1px solid rgba(224,92,92,0.3);border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✗ Denegar</button>
+         </div>`;
+    } else if (v.estado === 'RECHAZADO') {
+      accionHtml = `<div style="text-align:center;">
+           <span onclick="toggleBotonesRechazo(this,${v.id})" style="font-size:10px;color:var(--muted);cursor:pointer;text-decoration:underline;">modificar</span>
+           <div class="botones-rechazo" style="display:none;flex-direction:column;gap:3px;margin-top:4px;">
+             <button onclick="decidirValidacion(${v.id},'APROBADO',this)" style="background:#0a3a1a;color:#6aaa4f;border:none;border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✓ Correcta</button>
+             <button onclick="decidirValidacion(${v.id},'RECHAZADO',this)" style="background:rgba(224,92,92,0.15);color:#e05c5c;border:1px solid rgba(224,92,92,0.3);border-radius:4px;padding:3px 6px;font-size:10px;cursor:pointer;font-weight:bold;">✗ Incorrecta</button>
+           </div>
+         </div>`;
+    } else if (v.estado === 'ERROR') {
+      accionHtml = `<button onclick="reintentarValidacion(${v.id},this)" style="background:rgba(232,168,56,0.15);color:var(--amarillo);border:1px solid rgba(232,168,56,0.3);border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;font-weight:bold;">↻ Reintentar</button>`;
+    } else {
+      accionHtml = '<span class="muted" style="font-size:10px;text-align:center;display:block;">—</span>';
+    }
+    row.dataset.estadoOriginal = v.estado;
     row.innerHTML = `
       <div style="font-size:11px">${v.tienda}</div>
       <div style="font-size:11px" title="${v.motivo || ''}">${v.producto}</div>
-      <div style="text-align:center">${badge}</div>
+      <div style="text-align:center" data-badge>${badge}</div>
       <div style="text-align:center">${fotoHtml}</div>
-      <div>${accionHtml}</div>
+      <div data-accion>${accionHtml}</div>
     `;
     lista.appendChild(row);
   });
+  // Cargar miniaturas de fotos que necesitan revisión
+  document.querySelectorAll('img[data-src]').forEach(async img => {
+    try {
+      const r = await fetch(API + '/api/reporte/' + img.dataset.src + '/foto');
+      const d = await r.json();
+      if (d.foto_b64) img.src = 'data:image/jpeg;base64,' + d.foto_b64;
+    } catch(e) {}
+  });
 }
+async function deshacerValidacion(id, estadoOriginal, el) {
+  el.textContent = '...';
+  try {
+    const r = await fetch(API + '/api/validacion/' + id + '/decision', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({rol: usuario.rol, decision: estadoOriginal})
+    });
+    const d = await r.json();
+    if (!d.ok) { el.textContent = '↩ deshacer'; return; }
+    // Recargar la lista para restaurar los botones originales
+    await cargarResultadosIA('');
+  } catch(e) { el.textContent = '↩ deshacer'; }
+}
+
+function toggleBotonesRechazo(el, id) {
+  const contenedor = el.nextElementSibling;
+  const visible = contenedor.style.display === 'flex';
+  contenedor.style.display = visible ? 'none' : 'flex';
+}
+
+async function reintentarValidacion(id, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const r = await fetch(API + '/api/validacion/' + id + '/reintentar', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      btn.textContent = '⏳ En cola';
+      setTimeout(() => cargarProgreso(), 2000);
+    } else {
+      btn.disabled = false;
+      btn.textContent = '↻ Reintentar';
+      alert(d.error || 'Error al reintentar');
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '↻ Reintentar';
+  }
+}
+
 async function decidirValidacion(id, decision, btn) {
   const row = btn ? btn.closest('.tbl-row') : null;
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
@@ -1048,8 +2326,35 @@ async function decidirValidacion(id, decision, btn) {
     if (!r.ok) { throw new Error('HTTP ' + r.status); }
     const d = await r.json();
     if (d.error) { alert(d.error); if (row) row.style.opacity = '1'; return; }
-    if (row) row.remove();
-    cargarProgreso();
+    // Actualizar badge y botones en la fila sin recargar toda la lista
+    if (row) {
+      row.style.opacity = '1';
+      const badgeEl = row.querySelector('[data-badge]');
+      if (badgeEl) {
+        if (decision === 'APROBADO') {
+          badgeEl.innerHTML = '<span class="badge-aprobado">✓ OK</span>';
+        } else {
+          badgeEl.innerHTML = '<span class="badge-rechazado">✗ No</span>';
+        }
+      }
+      const accionEl = row.querySelector('[data-accion]');
+      if (accionEl) {
+        const estadoAnterior = row.dataset.estadoOriginal || 'REVISAR';
+        accionEl.innerHTML = `<div style="text-align:center;">
+          <span style="font-size:10px;color:var(--muted);display:block;">✓ Revisado</span>
+          <span onclick="deshacerValidacion(${id},'${estadoAnterior}',this)" style="font-size:10px;color:#f0a040;cursor:pointer;text-decoration:underline;">↩ deshacer</span>
+        </div>`;
+      }
+    }
+    // Actualizar chips de conteo
+    try {
+      const rp = await fetch(API + '/api/validacion/progreso');
+      const dp = await rp.json();
+      document.getElementById('chip-ia-pend').textContent = (dp.pendientes + dp.procesando) + ' pendientes';
+      document.getElementById('chip-ia-apro').textContent = dp.aprobados  + ' aprobadas';
+      document.getElementById('chip-ia-rech').textContent = dp.rechazados + ' rechazadas';
+      document.getElementById('chip-ia-rev').textContent  = dp.revisar    + ' revisar';
+    } catch(e) {}
   } catch(e) {
     clearTimeout(timeout);
     const msg = e.name === 'AbortError'
@@ -1073,6 +2378,173 @@ async function eliminarUsuario(id) {
   if (!data.ok) { alert(data.error || 'Error al eliminar'); return; }
   cargarUsuarios();
 }
+
+// ── Inventario dos zonas ─────────────────────────────────────────────────────
+const _invArchivos = { wm: null, am: null };
+
+function invSeleccionarArchivo(zona, file) {
+  if (!file) return;
+  _invArchivos[zona] = file;
+  const label = document.getElementById('inv-label-' + zona);
+  const badge = document.getElementById('inv-badge-' + zona);
+  const zone  = document.getElementById('inv-zone-' + zona);
+  label.textContent = '' + file.name;
+  label.style.color = 'var(--verde)';
+  zone.style.borderColor = 'var(--verde)';
+  zone.style.background  = 'var(--card)';
+  badge.style.display = 'block';
+  badge.textContent = file.name;
+  // Habilitar botón si hay al menos un archivo
+  invActualizarBoton();
+}
+
+function invActualizarBoton() {
+  const btn = document.getElementById('btn-actualizar-inv');
+  const alguno = _invArchivos.wm || _invArchivos.am;
+  btn.style.opacity     = alguno ? '1'           : '0.5';
+  btn.style.cursor      = alguno ? 'pointer'     : 'not-allowed';
+  btn.style.background  = alguno ? 'var(--verde)': 'var(--card2)';
+  btn.style.color       = alguno ? '#0d1f30'     : 'var(--muted)';
+}
+
+function invInitDropZone(zona) {
+  const zone = document.getElementById('inv-zone-' + zona);
+  if (!zone || zone._dropReady) return;
+  zone._dropReady = true;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.background = 'var(--card2)'; });
+  zone.addEventListener('dragleave', () => { zone.style.background = 'var(--card)'; });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.style.background = 'var(--card)';
+    const file = e.dataTransfer.files[0];
+    if (file) invSeleccionarArchivo(zona, file);
+  });
+}
+
+(function() {
+  function init() { invInitDropZone('wm'); invInitDropZone('am'); }
+  document.addEventListener('DOMContentLoaded', init);
+  const orig = window.cambiarTab;
+  window.cambiarTab = function(id, btn) { orig && orig(id, btn); if (id === 'tab-inventario') { init(); cargarHistorialInv(); } };
+})();
+
+async function actualizarInventario() {
+  if (!_invArchivos.wm && !_invArchivos.am) return;
+  const resultado = document.getElementById('inv-resultado');
+  resultado.style.display = 'block';
+  resultado.innerHTML = '<span style="color:var(--muted);">⏳ Actualizando inventario...</span>';
+
+  const fd = new FormData();
+  if (_invArchivos.wm) fd.append('archivo_wm', _invArchivos.wm);
+  if (_invArchivos.am) fd.append('archivo_am', _invArchivos.am);
+
+  try {
+    const res  = await fetch('/api/actualizar-inventario', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) {
+      resultado.innerHTML = `<span style="color:var(--rojo);">Error: ${data.error}</span>`;
+      return;
+    }
+    resultado.innerHTML = `
+      <div style="font-size:15px;font-weight:700;color:var(--verde);margin-bottom:12px;">Inventario actualizado correctamente</div>
+      <div style="font-size:13px;color:var(--texto);margin-bottom:4px;">Cantidades actualizadas: <strong style="color:var(--verde);">${data.actualizados}</strong></div>
+      <div style="font-size:13px;color:var(--texto);margin-bottom:12px;">Productos nuevos agregados: <strong style="color:var(--verde);">${data.nuevos}</strong></div>
+      <div style="font-size:12px;color:var(--muted);">Las fotos y comentarios existentes no fueron modificados.<br>Los productos con inventario en cero no contarán como diferencia al cerrar la semana.</div>`;
+    cargarPanel();
+    cargarTiendas();
+    cargarHistorialInv();
+  } catch(e) {
+    resultado.innerHTML = `<span style="color:var(--rojo);">Error de conexión: ${e.message}</span>`;
+  }
+}
+
+async function cargarHistorialInv() {
+  const el = document.getElementById('inv-historial');
+  if (!el) return;
+  try {
+    const r = await fetch(API + '/api/inventario-historial');
+    const d = await r.json();
+    if (d.ultima) {
+      const m = d.ultima.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+      const legible = m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}:${m[6]}` : d.ultima;
+      el.innerHTML = `<span style="color:var(--texto);">Última actualización: <strong>${legible}</strong></span>`;
+    } else {
+      el.textContent = 'Sin actualizaciones registradas.';
+    }
+  } catch(e) {
+    el.textContent = 'No se pudo cargar el historial.';
+  }
+}
+
+// ── SIDEBAR ──────────────────────────────────────────────────
+function sbMostrar(nombreUsuario, rol) {
+  document.getElementById('sidebar').classList.add('visible');
+  const inicial = (nombreUsuario || 'U')[0].toUpperCase();
+  document.getElementById('sb-avatar-letra').textContent = inicial;
+  document.getElementById('sb-nombre-usuario').textContent = nombreUsuario || 'Usuario';
+  const esAdmin = (rol === 'admin' || rol === 'supervisor');
+  document.getElementById('sb-rol-usuario').textContent = esAdmin ? 'Administrador' : 'Promotor';
+  // Mostrar sección de gestión solo a admins/supervisores
+  document.getElementById('sb-seccion-gestion').style.display = esAdmin ? 'block' : 'none';
+  document.getElementById('sb-divider-gestion').style.display = esAdmin ? 'block' : 'none';
+  document.getElementById('sb-seccion-sistema').style.display = esAdmin ? 'block' : 'none';
+  document.getElementById('sb-divider-sistema').style.display = esAdmin ? 'block' : 'none';
+  document.getElementById('sb-panel-item').style.display = esAdmin ? 'block' : 'none';
+}
+function sbOcultar() {
+  document.getElementById('sidebar').classList.remove('visible');
+}
+function cerrarSesion() {
+  sbOcultar();
+  usuario = null;
+  mostrar('login');
+}
+function sbNav(destino) {
+  document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('activo'));
+  document.getElementById('sb-' + destino)?.classList.add('activo');
+  // Reutiliza la lógica existente de pantallas
+  if (destino === 'tiendas') {
+    mostrarPantalla('tiendas');
+  } else if (destino === 'panel') {
+    mostrarPantalla('panel');
+  }
+}
+function sbNavTab(pantalla, tabId) {
+  sbNav(pantalla);
+  // Espera a que la pantalla esté visible y luego activa el tab
+  setTimeout(() => {
+    const tabBtn = document.querySelector(`.tab[onclick*="${tabId}"]`);
+    if (tabBtn) cambiarTab(tabId, tabBtn);
+    // Resalta el item del sidebar
+    document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('activo'));
+    const tabMap = {
+      'tab-inventario': 'sb-inventario',
+      'tab-ia': 'sb-ia',
+      'tab-diferencias': 'sb-diferencias',
+      'tab-reportes': 'sb-reportes',
+      'tab-sistema': 'sb-sistema',
+    };
+    if (tabMap[tabId]) document.getElementById(tabMap[tabId])?.classList.add('activo');
+  }, 50);
+}
+function mostrarPantalla(id) {
+  ['login','tiendas','panel'].forEach(s => {
+    const el = document.getElementById(s);
+    if (el) el.classList.remove('active');
+  });
+  const target = document.getElementById(id);
+  if (target) target.classList.add('active');
+}
 </script>
+
+<!-- MARCA DE AGUA CPFR -->
+<div id="cpfr-watermark">
+  <div class="wm-logo">
+    <img src="/static/cpfr_logo.jpg" alt="CPFR" style="width:28px;height:28px;object-fit:contain;border-radius:4px;">
+  </div>
+  <div class="wm-text">CPFR<span>ADVISOR</span></div>
+</div>
+
+</div><!-- #main-content -->
 </body>
 </html>
