@@ -1953,9 +1953,8 @@ async function resetSemanaActual() {
   try {
     const r = await fetch(API + '/api/reset-semana-actual', { method: 'POST' });
     if (r.ok) {
-      alert('Semana restablecida correctamente.');
+      alert('Semana restablecida. Recarga la página para ver el cambio.');
       cargarSistema();
-      cargarSemanaActiva();
     } else {
       const d = await r.json().catch(() => ({}));
       alert('Error: ' + (d.error || r.status));
