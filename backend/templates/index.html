@@ -814,6 +814,17 @@
           <span id="toggle-wm-knob" style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#888;border-radius:50%;transition:0.2s;"></span>
         </label>
       </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+        <div>
+          <div style="font-size:13px;color:var(--texto);margin-bottom:3px;">Ocultar tiendas Vindi</div>
+          <div style="font-size:11px;color:var(--muted);">Los displays no verán tiendas Vindi en su lista</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;">
+          <input type="checkbox" id="toggle-ocultar-vi" onchange="toggleCadena('ocultar_vindi','toggle-vi-track','toggle-vi-knob',this.checked)" style="opacity:0;width:0;height:0;">
+          <span id="toggle-vi-track" style="position:absolute;inset:0;background:var(--card2);border-radius:999px;border:1px solid var(--borde);transition:0.2s;"></span>
+          <span id="toggle-vi-knob" style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#888;border-radius:50%;transition:0.2s;"></span>
+        </label>
+      </div>
     </div>
 
     <!-- Reset historial -->
@@ -1920,8 +1931,11 @@ async function cargarSistema() {
     const dAm = await rAm.json();
     const rWm = await fetch(API + '/api/config/ocultar-cadena?clave=ocultar_walmart');
     const dWm = await rWm.json();
+    const rVi = await fetch(API + '/api/config/ocultar-cadena?clave=ocultar_vindi');
+    const dVi = await rVi.json();
     [['toggle-ocultar-am','toggle-am-track','toggle-am-knob', dAm.ocultar],
-     ['toggle-ocultar-wm','toggle-wm-track','toggle-wm-knob', dWm.ocultar]].forEach(([cbId, trackId, knobId, val]) => {
+     ['toggle-ocultar-wm','toggle-wm-track','toggle-wm-knob', dWm.ocultar],
+     ['toggle-ocultar-vi','toggle-vi-track','toggle-vi-knob', dVi.ocultar]].forEach(([cbId, trackId, knobId, val]) => {
       const cb = document.getElementById(cbId);
       const track = document.getElementById(trackId);
       const knob = document.getElementById(knobId);

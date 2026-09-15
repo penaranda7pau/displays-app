@@ -393,13 +393,16 @@ def tiendas():
         tiendas_list = [t for t in tiendas_list if "AUTO" not in t.upper() and not t.upper().startswith("AM ")]
     if ocultar_wm and ocultar_wm.valor == "1":
         tiendas_list = [t for t in tiendas_list if not t.upper().startswith("WM ") and "WALMART" not in t.upper()]
+    ocultar_vi = Config.query.get("ocultar_vindi")
+    if ocultar_vi and ocultar_vi.valor == "1":
+        tiendas_list = [t for t in tiendas_list if "VINDI" not in t.upper()]
     return jsonify(tiendas_list)
 
 @app.route("/api/config/ocultar-cadena", methods=["POST"])
 def toggle_ocultar_cadena():
     data = request.get_json(force=True)
     clave = data.get("clave")
-    if clave not in ("ocultar_automercado", "ocultar_walmart"):
+    if clave not in ("ocultar_automercado", "ocultar_walmart", "ocultar_vindi"):
         return jsonify({"error": "clave inválida"}), 400
     valor = "1" if data.get("ocultar") else "0"
     cfg = Config.query.get(clave)
