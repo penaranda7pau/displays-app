@@ -701,7 +701,7 @@
 
       <!-- Zona Automercado -->
       <div>
-        <div style="font-size:13px;font-weight:700;color:var(--texto);margin-bottom:8px;">Automercado · Vindi</div>
+        <div style="font-size:13px;font-weight:700;color:var(--texto);margin-bottom:8px;">Automercado</div>
         <div id="inv-zone-am" onclick="document.getElementById('inv-file-am').click()"
           style="border:2px dashed var(--borde);border-radius:14px;padding:32px 16px;text-align:center;cursor:pointer;background:var(--card);transition:all 0.2s;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
           
@@ -822,8 +822,8 @@
       <div style="font-size:13px;color:var(--texto);margin-bottom:4px;">Borrar historial de semanas anteriores</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Elimina todas las diferencias, reportes y validaciones de semanas pasadas. Los datos de la semana actual se conservan. No se puede deshacer.</div>
       <button onclick="resetHistorial()" style="background:#7a1a1a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;">🗑 Borrar historial viejo</button>
-      <button onclick="resetSemanaActual()" style="background:#1a4a7a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;margin-top:8px;">↺ Restablecer semana actual</button>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px;">Quita el estado "semana cerrada" para poder seguir reportando en la semana activa.</div>
+      <button onclick="resetSemanaActual()" style="background:#1a4a7a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;margin-top:8px;">↺ Borrar todo y empezar de cero</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;">Elimina todos los reportes, diferencias y validaciones de todas las semanas. Úsalo solo para empezar desde cero.</div>
     </div>
   </div>
 
@@ -979,7 +979,7 @@ function seleccionarCadena(cadena) {
   document.getElementById('buscar-wrap').style.display = 'block';
   document.getElementById('buscar-tienda').value = '';
   document.getElementById('hero-titulo-tiendas').textContent =
-    cadena === 'walmart' ? 'Walmart & Mega Super' : 'Auto Mercado & Vindi';
+    cadena === 'walmart' ? 'Walmart & Mega Super' : 'Auto Mercado';
   filtrarTiendas();
 }
 
