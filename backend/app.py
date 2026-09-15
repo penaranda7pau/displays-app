@@ -419,8 +419,10 @@ def get_ocultar_cadena():
 @app.route("/api/reset-semana-actual", methods=["POST"])
 def reset_semana_actual():
     try:
-        sem = semana_actual()
-        Diferencia.query.filter_by(semana=sem).delete(synchronize_session=False)
+        ValidacionIA.query.delete(synchronize_session=False)
+        Reporte.query.delete(synchronize_session=False)
+        Diferencia.query.delete(synchronize_session=False)
+        Liquidacion.query.delete(synchronize_session=False)
         db.session.commit()
         return jsonify({"ok": True})
     except Exception as e:
