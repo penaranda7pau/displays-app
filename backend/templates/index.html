@@ -668,12 +668,13 @@
 
   <!-- TAB USUARIOS -->
   <div id="tab-usuarios" style="display:none;">
-    <div class="subtexto" style="margin-bottom:10px;">Displays con acceso a la app</div>
+    <div class="subtexto" style="margin-bottom:10px;">Usuarios con acceso a la app</div>
     <div class="form-usuario">
       <input type="text" id="nuevo-usuario-nombre" placeholder="Nombre">
       <input type="text" id="nuevo-usuario-login" placeholder="Usuario">
       <input type="text" id="nuevo-usuario-password" placeholder="Contraseña">
-      <button class="btn btn-verde" onclick="agregarUsuario()">Agregar display</button>
+      <button class="btn btn-verde" onclick="agregarUsuario('display')">Agregar display</button>
+      <button class="btn" style="background:var(--secundario);color:#fff;" onclick="agregarUsuario('subadmin')">Agregar subadmin</button>
     </div>
     <div class="error" id="error-usuario"></div>
     <div id="lista-usuarios"></div>
@@ -925,7 +926,7 @@ async function doLogin() {
     if (data.ok) {
       usuario = data;
       document.getElementById('login-error').textContent = '';
-      document.getElementById('btn-panel').style.display = data.rol === 'supervisor' ? 'block' : 'none';
+      document.getElementById('btn-panel').style.display = (data.rol === 'supervisor' || data.rol === 'subadmin') ? 'block' : 'none';
       document.getElementById('hero-nombre-usuario').textContent = 'Hola, ' + (data.nombre || data.usuario);
       mostrar('tiendas');
       sbMostrar(data.nombre || data.usuario, data.rol);
@@ -1047,6 +1048,14 @@ function irPanel() {
   mostrar('panel'); cargarPanel();
   document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('activo'));
   document.getElementById('sb-panel-item')?.classList.add('activo');
+  // Ocultar tabs según rol
+  const esSupervisor = usuario && usuario.rol === 'supervisor';
+  const tabsSoloSupervisor = ['tab-usuarios','tab-ia','tab-inventario','tab-sistema'];
+  document.querySelectorAll('.tabs .tab').forEach(btn => {
+    const onclick = btn.getAttribute('onclick') || '';
+    const esSoloSupervisor = tabsSoloSupervisor.some(t => onclick.includes(t));
+    btn.style.display = (esSoloSupervisor && !esSupervisor) ? 'none' : '';
+  });
 }
 
 async function irProductos(tienda) {
@@ -1843,23 +1852,51 @@ async function cargarUsuarios() {
 function renderUsuarios() {
   const lista = document.getElementById('lista-usuarios');
   lista.innerHTML = '';
+  const subadmins = usuariosDB.filter(u => u.rol === 'subadmin');
   const displays = usuariosDB.filter(u => u.rol === 'display');
-  if (!displays.length) { lista.innerHTML = '<div class="seccion-vacia">No hay displays cargados</div>'; return; }
-  displays.forEach(u => {
-    const fila = document.createElement('div');
-    fila.className = 'fila-usuario';
-    fila.innerHTML = `
-      <div class="info">
-        <div class="nom">${u.nombre}</div>
-        <div class="usr">@${u.usuario} &nbsp;·&nbsp; ${u.password}</div>
-      </div>
-      <button class="btn-eliminar-usuario" onclick="eliminarUsuario(${u.id})">Eliminar</button>
-    `;
-    lista.appendChild(fila);
-  });
+  if (!subadmins.length && !displays.length) { lista.innerHTML = '<div class="seccion-vacia">No hay usuarios cargados</div>'; return; }
+  const renderGrupo = (titulo, lista_u) => {
+    if (!lista_u.length) return;
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:11px;font-weight:700;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:1px;';
+    hdr.textContent = titulo;
+    lista.appendChild(hdr);
+    lista_u.forEach(u => {
+      const fila = document.createElement('div');
+      fila.className = 'fila-usuario';
+      fila.innerHTML = `
+        <div class="info">
+          <div class="nom">${u.nombre}</div>
+          <div class="usr">@${u.usuario} &nbsp;·&nbsp; <span id="pwd-${u.id}">${u.password}</span></div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button onclick="cambiarPassword(${u.id},'${u.nombre}')" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">🔑 Contraseña</button>
+          ${u.rol !== 'supervisor' ? `<button class="btn-eliminar-usuario" onclick="eliminarUsuario(${u.id})">Eliminar</button>` : ''}
+        </div>
+      `;
+      lista.appendChild(fila);
+    });
+  };
+  renderGrupo('Subadministradores', subadmins);
+  renderGrupo('Displays', displays);
 }
 
-async function agregarUsuario() {
+async function cambiarPassword(id, nombre) {
+  const nueva = prompt(`Nueva contraseña para ${nombre}:`);
+  if (!nueva || !nueva.trim()) return;
+  try {
+    const r = await fetch(API + `/api/usuarios/${id}/password`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password: nueva.trim(), solicitante_rol: usuario.rol})
+    });
+    const d = await r.json();
+    if (d.ok) { alert('Contraseña actualizada.'); cargarUsuarios(); }
+    else alert('Error: ' + (d.error || 'desconocido'));
+  } catch(e) { alert('Error de red'); }
+}
+
+async function agregarUsuario(rol = 'display') {
   const nombre   = document.getElementById('nuevo-usuario-nombre').value.trim();
   const login    = document.getElementById('nuevo-usuario-login').value.trim();
   const password = document.getElementById('nuevo-usuario-password').value.trim();
@@ -1870,7 +1907,7 @@ async function agregarUsuario() {
     const r = await fetch(API + '/api/usuarios', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({nombre, usuario: login, password, solicitante_rol: usuario.rol})
+      body: JSON.stringify({nombre, usuario: login, password, rol, solicitante_rol: usuario.rol})
     });
     const data = await r.json();
     if (!data.ok) { errorEl.textContent = data.error || 'Error al crear el usuario'; return; }

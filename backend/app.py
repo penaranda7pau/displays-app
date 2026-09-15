@@ -367,7 +367,10 @@ def crear_usuario():
         return jsonify({"ok": False, "error": "Faltan datos"}), 400
     if Usuario.query.filter_by(usuario=usuario).first():
         return jsonify({"ok": False, "error": "Ese usuario ya existe"}), 400
-    u = Usuario(nombre=nombre, usuario=usuario, password=password, rol="display")
+    rol_nuevo = data.get("rol", "display")
+    if rol_nuevo not in ("display", "subadmin"):
+        rol_nuevo = "display"
+    u = Usuario(nombre=nombre, usuario=usuario, password=password, rol=rol_nuevo)
     db.session.add(u)
     db.session.commit()
     return jsonify({"ok": True, "id": u.id})
@@ -380,6 +383,19 @@ def eliminar_usuario(usuario_id):
     if u.rol == "supervisor":
         return jsonify({"ok": False, "error": "No se puede eliminar al supervisor"}), 400
     db.session.delete(u)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+@app.route("/api/usuarios/<int:usuario_id>/password", methods=["POST"])
+def cambiar_password(usuario_id):
+    data = request.json or {}
+    if not _es_supervisor(data):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    nueva = data.get("password", "").strip()
+    if not nueva:
+        return jsonify({"ok": False, "error": "Contraseña vacía"}), 400
+    u = Usuario.query.get_or_404(usuario_id)
+    u.password = nueva
     db.session.commit()
     return jsonify({"ok": True})
 
