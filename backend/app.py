@@ -42,6 +42,7 @@ class Reporte(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     tienda     = db.Column(db.String(200))
     producto   = db.Column(db.String(200))
+    item_nbr   = db.Column(db.String(50))
     comentario = db.Column(db.Text)
     foto       = db.Column(db.String(300))
     foto_b64   = db.Column(db.Text)
@@ -55,6 +56,7 @@ class Inventario(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     tienda          = db.Column(db.String(200), index=True)
     producto        = db.Column(db.String(200))
+    item_nbr        = db.Column(db.String(50))
     cantidad        = db.Column(db.Integer, default=0)
     nombre_empaque  = db.Column(db.String(300))
 
@@ -173,6 +175,17 @@ def _migrar_columnas():
                 conn.execute(db.text("ALTER TABLE liquidacion ADD COLUMN IF NOT EXISTS tipo VARCHAR(50) DEFAULT 'Liquidación'"))
             else:
                 conn.execute(db.text("ALTER TABLE liquidacion ADD COLUMN tipo VARCHAR(50) DEFAULT 'Liquidación'"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("ALTER TABLE reporte ADD COLUMN IF NOT EXISTS item_nbr VARCHAR(50)"))
+                conn.execute(db.text("ALTER TABLE inventario ADD COLUMN IF NOT EXISTS item_nbr VARCHAR(50)"))
+            else:
+                conn.execute(db.text("ALTER TABLE reporte ADD COLUMN item_nbr VARCHAR(50)"))
+                conn.execute(db.text("ALTER TABLE inventario ADD COLUMN item_nbr VARCHAR(50)"))
             conn.commit()
         except Exception:
             conn.rollback()
@@ -518,7 +531,8 @@ def ver_liquidacion():
 def productos(tienda):
     rows = Inventario.query.filter_by(tienda=tienda).order_by(Inventario.cantidad.desc()).all()
     return jsonify([{"nombre": r.producto, "cantidad": r.cantidad,
-                     "nombre_empaque": r.nombre_empaque or r.producto} for r in rows])
+                     "nombre_empaque": r.nombre_empaque or r.producto,
+                     "item_nbr": r.item_nbr or ""} for r in rows])
 
 @app.route("/api/sync", methods=["POST"])
 def sync_inventario():
@@ -1048,6 +1062,7 @@ def cargar_inventario():
 
         idx_tienda   = col_idx(["store name", "tienda", "sucursal", "cadena", "store"])
         idx_producto = col_idx(["signing desc", "producto", "product", "descripcion", "nombre", "artículo", "articulo", "item desc"])
+        idx_item_nbr = col_idx(["item nbr", "item_nbr", "itemnbr", "codigo", "barcode", "ean", "upc"])
 
         if idx_tienda is None or idx_producto is None:
             return jsonify({"error": f"No se encontraron columnas de tienda/producto. Columnas detectadas: {[h for h in headers if h][:15]}"}), 400
@@ -1067,12 +1082,15 @@ def cargar_inventario():
                 status = str(row[idx_status]).strip().upper() if row[idx_status] else ""
                 if status and status not in ("A", "ACTIVO", "ACTIVE", "1"):
                     continue
+            item_nbr = ""
+            if idx_item_nbr is not None and len(row) > idx_item_nbr and row[idx_item_nbr]:
+                item_nbr = str(row[idx_item_nbr]).strip().split(".")[0]  # quitar decimales si viene como float
             # Solo crear si no existe ya en esta semana
             existe = Reporte.query.filter_by(semana=semana, tienda=tienda, producto=producto).first()
             if existe:
                 omitidos += 1
                 continue
-            r = Reporte(tienda=tienda, producto=producto, semana=semana,
+            r = Reporte(tienda=tienda, producto=producto, item_nbr=item_nbr or None, semana=semana,
                         usuario="inventario", fecha=datetime.now().strftime("%Y-%m-%d"))
             db.session.add(r)
             creados += 1
@@ -1115,6 +1133,7 @@ def _leer_excel_walmart(archivo):
     idx_tienda   = headers.index("Store Name")
     idx_producto = headers.index("Signing Desc")
     idx_status   = headers.index("Item Status") if "Item Status" in headers else None
+    idx_item_nbr = headers.index("Item NBR") if "Item NBR" in headers else None
     # Usar la ÚLTIMA columna 'Curr Str On Hand Qty' (semana más reciente)
     idx_qty = next((i for i, h in reversed(list(enumerate(headers))) if "Curr Str On Hand Qty" in h), None)
 
@@ -1134,7 +1153,10 @@ def _leer_excel_walmart(archivo):
                 cantidad = int(float(row[idx_qty]))
             except (ValueError, TypeError):
                 cantidad = 0
-        resultados.append({"tienda": tienda, "producto": producto, "cantidad": cantidad})
+        item_nbr = ""
+        if idx_item_nbr is not None and len(row) > idx_item_nbr and row[idx_item_nbr]:
+            item_nbr = str(row[idx_item_nbr]).strip().split(".")[0]
+        resultados.append({"tienda": tienda, "producto": producto, "cantidad": cantidad, "item_nbr": item_nbr})
     return resultados
 
 
@@ -1195,10 +1217,12 @@ def actualizar_inventario():
             inv = Inventario.query.filter_by(tienda=r["tienda"], producto=r["producto"]).first()
             if inv:
                 inv.cantidad = r["cantidad"]
+                if r.get("item_nbr"):
+                    inv.item_nbr = r["item_nbr"]
                 actualizados += 1
             else:
                 db.session.add(Inventario(tienda=r["tienda"], producto=r["producto"],
-                                          cantidad=r["cantidad"]))
+                                          cantidad=r["cantidad"], item_nbr=r.get("item_nbr") or None))
                 nuevos += 1
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1257,7 +1281,8 @@ def reemplazar_inventario():
         if idx_tienda is None or idx_producto is None:
             return jsonify({"error": f"No se encontraron columnas. Detectadas: {[h for h in headers if h][:15]}"}), 400
 
-        idx_status = col_idx(["item status", "status", "estado"])
+        idx_status   = col_idx(["item status", "status", "estado"])
+        idx_item_nbr = col_idx(["item nbr", "item_nbr", "itemnbr", "codigo", "barcode", "ean", "upc"])
 
         # Borrar solo los registros SIN foto de esta semana (los que ya tienen foto se conservan)
         borrados = Reporte.query.filter_by(semana=semana, foto=None, foto_b64=None).delete()
@@ -1273,11 +1298,14 @@ def reemplazar_inventario():
                 status = str(row[idx_status]).strip().upper() if row[idx_status] else ""
                 if status and status not in ("A", "ACTIVO", "ACTIVE", "1"):
                     continue
+            item_nbr = ""
+            if idx_item_nbr is not None and len(row) > idx_item_nbr and row[idx_item_nbr]:
+                item_nbr = str(row[idx_item_nbr]).strip().split(".")[0]
             # No duplicar los que ya tienen foto
             existe = Reporte.query.filter_by(semana=semana, tienda=tienda, producto=producto).first()
             if existe:
                 continue
-            r = Reporte(tienda=tienda, producto=producto, semana=semana,
+            r = Reporte(tienda=tienda, producto=producto, item_nbr=item_nbr or None, semana=semana,
                         usuario="inventario", fecha=datetime.now().strftime("%Y-%m-%d"))
             db.session.add(r)
             creados += 1
