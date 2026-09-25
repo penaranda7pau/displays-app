@@ -4,5 +4,5 @@ pandas
 openpyxl
 gunicorn
 flask-sqlalchemy
-psycopg2-binary
+psycopg[binary]
 anthropic
