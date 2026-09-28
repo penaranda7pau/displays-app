@@ -954,6 +954,8 @@ def cerrar_semana():
         for d in Diferencia.query.filter_by(semana=semana).all()
     }
 
+    # Borrar validaciones primero (tienen FK hacia reporte)
+    ValidacionIA.query.filter(ValidacionIA.semana <= semana).delete()
     # Borrar reportes de la semana cerrada y de cualquier semana anterior (limpieza completa)
     Reporte.query.filter(Reporte.semana <= semana).delete()
     # Limpiar override de semana para que la próxima semana sea automática
@@ -1135,7 +1137,8 @@ def _leer_excel_walmart(archivo):
     idx_tienda   = headers.index("Store Name")
     idx_producto = headers.index("Signing Desc")
     idx_status   = headers.index("Item Status") if "Item Status" in headers else None
-    idx_item_nbr = headers.index("Item NBR") if "Item NBR" in headers else None
+    headers_lower = [h.lower().replace(" ", "") for h in headers]
+    idx_item_nbr = next((i for i, h in enumerate(headers_lower) if h in ("itemnbr", "itemnumber", "itemno")), None)
     # Usar la ÚLTIMA columna 'Curr Str On Hand Qty' (semana más reciente)
     idx_qty = next((i for i, h in reversed(list(enumerate(headers))) if "Curr Str On Hand Qty" in h), None)
 
