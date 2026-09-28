@@ -1328,6 +1328,7 @@ def limpiar_reportes():
     if data.get("rol") != "supervisor":
         return jsonify({"error": "No autorizado"}), 403
     count = Reporte.query.count()
+    ValidacionIA.query.delete()
     Reporte.query.delete()
     db.session.commit()
     return jsonify({"ok": True, "borrados": count})
@@ -1349,6 +1350,7 @@ def limpiar_todo():
         return jsonify({"error": "No autorizado"}), 403
     r = Reporte.query.count()
     d = Diferencia.query.count()
+    ValidacionIA.query.delete()
     Reporte.query.delete()
     Diferencia.query.delete()
     db.session.commit()
