@@ -234,6 +234,13 @@ SYNC_KEY = os.environ.get("SYNC_KEY", "cpfr2024")
 FOTOS_DIR = os.path.join(os.path.dirname(__file__), '..', 'fotos')
 os.makedirs(FOTOS_DIR, exist_ok=True)
 
+TIENDAS_RURALES = {
+    "WM LA LIMA", "WM LIBERIA", "WM CIUDAD QUESADA", "WM PEREZ ZELEDON",
+    "MXM LIBERIA", "MXM GUAPILES", "MXM LIMON", "MXM JACO",
+    "MXM SAN RAMON", "MXM GRECIA",
+    "A10 AUTO MERCADO HERRADURA", "A11 AUTO MERCADO TAMARINDO", "A12 AUTO MERCADO COCO",
+}
+
 def semana_actual():
     cfg = Config.query.get("semana_override")
     if cfg and cfg.valor:
@@ -638,6 +645,24 @@ def cerrar_semana():
         if rep:
             validaciones[(v.tienda, v.producto)] = v.estado  # APROBADO / RECHAZADO / REVISAR / etc.
 
+    # Tiendas rurales que reportaron esta semana
+    tiendas_rurales_esta_semana = {r.tienda for r in reportes if r.tienda in TIENDAS_RURALES}
+
+    # Tiendas rurales que visitaron en las últimas 3 semanas (historial Diferencia)
+    semanas_hist = sorted({
+        d.semana for d in Diferencia.query
+        .filter(Diferencia.semana < semana)
+        .with_entities(Diferencia.semana).distinct().all()
+    }, reverse=True)[:3]
+    tiendas_rurales_visitaron_mes = set(tiendas_rurales_esta_semana)
+    if semanas_hist:
+        for d in Diferencia.query.filter(
+            Diferencia.semana.in_(semanas_hist),
+            Diferencia.estado != "SIN_FOTO"
+        ).with_entities(Diferencia.tienda).distinct().all():
+            if d.tienda in TIENDAS_RURALES:
+                tiendas_rurales_visitaron_mes.add(d.tienda)
+
     # Calcular diferencias
     inventario = Inventario.query.all()
     Diferencia.query.filter_by(semana=semana).delete()
@@ -647,6 +672,11 @@ def cerrar_semana():
         key = (inv.tienda, inv.producto)
         rep = mapa.get(key)
         val_estado = validaciones.get(key)
+
+        # Rural que no visitó esta semana pero sí este mes → no es diferencia esta semana
+        if inv.tienda in TIENDAS_RURALES and inv.tienda not in tiendas_rurales_esta_semana:
+            if inv.tienda in tiendas_rurales_visitaron_mes:
+                continue  # visitó este mes, no contar como diferencia
 
         if rep and rep.foto and val_estado == "RECHAZADO":
             estado = "RECHAZADO"
@@ -930,6 +960,41 @@ def cerrar_semana():
             ws7.cell(r, c).fill   = fill_verde
             ws7.cell(r, c).border = border
             ws7.cell(r, c).alignment = Alignment(vertical="center")
+
+    # Hoja 8 — Visitas Rurales (frecuencia mensual)
+    ws8 = wb.create_sheet("Visitas Rurales")
+    ws8.append(["Tienda", "Visitó este mes", "Visitó esta semana", "Última semana registrada"])
+    estilo_header(ws8, [40, 16, 18, 25])
+
+    fill_rural_ok  = PatternFill("solid", fgColor="D4EDDA")
+    fill_rural_mal = PatternFill("solid", fgColor="FFD7D7")
+    font_rural_mal = Font(bold=True, color="C0392B")
+
+    todas_rurales_inventario = sorted({inv.tienda for inv in Inventario.query.all() if inv.tienda in TIENDAS_RURALES})
+    for tienda_r in todas_rurales_inventario:
+        visito_mes    = "Sí" if tienda_r in tiendas_rurales_visitaron_mes else "No"
+        visito_semana = "Sí" if tienda_r in tiendas_rurales_esta_semana   else "No"
+        ultima = "—"
+        if semanas_hist:
+            for sh in semanas_hist:
+                tiene = Diferencia.query.filter_by(semana=sh, tienda=tienda_r).filter(Diferencia.estado != "SIN_FOTO").first()
+                if tiene:
+                    _, leg = rango_de_codigo(sh)
+                    ultima = leg
+                    break
+        if tienda_r in tiendas_rurales_esta_semana:
+            _, leg = rango_de_codigo(semana)
+            ultima = leg
+        ws8.append([tienda_r, visito_mes, visito_semana, ultima])
+        r = ws8.max_row
+        fill_r = fill_rural_ok if visito_mes == "Sí" else fill_rural_mal
+        for c in range(1, 5):
+            ws8.cell(r, c).fill      = fill_r
+            ws8.cell(r, c).border    = border
+            ws8.cell(r, c).alignment = Alignment(vertical="center")
+        if visito_mes == "No":
+            for c in range(1, 5):
+                ws8.cell(r, c).font = font_rural_mal
 
     buf = io.BytesIO()
     wb.save(buf)
