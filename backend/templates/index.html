@@ -877,6 +877,13 @@
 const API = '';
 let usuario = {};
 
+const TIENDAS_RURALES_JS = new Set([
+  "WM LA LIMA", "WM LIBERIA", "WM CIUDAD QUESADA", "WM PEREZ ZELEDON",
+  "MXM LIBERIA", "MXM GUAPILES", "MXM LIMON", "MXM JACO",
+  "MXM SAN RAMON", "MXM GRECIA",
+  "A10 AUTO MERCADO HERRADURA", "A11 AUTO MERCADO TAMARINDO", "A12 AUTO MERCADO COCO",
+]);
+
 // Calcula el número de semana ISO 8601 (igual que Python %V / fromisocalendar)
 function isoSemana(fecha) {
   const d = new Date(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()));
@@ -1018,8 +1025,9 @@ function filtrarTiendas() {
     d.style.display = 'flex';
     d.style.alignItems = 'center';
     d.style.justifyContent = 'space-between';
+    const esRural = TIENDAS_RURALES_JS.has(t);
     d.innerHTML = `
-      <span style="font-weight:600;">${t}</span>
+      <span style="font-weight:600;">${t}${esRural ? ' <span style="font-size:10px;background:rgba(232,168,56,0.2);color:var(--amarillo);border-radius:4px;padding:1px 5px;font-weight:700;">Rural</span>' : ''}</span>
       <span style="font-size:12px;font-weight:600;flex-shrink:0;margin-left:10px;color:${visitada ? '#6aaa4f' : '#e05c5c'};">
         ${visitada ? '✓ Visitada' : '✗ Sin visita'}
       </span>`;
@@ -1209,41 +1217,61 @@ async function cargarLiquidacionExistente(tienda, tipo) {
 // --- FIN LIQUIDACIÓN ---
 
 function comprimirFoto(file, maxPx, calidad, callback) {
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const img = new Image();
-    img.onload = () => {
-      let w = img.width, h = img.height;
-      if (w > maxPx || h > maxPx) {
-        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
-        else       { w = Math.round(w * maxPx / h); h = maxPx; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      callback(canvas.toDataURL('image/jpeg', calidad));
-    };
-    img.src = ev.target.result;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    let w = img.width, h = img.height;
+    if (w > maxPx || h > maxPx) {
+      if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+      else       { w = Math.round(w * maxPx / h); h = maxPx; }
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    callback(canvas.toDataURL('image/jpeg', calidad));
+    canvas.width = 0; canvas.height = 0;
   };
-  reader.readAsDataURL(file);
+  img.onerror = () => URL.revokeObjectURL(url);
+  img.src = url;
+}
+
+function _procesarArchivoFoto(file, i) {
+  comprimirFoto(file, 1200, 0.80, dataUrl => {
+    filas[i].foto_b64 = dataUrl.split(',')[1];
+    const wrap = document.getElementById('foto-wrap-' + i);
+    wrap.innerHTML = `<img src="${dataUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #668BCD;" onclick="abrirMenuFoto(${i})">`;
+  });
+}
+
+function tomarFotoCamara(i) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+  inp.onchange = e => { const f = e.target.files[0]; if (f) _procesarArchivoFoto(f, i); };
+  inp.click();
+}
+
+function elegirDeGaleria(i) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = e => { const f = e.target.files[0]; if (f) _procesarArchivoFoto(f, i); };
+  inp.click();
+}
+
+function abrirMenuFoto(i) {
+  const wrap = document.getElementById('foto-wrap-' + i);
+  wrap.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:3px;">
+      <button onclick="tomarFotoCamara(${i})" style="font-size:11px;padding:3px 6px;border-radius:6px;border:none;background:var(--principal);color:#fff;cursor:pointer;">📷 Cámara</button>
+      <button onclick="elegirDeGaleria(${i})" style="font-size:11px;padding:3px 6px;border-radius:6px;border:none;background:var(--card2);color:var(--texto);cursor:pointer;">🖼 Galería</button>
+    </div>`;
 }
 
 function selFoto(i) {
-  const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'image/*';
-  inp.onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    comprimirFoto(file, 800, 0.70, dataUrl => {
-      filas[i].foto_b64 = dataUrl.split(',')[1];
-      const wrap = document.getElementById('foto-wrap-' + i);
-      wrap.innerHTML = `<img src="${dataUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #668BCD;" onclick="selFoto(${i})">`;
-    });
-  };
   if (localStorage.getItem('ocultarInstruccionesFoto') === '1') {
-    inp.click();
+    abrirMenuFoto(i);
   } else {
-    mostrarInstruccionesFoto(() => inp.click());
+    mostrarInstruccionesFoto(() => abrirMenuFoto(i));
   }
 }
 
@@ -1792,8 +1820,9 @@ async function renderDiferencias() {
       const visitaIcon = t.visitada
         ? '<span style="color:#6aaa4f">✓ Visitada</span>'
         : '<span style="color:#e05c5c">✗ Sin visita</span>';
+      const esRuralSup = TIENDAS_RURALES_JS.has(t.tienda);
       row.innerHTML = `
-        <div>${t.tienda}</div>
+        <div>${t.tienda}${esRuralSup ? ' <span style="font-size:10px;background:rgba(232,168,56,0.2);color:var(--amarillo);border-radius:4px;padding:1px 5px;font-weight:700;">Rural</span>' : ''}</div>
         <div class="center" style="font-size:12px">${visitaIcon}</div>
         <div class="center">${t.productos}</div>
         <div class="center">${t.con_foto}</div>
