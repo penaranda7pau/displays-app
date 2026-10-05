@@ -1780,6 +1780,7 @@ function renderCriticos() {
     conteo[r.producto] = (conteo[r.producto] || 0) + 1;
   });
   const lista = document.getElementById('lista-criticos');
+  if (!lista) return;
   lista.innerHTML = '';
   const ordenado = Object.entries(conteo).sort((a,b) => b[1] - a[1]).slice(0, 20);
   if (!ordenado.length) { lista.innerHTML = '<div class="seccion-vacia">Sin datos</div>'; return; }
@@ -2554,7 +2555,8 @@ async function actualizarInventario() {
     cargarTiendas();
     cargarHistorialInv();
   } catch(e) {
-    resultado.innerHTML = `<span style="color:var(--rojo);">Error de conexión: ${e.message}</span>`;
+    console.error('actualizar-inventario error:', e);
+    resultado.innerHTML = `<span style="color:var(--rojo);">Error de conexión: ${e.message}<br><small style="opacity:0.7;">${e.name} — abrí DevTools (F12) → Console para más detalles</small></span>`;
   }
 }
 

@@ -1194,7 +1194,7 @@ def inventario_historial():
 
 def _leer_excel_walmart(archivo):
     """Lee INV MV de Walmart. Devuelve lista de {tienda, producto, cantidad}."""
-    wb = openpyxl.load_workbook(archivo, data_only=True)
+    wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), data_only=True)
     ws = wb.active
     # Buscar fila de headers (tiene 'Store Name' y 'Signing Desc')
     headers = None
@@ -1241,7 +1241,7 @@ def _leer_excel_walmart(archivo):
 
 def _leer_excel_automercado(archivo):
     """Lee Excel de Automercado. Tienda=NombrePDX, Producto=NombreProducto, Cantidad=Contenido."""
-    wb = openpyxl.load_workbook(archivo, data_only=True)
+    wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), data_only=True)
     ws = wb.active
     headers = [str(v).strip() if v is not None else "" for v in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
 
@@ -1277,6 +1277,7 @@ def _leer_excel_automercado(archivo):
 @app.route("/api/actualizar-inventario", methods=["POST"])
 def actualizar_inventario():
     """Actualiza tabla Inventario con cantidades del Excel. NO toca Reporte (fotos/comentarios intactos)."""
+    print(f"[actualizar-inventario] request recibido — files: {list(request.files.keys())}", flush=True)
     archivo_wm = request.files.get("archivo_wm")
     archivo_am = request.files.get("archivo_am")
     if not archivo_wm and not archivo_am:
