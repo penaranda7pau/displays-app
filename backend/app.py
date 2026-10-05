@@ -235,7 +235,7 @@ FOTOS_DIR = os.path.join(os.path.dirname(__file__), '..', 'fotos')
 os.makedirs(FOTOS_DIR, exist_ok=True)
 
 TIENDAS_RURALES = {
-    "WM LA LIMA", "WM LIBERIA", "WM CIUDAD QUESADA", "WM PEREZ ZELEDON",
+    "WM LIBERIA", "WM CIUDAD QUESADA", "WM PEREZ ZELEDON",
     "MXM LIBERIA", "MXM GUAPILES", "MXM LIMON", "MXM JACO",
     "MXM SAN RAMON", "MXM GRECIA",
     "A10 AUTO MERCADO HERRADURA", "A11 AUTO MERCADO TAMARINDO", "A12 AUTO MERCADO COCO",
@@ -1023,10 +1023,19 @@ def cerrar_semana():
     ValidacionIA.query.filter(ValidacionIA.semana <= semana).delete()
     # Borrar reportes de la semana cerrada y de cualquier semana anterior (limpieza completa)
     Reporte.query.filter(Reporte.semana <= semana).delete()
-    # Limpiar override de semana para que la próxima semana sea automática
+    # Avanzar al override de la semana siguiente (calculado desde la semana cerrada, no desde datetime.now())
+    try:
+        parts = semana.split("-S")
+        lunes_sig = datetime.fromisocalendar(int(parts[0]), int(parts[1]), 1) + timedelta(weeks=1)
+        iso = lunes_sig.isocalendar()
+        nueva_semana = f"{iso[0]}-S{iso[1]:02d}"
+    except Exception:
+        nueva_semana = ""
     cfg_override = Config.query.get("semana_override")
     if cfg_override:
-        cfg_override.valor = ""
+        cfg_override.valor = nueva_semana
+    elif nueva_semana:
+        db.session.add(Config(clave="semana_override", valor=nueva_semana))
     db.session.commit()
 
     # Construir ZIP: Excel + fotos separadas en Fotos_OK y Fotos_Diferencias
@@ -1280,19 +1289,23 @@ def actualizar_inventario():
         if archivo_am:
             registros += _leer_excel_automercado(archivo_am)
 
-        # Actualizar tabla Inventario: upsert por tienda+producto
+        # Cargar todo el inventario en memoria una sola vez (evita N+1 queries)
+        mapa_inv = {(inv.tienda, inv.producto): inv for inv in Inventario.query.all()}
+
         actualizados = 0
         nuevos = 0
         for r in registros:
-            inv = Inventario.query.filter_by(tienda=r["tienda"], producto=r["producto"]).first()
+            key = (r["tienda"], r["producto"])
+            inv = mapa_inv.get(key)
             if inv:
                 inv.cantidad = r["cantidad"]
                 if r.get("item_nbr"):
                     inv.item_nbr = r["item_nbr"]
                 actualizados += 1
             else:
-                db.session.add(Inventario(tienda=r["tienda"], producto=r["producto"],
-                                          cantidad=r["cantidad"], item_nbr=r.get("item_nbr") or None))
+                nuevo = Inventario(tienda=r["tienda"], producto=r["producto"],
+                                   cantidad=r["cantidad"], item_nbr=r.get("item_nbr") or None)
+                db.session.add(nuevo)
                 nuevos += 1
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
