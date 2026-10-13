@@ -682,6 +682,8 @@ def _dividir_excel_por_cadena(wb, quitar_vindi):
 
 @app.route("/api/cerrar-semana", methods=["POST"])
 def cerrar_semana():
+    if (request.get_json(silent=True) or {}).get("rol") != "supervisor":
+        return jsonify({"ok": False, "error": "Solo un administrador puede cerrar la semana"}), 403
     semana = semana_actual()
     # Las fotos (foto_b64) NO se cargan aquí: se leen de a una al armar el ZIP (ahorra memoria)
     reportes = Reporte.query.options(db.defer(Reporte.foto_b64)).filter_by(semana=semana).all()
