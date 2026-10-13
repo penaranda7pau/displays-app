@@ -1,9 +1,11 @@
 import os
 import base64
+import io
 import threading
 import requests
 import tkinter as tk
 from tkinter import filedialog
+from PIL import Image
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen, SlideTransition
 from kivy.uix.boxlayout import BoxLayout
@@ -394,7 +396,7 @@ class ProductosScreen(Screen):
                              halign='center', valign='middle', size_hint=(0.1, 1), bold=True)
             lbl_cant.bind(size=lbl_cant.setter('text_size'))
 
-            btn_foto = Button(text="📷", font_size=dp(18), size_hint=(0.2, 1),
+            btn_foto = Button(text="Foto", font_size=dp(14), size_hint=(0.2, 1),
                               background_normal='', background_color=(0.18, 0.22, 0.28, 1))
             btn_foto.bind(on_release=lambda _, fd=fila_data, bf=btn_foto: self._seleccionar_foto(fd, bf))
 
@@ -421,8 +423,11 @@ class ProductosScreen(Screen):
             filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
         root.destroy()
         if ruta:
-            with open(ruta, "rb") as f:
-                fila_data["foto_b64"] = base64.b64encode(f.read()).decode()
+            img = Image.open(ruta).convert("RGB")
+            img.thumbnail((800, 800), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=70)
+            fila_data["foto_b64"] = base64.b64encode(buf.getvalue()).decode()
             btn.text = "✓"
             btn.background_color = VERDE
 

@@ -23,7 +23,18 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 app = Flask(__name__)
-CORS(app)
+# Solo el dominio de la app puede llamar a la API desde un navegador.
+# Se puede ampliar en Render con CORS_ORIGINS="https://a.com,https://b.com"
+_origenes = [o.strip() for o in os.environ.get("CORS_ORIGINS", "https://displays-app.onrender.com").split(",") if o.strip()]
+CORS(app, origins=_origenes)
+
+# Tope por petición: evita que un archivo enorme tumbe el servidor (512 MB de RAM)
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "30")) * 1024 * 1024
+
+@app.errorhandler(413)
+def _archivo_muy_grande(_e):
+    lim = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    return jsonify({"ok": False, "error": f"El archivo es demasiado grande (máximo {lim} MB)"}), 413
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if DATABASE_URL.startswith("postgres://"):
@@ -42,6 +53,7 @@ db = SQLAlchemy(app)
 
 class Reporte(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
+    negocio    = db.Column(db.String(50), default="mundo_vegano", index=True)
     tienda     = db.Column(db.String(200))
     producto   = db.Column(db.String(200))
     item_nbr   = db.Column(db.String(50))
@@ -56,6 +68,7 @@ class Reporte(db.Model):
 
 class Inventario(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
+    negocio         = db.Column(db.String(50), default="mundo_vegano", index=True)
     tienda          = db.Column(db.String(200), index=True)
     producto        = db.Column(db.String(200))
     item_nbr        = db.Column(db.String(50))
@@ -64,6 +77,7 @@ class Inventario(db.Model):
 
 class Diferencia(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
+    negocio    = db.Column(db.String(50), default="mundo_vegano", index=True)
     semana     = db.Column(db.String(20), index=True)
     tienda     = db.Column(db.String(200))
     producto   = db.Column(db.String(200))
@@ -77,10 +91,26 @@ class Usuario(db.Model):
     usuario  = db.Column(db.String(100), unique=True)
     password = db.Column(db.String(100))
     rol      = db.Column(db.String(20), default="display")
+    # "mundo_vegano", "lustig", o "ambos" para super-admin
+    negocio  = db.Column(db.String(50), default="mundo_vegano")
 
 class Config(db.Model):
-    clave = db.Column(db.String(50), primary_key=True)
+    clave = db.Column(db.String(120), primary_key=True)
     valor = db.Column(db.String(100))
+
+class Negocio(db.Model):
+    """Cliente de la app. Se crea/edita desde Sistema → Negocios (superadmin)."""
+    __tablename__ = "negocio"
+    slug       = db.Column(db.String(50), primary_key=True)   # ej: mundo_vegano
+    nombre     = db.Column(db.String(100), nullable=False)
+    cadenas    = db.Column(db.String(200), default="")        # códigos separados por coma, ej: WM,MXM,AM
+    logo_b64   = db.Column(db.Text)                           # data URL (image/png|jpeg|webp)
+    rurales    = db.Column(db.Text, default="")               # una tienda por línea (visita mensual)
+    excluidas  = db.Column(db.Text, default="")               # tiendas quitadas (no se visitan), una por línea
+    prompt     = db.Column(db.Text)                           # prompt de la IA ({producto} = producto a validar)
+    activo     = db.Column(db.Boolean, default=True)
+    orden      = db.Column(db.Integer, default=0)
+    creado_en  = db.Column(db.String(30))
 
 class SemanaConfig(db.Model):
     __tablename__ = "semana_config"
@@ -95,6 +125,7 @@ class SemanaConfig(db.Model):
 class Liquidacion(db.Model):
     __tablename__ = "liquidacion"
     id         = db.Column(db.Integer, primary_key=True)
+    negocio    = db.Column(db.String(50), default="mundo_vegano", index=True)
     tienda     = db.Column(db.String(200), index=True)
     semana     = db.Column(db.String(20), index=True)
     tipo       = db.Column(db.String(50), default="Liquidación")
@@ -108,6 +139,7 @@ class Liquidacion(db.Model):
 class ValidacionIA(db.Model):
     __tablename__ = "validacion_ia"
     id           = db.Column(db.Integer, primary_key=True)
+    negocio      = db.Column(db.String(50), default="mundo_vegano", index=True)
     reporte_id   = db.Column(db.Integer, db.ForeignKey("reporte.id"), nullable=True)
     semana       = db.Column(db.String(20), index=True)
     tienda       = db.Column(db.String(200))
@@ -126,8 +158,11 @@ class ValidacionIA(db.Model):
     procesado_en = db.Column(db.String(30))
 
 USUARIOS_INICIALES = [
-    {"nombre": "Display 1", "usuario": "display1", "password": "1234",     "rol": "display"},
-    {"nombre": "Supervisor", "usuario": "admin",    "password": "admin123", "rol": "supervisor"}
+    {"nombre": "Display 1",    "usuario": "display1",  "password": "1234",       "rol": "display",     "negocio": "mundo_vegano"},
+    {"nombre": "Supervisor MV","usuario": "admin",     "password": "admin123",   "rol": "supervisor",  "negocio": "mundo_vegano"},
+    {"nombre": "Super Admin",  "usuario": "superadmin","password": "super2024",  "rol": "superadmin",  "negocio": "ambos"},
+    {"nombre": "Display L1",   "usuario": "ldisplay1", "password": "lustig1234", "rol": "display",     "negocio": "lustig"},
+    {"nombre": "Admin Lustig", "usuario": "ladmin",    "password": "ladmin123",  "rol": "supervisor",  "negocio": "lustig"},
 ]
 
 def _migrar_columnas():
@@ -218,15 +253,88 @@ def _migrar_columnas():
         except Exception:
             conn.rollback()
 
+        # --- Multi-tenant: columna negocio ---
+        for tabla in ("reporte", "inventario", "diferencia", "liquidacion", "validacion_ia"):
+            try:
+                if db.engine.dialect.name == "postgresql":
+                    conn.execute(db.text(
+                        f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS negocio VARCHAR(50) DEFAULT 'mundo_vegano'"
+                    ))
+                else:
+                    conn.execute(db.text(
+                        f"ALTER TABLE {tabla} ADD COLUMN negocio VARCHAR(50) DEFAULT 'mundo_vegano'"
+                    ))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text(
+                    "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS negocio VARCHAR(50) DEFAULT 'mundo_vegano'"
+                ))
+            else:
+                conn.execute(db.text(
+                    "ALTER TABLE usuario ADD COLUMN negocio VARCHAR(50) DEFAULT 'mundo_vegano'"
+                ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+def _migrar_negocio():
+    with db.engine.connect() as conn:
+        # claves de config por negocio pueden pasar de 50 caracteres
+        if db.engine.dialect.name == "postgresql":
+            try:
+                conn.execute(db.text("ALTER TABLE config ALTER COLUMN clave TYPE VARCHAR(120)"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("ALTER TABLE negocio ADD COLUMN IF NOT EXISTS excluidas TEXT DEFAULT ''"))
+            else:
+                conn.execute(db.text("ALTER TABLE negocio ADD COLUMN excluidas TEXT DEFAULT ''"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("ALTER TABLE negocio ADD COLUMN IF NOT EXISTS prompt TEXT"))
+            else:
+                conn.execute(db.text("ALTER TABLE negocio ADD COLUMN prompt TEXT"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
 def _seed_usuarios():
-    if Usuario.query.count() == 0:
-        for u in USUARIOS_INICIALES:
-            db.session.add(Usuario(**u))
+    try:
+        if Usuario.query.count() == 0:
+            for u in USUARIOS_INICIALES:
+                db.session.add(Usuario(**u))
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+    _asegurar_superadmin()
+
+def _asegurar_superadmin():
+    """Si no hay ningún superadmin y está definida SUPERADMIN_PASSWORD, lo crea. Nunca modifica uno existente."""
+    pw = os.environ.get("SUPERADMIN_PASSWORD", "").strip()
+    if not pw or Usuario.query.filter_by(rol="superadmin").first():
+        return
+    login = os.environ.get("SUPERADMIN_USUARIO", "superadmin").strip() or "superadmin"
+    if Usuario.query.filter_by(usuario=login).first():
+        return   # ese nombre de usuario ya lo usa otra persona: no se toca
+    try:
+        db.session.add(Usuario(nombre="Super Admin", usuario=login, password=pw, rol="superadmin", negocio="ambos"))
         db.session.commit()
+    except Exception:
+        db.session.rollback()   # otro worker lo creó al mismo tiempo
 
 with app.app_context():
     db.create_all()
     _migrar_columnas()
+    _migrar_negocio()
     _seed_usuarios()
 
 SYNC_KEY = os.environ.get("SYNC_KEY", "cpfr2024")
@@ -234,6 +342,7 @@ SYNC_KEY = os.environ.get("SYNC_KEY", "cpfr2024")
 FOTOS_DIR = os.path.join(os.path.dirname(__file__), '..', 'fotos')
 os.makedirs(FOTOS_DIR, exist_ok=True)
 
+# Mundo Vegano — visita mensual (rurales + occidente ya separados en JS)
 TIENDAS_RURALES = {
     "WM LIBERIA", "WM CIUDAD QUESADA", "WM PEREZ ZELEDON",
     "MXM LIBERIA", "MXM GUAPILES", "MXM LIMON", "MXM JACO",
@@ -241,10 +350,156 @@ TIENDAS_RURALES = {
     "A10 AUTO MERCADO HERRADURA", "A11 AUTO MERCADO TAMARINDO", "A12 AUTO MERCADO COCO",
 }
 
-def semana_actual():
-    cfg = Config.query.get("semana_override")
+# Lustig — visita mensual (rurales WM/MXM/MP/AM + Occidente MP)
+TIENDAS_RURALES_LUSTIG = {
+    # WM rurales
+    "WM LA LIMA", "WM LIBERIA", "WM CIUDAD QUESADA", "WM PEREZ ZELEDON",
+    # MXM rurales
+    "MXM GUAPILES", "MXM LIMON", "MXM JACO", "MXM LIBERIA",
+    # MP rurales (Más x Menos)
+    "MP CIUDAD QUESADA", "MP LIMON", "MP LIBERIA", "MP JACO", "MP SAN ISIDRO",
+    "MP PUNTARENAS", "MP TURRIALBA", "MP NICOYA", "MP GUAPILES", "MP CAÑAS",
+    "MP QUEPOS", "MP RIO CLARO", "MP SANTA CRUZ", "MP OROTINA", "MP ESPARZA",
+    "MP SIQUIRRES", "MP PURISCAL", "MP AGUAS ZARCAS", "MP PARRITA", "MP TAMARINDO",
+    "MP TURRIALBA NORTE", "MP LA FORTUNA", "MP UPALA", "MP PLAYAS DEL COCO",
+    "MP CARIARI", "MP UVITA",
+    # MP Occidente (también mensual)
+    "MP PALMARES", "MP GRECIA", "MP SAN RAMON", "MP ATENAS", "MP NARANJO",
+    # MXM Occidente
+    "MXM SAN RAMON", "MXM GRECIA",
+    # AM rurales
+    "A10 AUTO MERCADO HERRADURA", "A11 AUTO MERCADO TAMARINDO", "A12 AUTO MERCADO COCO",
+}
+
+# Cadenas conocidas. "patron" detecta la cadena por el nombre de la tienda (como viene en el
+# inventario); "grupo" es la tarjeta del panel principal donde aparecen sus tiendas.
+CADENAS_CATALOGO = [
+    {"codigo": "WM",    "nombre": "Walmart",      "grupo": "walmart",     "patron": r"^WM\b|WALMART"},
+    {"codigo": "MXM",   "nombre": "Más x Menos",  "grupo": "walmart",     "patron": r"^MXM\b"},
+    {"codigo": "MP",    "nombre": "Maxi Palí",    "grupo": "walmart",     "patron": r"^MP\b|MAXI ?PALI"},
+    {"codigo": "PALI",  "nombre": "Palí",         "grupo": "walmart",     "patron": r"^PALI\b"},
+    {"codigo": "AM",    "nombre": "Auto Mercado", "grupo": "automercado", "patron": r"AUTO ?MERCADO|^A\d|^AM\b"},
+    {"codigo": "VINDI", "nombre": "Vindi",        "grupo": "vindi",       "patron": r"VINDI|^C\d"},
+]
+_CAT_POR_NOMBRE = {c["nombre"].upper(): c["codigo"] for c in CADENAS_CATALOGO}
+
+def _patron_cadena(codigo):
+    c = next((c for c in CADENAS_CATALOGO if c["codigo"] == codigo), None)
+    # cadena personalizada: la tienda empieza con el código
+    return c["patron"] if c else r"^" + re.escape(codigo) + r"\b"
+
+def cadena_de_tienda(tienda, extra=()):
+    """Código de la cadena de una tienda, o '' si no se reconoce."""
+    t = (tienda or "").strip().upper()
+    for c in CADENAS_CATALOGO:
+        if re.search(c["patron"], t):
+            return c["codigo"]
+    for cod in extra:
+        if re.search(_patron_cadena(cod), t):
+            return cod
+    return ""
+
+def parse_cadenas(valor):
+    """Acepta lista o texto ('WM,MXM' o el formato viejo 'WM · MXM · Vindi') → lista de códigos."""
+    if isinstance(valor, (list, tuple)):
+        partes = valor
+    else:
+        partes = re.split(r"[,·]", valor or "")
+    out = []
+    for p in partes:
+        p = str(p).strip().upper()
+        if not p:
+            continue
+        p = _CAT_POR_NOMBRE.get(p, p)
+        p = re.sub(r"[^A-Z0-9 ]", "", p).strip()[:20]
+        if p and p not in out:
+            out.append(p)
+    return out
+
+def nombre_cadena(codigo):
+    c = next((c for c in CADENAS_CATALOGO if c["codigo"] == codigo), None)
+    return c["nombre"] if c else codigo.title()
+
+def _lineas(txt):
+    return {t.strip().upper() for t in (txt or "").splitlines() if t.strip()}
+
+def filtro_tiendas(negocio):
+    """Devuelve f(tienda)->bool: False si la tienda fue quitada o su cadena está desactivada."""
+    n = Negocio.query.get(negocio)
+    if not n:
+        return lambda t: True
+    excl = _lineas(n.excluidas)
+    activas = set(parse_cadenas(n.cadenas))
+    extra = [c for c in activas if c not in {x["codigo"] for x in CADENAS_CATALOGO}]
+    def ok(t):
+        if (t or "").strip().upper() in excl:
+            return False
+        cad = cadena_de_tienda(t, extra)
+        return not activas or not cad or cad in activas
+    return ok
+
+def rurales_maestro():
+    """'Memoria' de tiendas rurales: las de fábrica + las marcadas en cualquier negocio."""
+    todas = set(TIENDAS_RURALES) | set(TIENDAS_RURALES_LUSTIG)
+    for n in Negocio.query.all():
+        todas |= _lineas(n.rurales)
+    return {t.upper() for t in todas}
+
+# Datos iniciales: solo se usan para sembrar la tabla negocio la primera vez
+NEGOCIOS_INICIALES = [
+    {"slug": "mundo_vegano", "nombre": "Mundo Vegano", "cadenas": "WM,MXM,PALI,AM,VINDI",
+     "rurales": TIENDAS_RURALES, "logo": "mv_logo.png", "orden": 1},
+    {"slug": "lustig", "nombre": "Lustig", "cadenas": "WM,MXM,MP,PALI,AM",
+     "rurales": TIENDAS_RURALES_LUSTIG, "logo": "lustig_logo.png", "orden": 2},
+]
+
+def _seed_negocios():
+    try:
+        _seed_negocios_()
+    except Exception:
+        db.session.rollback()   # otro worker lo sembró al mismo tiempo
+
+def _seed_negocios_():
+    if Negocio.query.count():
+        return
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    for n in NEGOCIOS_INICIALES:
+        logo = None
+        ruta = os.path.join(static_dir, n["logo"])
+        if os.path.exists(ruta):
+            with open(ruta, "rb") as f:
+                logo = "data:image/png;base64," + base64.b64encode(f.read()).decode()
+        db.session.add(Negocio(slug=n["slug"], nombre=n["nombre"], cadenas=n["cadenas"],
+                               rurales="\n".join(sorted(n["rurales"])), logo_b64=logo,
+                               activo=True, orden=n["orden"],
+                               creado_en=datetime.now().strftime("%Y-%m-%d %H:%M")))
+    db.session.commit()
+
+with app.app_context():
+    _seed_negocios()
+
+def slugs_negocios(solo_activos=False):
+    q = Negocio.query
+    if solo_activos:
+        q = q.filter_by(activo=True)
+    return [n.slug for n in q.all()]
+
+def rurales_de(negocio):
+    n = Negocio.query.get(negocio)
+    if not n or not n.rurales:
+        return set()
+    return {t.strip().upper() for t in n.rurales.splitlines() if t.strip()}
+
+def semana_actual(negocio="mundo_vegano"):
+    clave = f"{negocio}:semana_override"
+    cfg = Config.query.get(clave)
     if cfg and cfg.valor:
         return cfg.valor
+    # fallback a la clave legacy (solo mundo_vegano)
+    if negocio == "mundo_vegano":
+        cfg_leg = Config.query.get("semana_override")
+        if cfg_leg and cfg_leg.valor:
+            return cfg_leg.valor
     return datetime.now().strftime("%Y-S%V")
 
 MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
@@ -288,24 +543,33 @@ def login():
     password = data.get("password", "").strip()
     u = Usuario.query.filter_by(usuario=usuario, password=password).first()
     if u:
-        return jsonify({"ok": True, "id": u.id, "nombre": u.nombre, "rol": u.rol})
+        negocio = getattr(u, "negocio", None) or "mundo_vegano"
+        return jsonify({
+            "ok": True, "id": u.id, "nombre": u.nombre, "rol": u.rol,
+            "negocio": negocio,
+            # super-admin ve selector; otros entran directo
+            "selector_negocio": negocio == "ambos",
+        })
     return jsonify({"ok": False, "error": "Usuario o contraseña incorrectos"}), 401
 
 @app.route("/api/semana-activa")
 def get_semana_activa():
-    codigo = semana_actual()
+    negocio = request.args.get("negocio", "mundo_vegano")
+    codigo = semana_actual(negocio)
     _, legible = rango_de_codigo(codigo)
-    ya_cerrada = Diferencia.query.filter_by(semana=codigo).first() is not None
+    ya_cerrada = Diferencia.query.filter_by(semana=codigo, negocio=negocio).first() is not None
     return jsonify({"semana_activa": codigo, "semana_legible": legible, "ya_cerrada": ya_cerrada})
 
 @app.route("/api/set-semana", methods=["POST"])
 def set_semana():
     data = request.json or {}
-    semana = (data.get("semana") or "").strip()
-    cfg = Config.query.get("semana_override")
+    semana  = (data.get("semana") or "").strip()
+    negocio = (data.get("negocio") or "mundo_vegano").strip()
+    clave   = f"{negocio}:semana_override"
+    cfg = Config.query.get(clave)
     if semana:
         if not cfg:
-            cfg = Config(clave="semana_override", valor=semana)
+            cfg = Config(clave=clave, valor=semana)
             db.session.add(cfg)
         else:
             cfg.valor = semana
@@ -313,15 +577,258 @@ def set_semana():
         if cfg:
             cfg.valor = ""
     db.session.commit()
-    return jsonify({"ok": True, "semana_activa": semana_actual()})
+    return jsonify({"ok": True, "semana_activa": semana_actual(negocio)})
+
+# ─────────────────────────────────────────────
+# NEGOCIOS (clientes) — alta/edición desde la app
+# ─────────────────────────────────────────────
+def _es_superadmin(data):
+    return (data or {}).get("solicitante_rol", "") == "superadmin"
+
+def _negocio_json(n, admin=False):
+    cods = parse_cadenas(n.cadenas)
+    d = {"slug": n.slug, "nombre": n.nombre, "cadenas": cods,
+         "cadenas_txt": " · ".join(cods),
+         "logo": f"/api/negocios/{n.slug}/logo" if n.logo_b64 else "",
+         "activo": bool(n.activo), "orden": n.orden or 0}
+    if admin:
+        d["rurales"] = n.rurales or ""
+        d["excluidas"] = n.excluidas or ""
+        d["prompt"] = prompt_de(n.slug)
+        d["prompt_original"] = _prompt_por_defecto(n.slug, n.nombre)
+        d["creado_en"] = n.creado_en or ""
+    return d
+
+def _texto_tiendas(valor):
+    """Lista o texto → texto normalizado (una tienda por línea, mayúsculas, sin duplicados)."""
+    items = valor if isinstance(valor, (list, tuple)) else (valor or "").splitlines()
+    vistos = []
+    for t in items:
+        t = str(t).strip().upper()
+        if t and t not in vistos:
+            vistos.append(t)
+    return "\n".join(vistos)
+
+def _resumen_tiendas(tiendas, extra=()):
+    """Agrupa tiendas por cadena y sugiere rurales según la memoria de la app."""
+    maestro = rurales_maestro()
+    por_cadena = {}
+    for t in tiendas:
+        cod = cadena_de_tienda(t, extra) or "OTRA"
+        por_cadena[cod] = por_cadena.get(cod, 0) + 1
+    detectadas = [{"codigo": c, "nombre": nombre_cadena(c) if c != "OTRA" else "Sin cadena", "tiendas": k}
+                  for c, k in sorted(por_cadena.items(), key=lambda x: -x[1])]
+    return {
+        "tiendas": sorted(tiendas),
+        "cadenas_detectadas": detectadas,
+        "rurales_sugeridas": sorted(t for t in tiendas if t.upper() in maestro),
+    }
+
+@app.route("/api/cadenas")
+def catalogo_cadenas():
+    return jsonify(CADENAS_CATALOGO)
+
+@app.route("/api/negocios/analizar-inventario", methods=["POST"])
+def analizar_inventario_negocio():
+    """Lee el/los Excel de inventario SIN guardar nada: devuelve tiendas, cadenas y rurales sugeridas."""
+    if request.form.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    archivo_wm = request.files.get("archivo_wm")
+    archivo_am = request.files.get("archivo_am")
+    if not archivo_wm and not archivo_am:
+        return jsonify({"error": "Subí al menos un Excel de inventario"}), 400
+    try:
+        registros = []
+        if archivo_wm:
+            registros += _leer_excel_walmart(archivo_wm)
+        if archivo_am:
+            registros += _leer_excel_automercado(archivo_am)
+    except Exception as e:
+        return jsonify({"error": f"No se pudo leer el Excel: {e}"}), 400
+    tiendas = {r["tienda"].strip().upper() for r in registros if r.get("tienda")}
+    res = _resumen_tiendas(tiendas)
+    res["productos"] = len({r["producto"] for r in registros})
+    res["registros"] = len(registros)
+    return jsonify(res)
+
+def _formato_excel(archivo):
+    """'wm' (Retail Link: Store Name + Signing Desc), 'am' (Auto Mercado: NombrePDX) o None."""
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), read_only=True, data_only=True)
+        ws = wb.active
+        for i, row in enumerate(ws.iter_rows(min_row=1, max_row=30, values_only=True)):
+            vals = {str(v).strip() for v in row if v is not None}
+            if "Store Name" in vals and "Signing Desc" in vals:
+                return "wm"
+            if i == 0 and "NombrePDX" in vals:
+                return "am"
+        return None
+    except Exception:
+        return None
+    finally:
+        archivo.seek(0)
+
+@app.route("/api/negocios/detectar-excel", methods=["POST"])
+def detectar_excel():
+    """Recibe varios Excel (archivos sueltos o una carpeta) y dice cuál es de Walmart y cuál de Auto Mercado."""
+    if request.form.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    res = []
+    for i, f in enumerate(request.files.getlist("archivos")):
+        res.append({"indice": i, "nombre": f.filename, "formato": _formato_excel(f)})
+    return jsonify(res)
+
+@app.route("/api/negocios/<slug>/tiendas")
+def tiendas_config_negocio(slug):
+    """Tiendas del inventario actual del negocio, para editar semanales/rurales/quitadas."""
+    if request.args.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    n = Negocio.query.get_or_404(slug)
+    rows = db.session.query(Inventario.tienda).filter(Inventario.negocio == slug).distinct().all()
+    tiendas = {r.tienda.strip().upper() for r in rows if r.tienda}
+    extra = [c for c in parse_cadenas(n.cadenas) if c not in {x["codigo"] for x in CADENAS_CATALOGO}]
+    res = _resumen_tiendas(tiendas, extra)
+    res["rurales"] = sorted(_lineas(n.rurales))
+    res["excluidas"] = sorted(_lineas(n.excluidas))
+    return jsonify(res)
+
+def _slugify(texto):
+    import unicodedata, re as _re
+    t = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode().lower()
+    return _re.sub(r"[^a-z0-9]+", "_", t).strip("_")[:30].strip("_")
+
+def _validar_prompt(texto):
+    texto = (texto or "").strip()
+    if not texto:
+        return None   # vacío = usar el prompt por defecto
+    if "{producto}" not in texto:
+        raise ValueError("El prompt debe incluir {producto} donde va el nombre del producto a validar")
+    if "ESTADO:" not in texto:
+        raise ValueError("El prompt debe terminar pidiendo el formato ESTADO / CONFIANZA / MOTIVO")
+    if len(texto) > 20000:
+        raise ValueError("El prompt es demasiado largo (máximo 20.000 caracteres)")
+    return texto
+
+def _validar_logo(logo):
+    """Acepta data URL png/jpeg/webp de hasta ~1.5 MB."""
+    if not logo:
+        return None
+    if not logo.startswith(("data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,")):
+        raise ValueError("El logo debe ser una imagen PNG, JPG o WEBP")
+    if len(logo) > 2_000_000:
+        raise ValueError("El logo es muy pesado (máximo ~1.5 MB)")
+    return logo
+
+@app.route("/api/negocios")
+def listar_negocios():
+    """Lista para el selector de negocio: solo activos."""
+    rows = Negocio.query.filter_by(activo=True).order_by(Negocio.orden, Negocio.nombre).all()
+    return jsonify([_negocio_json(n) for n in rows])
+
+@app.route("/api/negocios/admin")
+def listar_negocios_admin():
+    if request.args.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    rows = Negocio.query.order_by(Negocio.orden, Negocio.nombre).all()
+    return jsonify([_negocio_json(n, admin=True) for n in rows])
+
+@app.route("/api/negocios/<slug>/logo")
+def logo_negocio(slug):
+    n = Negocio.query.get_or_404(slug)
+    if not n.logo_b64:
+        return "", 404
+    cabecera, datos = n.logo_b64.split(",", 1)
+    mime = cabecera[5:].split(";")[0]
+    resp = send_file(io.BytesIO(base64.b64decode(datos)), mimetype=mime)
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+@app.route("/api/negocios/prompt-base")
+def prompt_base_negocio():
+    """Prompt inicial sugerido para un negocio nuevo."""
+    if request.args.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    return jsonify({"prompt": _prompt_por_defecto("", request.args.get("nombre", ""))})
+
+@app.route("/api/negocios/<slug>/rurales")
+def rurales_negocio(slug):
+    return jsonify(sorted(rurales_de(slug)))
+
+@app.route("/api/negocios", methods=["POST"])
+def crear_negocio():
+    data = request.get_json(force=True) or {}
+    if not _es_superadmin(data):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    nombre = (data.get("nombre") or "").strip()
+    if not nombre:
+        return jsonify({"ok": False, "error": "El nombre es requerido"}), 400
+    if len(nombre) > 100:
+        return jsonify({"ok": False, "error": "El nombre es demasiado largo (máximo 100 caracteres)"}), 400
+    slug = _slugify(nombre)
+    if not slug or slug == "ambos":
+        return jsonify({"ok": False, "error": "Nombre inválido"}), 400
+    if Negocio.query.get(slug):
+        return jsonify({"ok": False, "error": "Ya existe un negocio con ese nombre"}), 409
+    try:
+        logo = _validar_logo(data.get("logo"))
+        prompt = _validar_prompt(data.get("prompt"))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    orden = (db.session.query(db.func.max(Negocio.orden)).scalar() or 0) + 1
+    n = Negocio(slug=slug, nombre=nombre, cadenas=",".join(parse_cadenas(data.get("cadenas")))[:200],
+                rurales=_texto_tiendas(data.get("rurales")), excluidas=_texto_tiendas(data.get("excluidas")),
+                logo_b64=logo, prompt=prompt, activo=True,
+                orden=orden, creado_en=datetime.now().strftime("%Y-%m-%d %H:%M"))
+    db.session.add(n)
+    db.session.commit()
+    return jsonify({"ok": True, "negocio": _negocio_json(n, admin=True)})
+
+@app.route("/api/negocios/<slug>", methods=["PUT"])
+def editar_negocio(slug):
+    data = request.get_json(force=True) or {}
+    if not _es_superadmin(data):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    n = Negocio.query.get_or_404(slug)
+    if "nombre" in data:
+        nombre = (data.get("nombre") or "").strip()
+        if not nombre:
+            return jsonify({"ok": False, "error": "El nombre es requerido"}), 400
+        if len(nombre) > 100:
+            return jsonify({"ok": False, "error": "El nombre es demasiado largo (máximo 100 caracteres)"}), 400
+        n.nombre = nombre
+    if "cadenas" in data:
+        n.cadenas = ",".join(parse_cadenas(data.get("cadenas")))[:200]
+    if "rurales" in data:
+        n.rurales = _texto_tiendas(data.get("rurales"))
+    if "excluidas" in data:
+        n.excluidas = _texto_tiendas(data.get("excluidas"))
+    if "prompt" in data:
+        try:
+            p = _validar_prompt(data.get("prompt"))
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        # si es igual al de fábrica no se guarda copia: así hereda mejoras futuras
+        n.prompt = None if p and p == _prompt_por_defecto(n.slug, n.nombre).strip() else p
+    if "activo" in data:
+        n.activo = bool(data.get("activo"))
+    if data.get("logo"):
+        try:
+            n.logo_b64 = _validar_logo(data.get("logo"))
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+    db.session.commit()
+    return jsonify({"ok": True, "negocio": _negocio_json(n, admin=True)})
 
 @app.route("/api/semanas")
 def listar_semanas():
+    # El calendario de semanas es compartido; la semana activa es por negocio
+    negocio = request.args.get("negocio", "mundo_vegano")
+    activa  = semana_actual(negocio)
     rows = SemanaConfig.query.order_by(SemanaConfig.id.desc()).all()
     return jsonify([{
         "id": s.id, "codigo": s.codigo, "nombre": s.nombre,
         "fecha_ini": s.fecha_ini, "fecha_fin": s.fecha_fin,
-        "activa": s.activa, "creada_en": s.creada_en
+        "activa": s.codigo == activa, "creada_en": s.creada_en
     } for s in rows])
 
 @app.route("/api/semanas", methods=["POST"])
@@ -346,14 +853,12 @@ def crear_semana():
 @app.route("/api/semanas/<int:sid>/activar", methods=["POST"])
 def activar_semana(sid):
     s = SemanaConfig.query.get_or_404(sid)
-    # Desactivar todas
-    SemanaConfig.query.update({"activa": False})
-    s.activa = True
-    db.session.commit()
-    # Actualizar semana_override en Config para que todo el sistema lo use
-    cfg = Config.query.get("semana_override")
+    negocio = (request.get_json(silent=True) or {}).get("negocio", "mundo_vegano")
+    # Actualizar {negocio}:semana_override para que todo el sistema de ese negocio lo use
+    clave = f"{negocio}:semana_override"
+    cfg = Config.query.get(clave)
     if not cfg:
-        cfg = Config(clave="semana_override", valor=s.codigo)
+        cfg = Config(clave=clave, valor=s.codigo)
         db.session.add(cfg)
     else:
         cfg.valor = s.codigo
@@ -363,19 +868,28 @@ def activar_semana(sid):
 @app.route("/api/semanas/<int:sid>", methods=["DELETE"])
 def eliminar_semana(sid):
     s = SemanaConfig.query.get_or_404(sid)
-    if s.activa:
-        return jsonify({"error": "No se puede eliminar la semana activa"}), 400
+    if any(s.codigo == semana_actual(n) for n in slugs_negocios()):
+        return jsonify({"error": "No se puede eliminar una semana activa"}), 400
     db.session.delete(s)
     db.session.commit()
     return jsonify({"ok": True})
 
+# Roles con permisos de administración dentro de un negocio.
+#   supervisor = admin de UN negocio · admin = admin general (todos los negocios, sin Sistema global)
+#   superadmin = todo, incluido Sistema (negocios, prompts, consumo)
+ROLES_ADMIN = ("supervisor", "admin", "superadmin")
+
 def _es_supervisor(data):
-    return (data or {}).get("solicitante_rol") == "supervisor"
+    rol = (data or {}).get("solicitante_rol", "")
+    return rol in ROLES_ADMIN
 
 @app.route("/api/usuarios")
 def listar_usuarios():
-    rows = Usuario.query.order_by(Usuario.rol.desc(), Usuario.nombre).all()
-    return jsonify([{"id": u.id, "nombre": u.nombre, "usuario": u.usuario, "password": u.password, "rol": u.rol} for u in rows])
+    negocio = request.args.get("negocio", "mundo_vegano")
+    rows = (Usuario.query.filter(db.or_(Usuario.negocio == negocio, Usuario.rol == "admin"))
+            .order_by(Usuario.rol.desc(), Usuario.nombre).all())
+    return jsonify([{"id": u.id, "nombre": u.nombre, "usuario": u.usuario, "password": u.password,
+                     "rol": u.rol, "negocio": u.negocio} for u in rows])
 
 @app.route("/api/usuarios", methods=["POST"])
 def crear_usuario():
@@ -390,9 +904,16 @@ def crear_usuario():
     if Usuario.query.filter_by(usuario=usuario).first():
         return jsonify({"ok": False, "error": "Ese usuario ya existe"}), 400
     rol_nuevo = data.get("rol", "display")
-    if rol_nuevo not in ("display", "subadmin"):
-        rol_nuevo = "display"
-    u = Usuario(nombre=nombre, usuario=usuario, password=password, rol=rol_nuevo)
+    # Solo el superadmin crea administradores principales (supervisor)
+    permitidos = ("display", "subadmin", "supervisor", "admin") if _es_superadmin(data) else ("display", "subadmin")
+    if rol_nuevo not in permitidos:
+        return jsonify({"ok": False, "error": "No autorizado para crear ese tipo de usuario"}), 403
+    negocio = data.get("negocio", "mundo_vegano")
+    if rol_nuevo == "admin":
+        negocio = "ambos"   # admin general: entra a todos los negocios
+    elif negocio not in slugs_negocios():
+        return jsonify({"ok": False, "error": "Negocio inválido"}), 400
+    u = Usuario(nombre=nombre, usuario=usuario, password=password, rol=rol_nuevo, negocio=negocio)
     db.session.add(u)
     db.session.commit()
     return jsonify({"ok": True, "id": u.id})
@@ -402,8 +923,10 @@ def eliminar_usuario(usuario_id):
     if not _es_supervisor(request.json):
         return jsonify({"ok": False, "error": "No autorizado"}), 403
     u = Usuario.query.get_or_404(usuario_id)
-    if u.rol == "supervisor":
-        return jsonify({"ok": False, "error": "No se puede eliminar al supervisor"}), 400
+    if u.rol == "superadmin":
+        return jsonify({"ok": False, "error": "No se puede eliminar al superadmin"}), 400
+    if u.rol in ("supervisor", "admin") and not _es_superadmin(request.json):
+        return jsonify({"ok": False, "error": "Solo el superadmin puede eliminar administradores"}), 403
     db.session.delete(u)
     db.session.commit()
     return jsonify({"ok": True})
@@ -417,22 +940,32 @@ def cambiar_password(usuario_id):
     if not nueva:
         return jsonify({"ok": False, "error": "Contraseña vacía"}), 400
     u = Usuario.query.get_or_404(usuario_id)
+    if u.rol in ("supervisor", "admin", "superadmin") and not _es_superadmin(data):
+        return jsonify({"ok": False, "error": "Solo el superadmin puede cambiar esa contraseña"}), 403
     u.password = nueva
     db.session.commit()
     return jsonify({"ok": True})
 
+CLAVES_OCULTAR = ("ocultar_automercado", "ocultar_walmart", "ocultar_vindi")
+
+def _ocultar(negocio, clave):
+    """Lee {negocio}:{clave}; Mundo Vegano cae a la clave legacy sin prefijo."""
+    cfg = Config.query.get(f"{negocio}:{clave}")
+    if cfg is None and negocio == "mundo_vegano":
+        cfg = Config.query.get(clave)
+    return bool(cfg and cfg.valor == "1")
+
 @app.route("/api/tiendas")
 def tiendas():
-    rows = db.session.query(Inventario.tienda).distinct().order_by(Inventario.tienda).all()
-    tiendas_list = [r.tienda for r in rows]
-    ocultar_am = Config.query.get("ocultar_automercado")
-    ocultar_wm = Config.query.get("ocultar_walmart")
-    if ocultar_am and ocultar_am.valor == "1":
+    negocio = request.args.get("negocio", "mundo_vegano")
+    rows = db.session.query(Inventario.tienda).filter(Inventario.negocio == negocio).distinct().order_by(Inventario.tienda).all()
+    habilitada = filtro_tiendas(negocio)
+    tiendas_list = [r.tienda for r in rows if habilitada(r.tienda)]
+    if _ocultar(negocio, "ocultar_automercado"):
         tiendas_list = [t for t in tiendas_list if "AUTO" not in t.upper() and not t.upper().startswith("AM ")]
-    if ocultar_wm and ocultar_wm.valor == "1":
+    if _ocultar(negocio, "ocultar_walmart"):
         tiendas_list = [t for t in tiendas_list if not t.upper().startswith("WM ") and "WALMART" not in t.upper()]
-    ocultar_vi = Config.query.get("ocultar_vindi")
-    if ocultar_vi and ocultar_vi.valor == "1":
+    if _ocultar(negocio, "ocultar_vindi"):
         tiendas_list = [t for t in tiendas_list if "VINDI" not in t.upper()]
     return jsonify(tiendas_list)
 
@@ -440,30 +973,36 @@ def tiendas():
 def toggle_ocultar_cadena():
     data = request.get_json(force=True)
     clave = data.get("clave")
-    if clave not in ("ocultar_automercado", "ocultar_walmart", "ocultar_vindi"):
+    if clave not in CLAVES_OCULTAR:
         return jsonify({"error": "clave inválida"}), 400
+    negocio = data.get("negocio", "mundo_vegano")
     valor = "1" if data.get("ocultar") else "0"
-    cfg = Config.query.get(clave)
+    clave_neg = f"{negocio}:{clave}"
+    cfg = Config.query.get(clave_neg)
     if cfg:
         cfg.valor = valor
     else:
-        db.session.add(Config(clave=clave, valor=valor))
+        db.session.add(Config(clave=clave_neg, valor=valor))
     db.session.commit()
     return jsonify({"ok": True, "ocultar": valor == "1"})
 
 @app.route("/api/config/ocultar-cadena", methods=["GET"])
 def get_ocultar_cadena():
-    clave = request.args.get("clave", "ocultar_automercado")
-    cfg = Config.query.get(clave)
-    return jsonify({"ocultar": cfg.valor == "1" if cfg else False})
+    clave   = request.args.get("clave", "ocultar_automercado")
+    negocio = request.args.get("negocio", "mundo_vegano")
+    if clave not in CLAVES_OCULTAR:
+        return jsonify({"error": "clave inválida"}), 400
+    return jsonify({"ocultar": _ocultar(negocio, clave)})
 
 @app.route("/api/reset-semana-actual", methods=["POST"])
 def reset_semana_actual():
+    data    = request.get_json(silent=True) or {}
+    negocio = data.get("negocio", "mundo_vegano")
     try:
-        ValidacionIA.query.delete(synchronize_session=False)
-        Reporte.query.delete(synchronize_session=False)
-        Diferencia.query.delete(synchronize_session=False)
-        Liquidacion.query.delete(synchronize_session=False)
+        ValidacionIA.query.filter_by(negocio=negocio).delete(synchronize_session=False)
+        Reporte.query.filter_by(negocio=negocio).delete(synchronize_session=False)
+        Diferencia.query.filter_by(negocio=negocio).delete(synchronize_session=False)
+        Liquidacion.query.filter_by(negocio=negocio).delete(synchronize_session=False)
         db.session.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -472,15 +1011,16 @@ def reset_semana_actual():
 
 @app.route("/api/reset-historial", methods=["POST"])
 def reset_historial():
-    data = request.get_json(force=True)
+    data    = request.get_json(force=True)
     if data.get("confirmar") != "BORRAR":
         return jsonify({"error": "Confirmación incorrecta"}), 400
+    negocio = data.get("negocio", "mundo_vegano")
     try:
-        sem = semana_actual()
-        Diferencia.query.filter(Diferencia.semana != sem).delete(synchronize_session=False)
-        ValidacionIA.query.filter(ValidacionIA.semana != sem).delete(synchronize_session=False)
-        Reporte.query.filter(Reporte.semana != sem).delete(synchronize_session=False)
-        Liquidacion.query.filter(Liquidacion.semana != sem).delete(synchronize_session=False)
+        sem = semana_actual(negocio)
+        Diferencia.query.filter(Diferencia.semana != sem, Diferencia.negocio == negocio).delete(synchronize_session=False)
+        ValidacionIA.query.filter(ValidacionIA.semana != sem, ValidacionIA.negocio == negocio).delete(synchronize_session=False)
+        Reporte.query.filter(Reporte.semana != sem, Reporte.negocio == negocio).delete(synchronize_session=False)
+        Liquidacion.query.filter(Liquidacion.semana != sem, Liquidacion.negocio == negocio).delete(synchronize_session=False)
         db.session.commit()
         return jsonify({"ok": True})
     except Exception as e:
@@ -489,17 +1029,18 @@ def reset_historial():
 
 @app.route("/api/tiendas-reportadas")
 def tiendas_reportadas():
-    rows = db.session.query(Reporte.tienda).filter_by(semana=semana_actual()).distinct().all()
+    negocio = request.args.get("negocio", "mundo_vegano")
+    rows = db.session.query(Reporte.tienda).filter_by(semana=semana_actual(negocio), negocio=negocio).distinct().all()
     return jsonify([r.tienda for r in rows])
 
 @app.route("/api/liquidacion", methods=["POST"])
 def guardar_liquidacion():
-    data = request.json or {}
-    tienda = data.get("tienda", "")
-    tipo   = data.get("tipo", "Liquidación")
-    sem = semana_actual()
-    # UPSERT: un registro por tienda+semana+tipo
-    existente = Liquidacion.query.filter_by(tienda=tienda, semana=sem, tipo=tipo).first()
+    data    = request.json or {}
+    tienda  = data.get("tienda", "")
+    tipo    = data.get("tipo", "Liquidación")
+    negocio = data.get("negocio", "mundo_vegano")
+    sem     = semana_actual(negocio)
+    existente = Liquidacion.query.filter_by(tienda=tienda, semana=sem, tipo=tipo, negocio=negocio).first()
     if existente:
         existente.comentario = data.get("comentario", existente.comentario)
         existente.foto1_b64  = data.get("foto1") or existente.foto1_b64
@@ -509,7 +1050,7 @@ def guardar_liquidacion():
         existente.fecha      = datetime.now().strftime("%Y%m%d_%H%M%S")
         db.session.commit()
         return jsonify({"ok": True, "id": existente.id})
-    liq = Liquidacion(tienda=tienda, semana=sem, tipo=tipo,
+    liq = Liquidacion(negocio=negocio, tienda=tienda, semana=sem, tipo=tipo,
                       usuario=data.get("usuario", ""),
                       comentario=data.get("comentario", ""),
                       foto1_b64=data.get("foto1") or None,
@@ -522,9 +1063,10 @@ def guardar_liquidacion():
 
 @app.route("/api/liquidacion")
 def ver_liquidacion():
-    tienda = request.args.get("tienda", "")
-    sem = request.args.get("semana", semana_actual())
-    q = Liquidacion.query.filter_by(semana=sem)
+    tienda  = request.args.get("tienda", "")
+    negocio = request.args.get("negocio", "mundo_vegano")
+    sem     = request.args.get("semana", semana_actual(negocio))
+    q = Liquidacion.query.filter_by(semana=sem, negocio=negocio)
     if tienda:
         q = q.filter_by(tienda=tienda)
     rows = q.all()
@@ -538,7 +1080,8 @@ def ver_liquidacion():
 
 @app.route("/api/productos/<tienda>")
 def productos(tienda):
-    rows = Inventario.query.filter_by(tienda=tienda).order_by(Inventario.cantidad.desc()).all()
+    negocio = request.args.get("negocio", "mundo_vegano")
+    rows = Inventario.query.filter_by(tienda=tienda, negocio=negocio).order_by(Inventario.cantidad.desc()).all()
     return jsonify([{"nombre": r.producto, "cantidad": r.cantidad,
                      "nombre_empaque": r.nombre_empaque or r.producto,
                      "item_nbr": r.item_nbr or ""} for r in rows])
@@ -549,11 +1092,12 @@ def sync_inventario():
     if data.get("key") != SYNC_KEY:
         return jsonify({"ok": False, "error": "No autorizado"}), 403
     inventario = data.get("inventario", {})
-    Inventario.query.delete()
+    negocio    = data.get("negocio", "mundo_vegano")
+    Inventario.query.filter_by(negocio=negocio).delete(synchronize_session=False)
     total = 0
     for tienda, prods in inventario.items():
         for p in prods:
-            db.session.add(Inventario(tienda=tienda, producto=p["nombre"], cantidad=p["cantidad"],
+            db.session.add(Inventario(negocio=negocio, tienda=tienda, producto=p["nombre"], cantidad=p["cantidad"],
                                        nombre_empaque=p.get("nombre_empaque") or None))
             total += 1
     db.session.commit()
@@ -567,11 +1111,11 @@ def guardar_reporte():
     comentario  = data.get("comentario", "")
     foto_b64    = data.get("foto", "")
     usuario     = data.get("usuario", "")
+    negocio     = data.get("negocio", "mundo_vegano")
     ahora       = datetime.now().strftime("%Y%m%d_%H%M%S")
-    sem         = semana_actual()
+    sem         = semana_actual(negocio)
 
-    # Buscar reporte existente para esta tienda+producto+semana
-    existente = Reporte.query.filter_by(tienda=tienda, producto=producto, semana=sem).first()
+    existente = Reporte.query.filter_by(tienda=tienda, producto=producto, semana=sem, negocio=negocio).first()
 
     nombre_foto = ""
     if foto_b64:
@@ -591,7 +1135,7 @@ def guardar_reporte():
         db.session.commit()
         return jsonify({"ok": True, "id": existente.id, "modificado": True})
     else:
-        rep = Reporte(tienda=tienda, producto=producto, comentario=comentario,
+        rep = Reporte(negocio=negocio, tienda=tienda, producto=producto, comentario=comentario,
                       foto=nombre_foto, foto_b64=foto_b64 or None, usuario=usuario,
                       fecha=ahora, semana=sem, modificaciones=0)
         db.session.add(rep)
@@ -600,9 +1144,10 @@ def guardar_reporte():
 
 @app.route("/api/reportes")
 def ver_reportes():
-    tienda = request.args.get("tienda", "")
-    semana = request.args.get("semana", semana_actual())
-    q = Reporte.query.filter_by(semana=semana)
+    tienda  = request.args.get("tienda", "")
+    negocio = request.args.get("negocio", "mundo_vegano")
+    semana  = request.args.get("semana", semana_actual(negocio))
+    q = Reporte.query.filter_by(semana=semana, negocio=negocio)
     if tienda:
         q = q.filter_by(tienda=tienda)
     rows = q.order_by(Reporte.id.desc()).all()
@@ -619,8 +1164,10 @@ def ver_reportes():
 
 @app.route("/api/cerrar-semana", methods=["POST"])
 def cerrar_semana():
-    semana = semana_actual()
-    reportes = Reporte.query.filter_by(semana=semana).all()
+    data    = request.json or {}
+    negocio = (data.get("negocio") or "mundo_vegano").strip()
+    semana  = semana_actual(negocio)
+    reportes = Reporte.query.filter_by(semana=semana, negocio=negocio).all()
 
     # Construir mapa de reportes: {(tienda, producto): reporte}
     mapa = {}
@@ -630,42 +1177,46 @@ def cerrar_semana():
             mapa[key] = r
 
     # Semana anterior para detectar reincidentes
-    semana_ant = Diferencia.query.filter(Diferencia.semana < semana).order_by(Diferencia.semana.desc()).with_entities(Diferencia.semana).first()
+    semana_ant = Diferencia.query.filter(Diferencia.semana < semana, Diferencia.negocio == negocio).order_by(Diferencia.semana.desc()).with_entities(Diferencia.semana).first()
     semana_anterior = semana_ant[0] if semana_ant else None
     difs_anteriores = set()
     if semana_anterior:
-        for d in Diferencia.query.filter_by(semana=semana_anterior).all():
+        for d in Diferencia.query.filter_by(semana=semana_anterior, negocio=negocio).all():
             if d.estado != "OK":
                 difs_anteriores.add((d.tienda, d.producto))
 
     # Mapa de validaciones IA/supervisor para esta semana
     validaciones = {}
-    for v in ValidacionIA.query.filter_by(semana=semana).all():
+    for v in ValidacionIA.query.filter_by(semana=semana, negocio=negocio).all():
         rep = mapa.get((v.tienda, v.producto))
         if rep:
             validaciones[(v.tienda, v.producto)] = v.estado  # APROBADO / RECHAZADO / REVISAR / etc.
 
+    rurales_negocio = rurales_de(negocio)
+
     # Tiendas rurales que reportaron esta semana
-    tiendas_rurales_esta_semana = {r.tienda for r in reportes if r.tienda in TIENDAS_RURALES}
+    tiendas_rurales_esta_semana = {r.tienda for r in reportes if r.tienda in rurales_negocio}
 
     # Tiendas rurales que visitaron en las últimas 3 semanas (historial Diferencia)
     semanas_hist = sorted({
         d.semana for d in Diferencia.query
-        .filter(Diferencia.semana < semana)
+        .filter(Diferencia.semana < semana, Diferencia.negocio == negocio)
         .with_entities(Diferencia.semana).distinct().all()
     }, reverse=True)[:3]
     tiendas_rurales_visitaron_mes = set(tiendas_rurales_esta_semana)
     if semanas_hist:
         for d in Diferencia.query.filter(
             Diferencia.semana.in_(semanas_hist),
+            Diferencia.negocio == negocio,
             Diferencia.estado != "SIN_FOTO"
         ).with_entities(Diferencia.tienda).distinct().all():
-            if d.tienda in TIENDAS_RURALES:
+            if d.tienda in rurales_negocio:
                 tiendas_rurales_visitaron_mes.add(d.tienda)
 
     # Calcular diferencias
-    inventario = Inventario.query.all()
-    Diferencia.query.filter_by(semana=semana).delete()
+    habilitada = filtro_tiendas(negocio)
+    inventario = [i for i in Inventario.query.filter_by(negocio=negocio).all() if habilitada(i.tienda)]
+    Diferencia.query.filter_by(semana=semana, negocio=negocio).delete()
     for inv in inventario:
         if inv.cantidad <= 0:
             continue
@@ -674,7 +1225,7 @@ def cerrar_semana():
         val_estado = validaciones.get(key)
 
         # Rural que no visitó esta semana pero sí este mes → no es diferencia esta semana
-        if inv.tienda in TIENDAS_RURALES and inv.tienda not in tiendas_rurales_esta_semana:
+        if inv.tienda in rurales_negocio and inv.tienda not in tiendas_rurales_esta_semana:
             if inv.tienda in tiendas_rurales_visitaron_mes:
                 continue  # visitó este mes, no contar como diferencia
 
@@ -693,7 +1244,7 @@ def cerrar_semana():
         else:
             estado = "SIN_FOTO"
             comentario = ""
-        db.session.add(Diferencia(semana=semana, tienda=inv.tienda, producto=inv.producto,
+        db.session.add(Diferencia(negocio=negocio, semana=semana, tienda=inv.tienda, producto=inv.producto,
                                    cantidad=inv.cantidad, estado=estado, comentario=comentario))
     db.session.commit()
 
@@ -729,7 +1280,7 @@ def cerrar_semana():
     ws1.append(["Tienda", "Producto", "Stock sistema", "Estado", "Comentario", "Reincidente"])
     estilo_header(ws1, [35, 40, 14, 18, 40, 12])
 
-    difs = Diferencia.query.filter_by(semana=semana).filter(Diferencia.estado != "OK").order_by(Diferencia.tienda, Diferencia.producto).all()
+    difs = Diferencia.query.filter_by(semana=semana, negocio=negocio).filter(Diferencia.estado != "OK").order_by(Diferencia.tienda, Diferencia.producto).all()
     for d in difs:
         reinc = "SI" if (d.tienda, d.producto) in difs_anteriores else "No"
         if d.estado == "SIN_FOTO":
@@ -777,7 +1328,7 @@ def cerrar_semana():
     ws3 = wb.create_sheet("Exhibidos OK")
     ws3.append(["Tienda", "Producto", "Stock sistema", "Comentario"])
     estilo_header(ws3, [35, 40, 14, 40])
-    for d in Diferencia.query.filter_by(semana=semana, estado="OK").order_by(Diferencia.tienda).all():
+    for d in Diferencia.query.filter_by(semana=semana, negocio=negocio, estado="OK").order_by(Diferencia.tienda).all():
         ws3.append([d.tienda, d.producto, d.cantidad, d.comentario or ""])
         r = ws3.max_row
         for c in range(1, 5):
@@ -785,15 +1336,15 @@ def cerrar_semana():
             ws3.cell(r, c).border = border
 
     # Hoja 4 — Historial matricial: todas las tiendas, ordenado por total de diferencias
-    inventario_actual = {(inv.tienda, inv.producto): inv.cantidad for inv in Inventario.query.all()}
+    inventario_actual = {(inv.tienda, inv.producto): inv.cantidad for inv in Inventario.query.filter_by(negocio=negocio).all()}
 
     semanas_arch = sorted(set(
-        d.semana for d in Diferencia.query.with_entities(Diferencia.semana).distinct().all()
+        d.semana for d in Diferencia.query.filter_by(negocio=negocio).with_entities(Diferencia.semana).distinct().all()
     ))
 
     # {(tienda, producto): {semana: 1/0}}
     matriz = {}
-    for d in Diferencia.query.order_by(Diferencia.semana).all():
+    for d in Diferencia.query.filter_by(negocio=negocio).order_by(Diferencia.semana).all():
         key = (d.tienda, d.producto)
         if key not in matriz:
             matriz[key] = {}
@@ -881,7 +1432,7 @@ def cerrar_semana():
         ws4.cell(r, c_com).alignment = Alignment(vertical="center", wrap_text=True)
 
     # Hoja 5 — Tiendas sin visita
-    todas_tiendas = set(inv.tienda for inv in Inventario.query.all())
+    todas_tiendas = set(inv.tienda for inv in inventario)
     tiendas_con_reporte = set(r.tienda for r in reportes)
     tiendas_sin_visita = sorted(todas_tiendas - tiendas_con_reporte)
 
@@ -892,7 +1443,7 @@ def cerrar_semana():
     ws5.append(["Tienda", "Productos en sistema", "Observación"])
     estilo_header(ws5, [40, 20, 40])
     for t in tiendas_sin_visita:
-        prods = Inventario.query.filter_by(tienda=t).count()
+        prods = Inventario.query.filter_by(tienda=t, negocio=negocio).count()
         ws5.append([t, prods, "Ningún display reportó esta tienda en la semana"])
         r = ws5.max_row
         for c in range(1, 4):
@@ -906,7 +1457,7 @@ def cerrar_semana():
     estilo_header(ws6, [40, 16, 12, 12, 16])
 
     resumen_tiendas = {}
-    for inv in Inventario.query.all():
+    for inv in inventario:
         if inv.cantidad <= 0:
             continue
         t = inv.tienda
@@ -914,7 +1465,7 @@ def cerrar_semana():
             resumen_tiendas[t] = {"total": 0, "ok": 0}
         resumen_tiendas[t]["total"] += 1
 
-    for d in Diferencia.query.filter_by(semana=semana, estado="OK").all():
+    for d in Diferencia.query.filter_by(semana=semana, negocio=negocio, estado="OK").all():
         if d.tienda in resumen_tiendas:
             resumen_tiendas[d.tienda]["ok"] += 1
 
@@ -970,14 +1521,14 @@ def cerrar_semana():
     fill_rural_mal = PatternFill("solid", fgColor="FFD7D7")
     font_rural_mal = Font(bold=True, color="C0392B")
 
-    todas_rurales_inventario = sorted({inv.tienda for inv in Inventario.query.all() if inv.tienda in TIENDAS_RURALES})
+    todas_rurales_inventario = sorted({inv.tienda for inv in inventario if inv.tienda in rurales_negocio})
     for tienda_r in todas_rurales_inventario:
         visito_mes    = "Sí" if tienda_r in tiendas_rurales_visitaron_mes else "No"
         visito_semana = "Sí" if tienda_r in tiendas_rurales_esta_semana   else "No"
         ultima = "—"
         if semanas_hist:
             for sh in semanas_hist:
-                tiene = Diferencia.query.filter_by(semana=sh, tienda=tienda_r).filter(Diferencia.estado != "SIN_FOTO").first()
+                tiene = Diferencia.query.filter_by(semana=sh, tienda=tienda_r, negocio=negocio).filter(Diferencia.estado != "SIN_FOTO").first()
                 if tiene:
                     _, leg = rango_de_codigo(sh)
                     ultima = leg
@@ -1016,13 +1567,13 @@ def cerrar_semana():
     # Mapa de estado por producto para separar carpetas en el ZIP
     estado_cierre = {
         (d.tienda, d.producto): d.estado
-        for d in Diferencia.query.filter_by(semana=semana).all()
+        for d in Diferencia.query.filter_by(semana=semana, negocio=negocio).all()
     }
 
     # Borrar validaciones primero (tienen FK hacia reporte)
-    ValidacionIA.query.filter(ValidacionIA.semana <= semana).delete()
+    ValidacionIA.query.filter(ValidacionIA.semana <= semana, ValidacionIA.negocio == negocio).delete()
     # Borrar reportes de la semana cerrada y de cualquier semana anterior (limpieza completa)
-    Reporte.query.filter(Reporte.semana <= semana).delete()
+    Reporte.query.filter(Reporte.semana <= semana, Reporte.negocio == negocio).delete()
     # Avanzar al override de la semana siguiente (calculado desde la semana cerrada, no desde datetime.now())
     try:
         parts = semana.split("-S")
@@ -1031,11 +1582,12 @@ def cerrar_semana():
         nueva_semana = f"{iso[0]}-S{iso[1]:02d}"
     except Exception:
         nueva_semana = ""
-    cfg_override = Config.query.get("semana_override")
+    clave_override = f"{negocio}:semana_override"
+    cfg_override = Config.query.get(clave_override)
     if cfg_override:
         cfg_override.valor = nueva_semana
     elif nueva_semana:
-        db.session.add(Config(clave="semana_override", valor=nueva_semana))
+        db.session.add(Config(clave=clave_override, valor=nueva_semana))
     db.session.commit()
 
     # Construir ZIP: Excel + fotos separadas en Fotos_OK y Fotos_Diferencias
@@ -1067,7 +1619,7 @@ def cerrar_semana():
                 pass  # foto corrupta o vacía, se omite
 
         # Fotos de novedades (liquidación, vencidos, etc.) en carpetas por tipo
-        liqs = Liquidacion.query.filter_by(semana=semana).all()
+        liqs = Liquidacion.query.filter_by(semana=semana, negocio=negocio).all()
         for liq in liqs:
             tipo_safe   = re.sub(r'[\\/:*?"<>|]', "_", liq.tipo or "Liquidacion").strip()
             tienda_safe = re.sub(r'[\\/:*?"<>|]', "_", liq.tienda).strip()
@@ -1081,7 +1633,7 @@ def cerrar_semana():
                 except Exception:
                     pass
         # Eliminar liquidaciones de la semana cerrada
-        Liquidacion.query.filter_by(semana=semana).delete()
+        Liquidacion.query.filter_by(semana=semana, negocio=negocio).delete()
         db.session.commit()
 
     zip_buf.seek(0)
@@ -1108,8 +1660,8 @@ def cargar_inventario():
     if not archivo.filename.endswith((".xlsx", ".xls")):
         return jsonify({"error": "Solo se aceptan archivos Excel (.xlsx, .xls)"}), 400
 
-    cfg_semana = Config.query.get("semana_activa")
-    semana = cfg_semana.valor if cfg_semana else datetime.now().strftime("%Y-W%W")
+    negocio = request.form.get("negocio", "mundo_vegano")
+    semana  = semana_actual(negocio)
 
     try:
         wb = openpyxl.load_workbook(archivo, data_only=True)
@@ -1164,11 +1716,11 @@ def cargar_inventario():
             if idx_item_nbr is not None and len(row) > idx_item_nbr and row[idx_item_nbr]:
                 item_nbr = str(row[idx_item_nbr]).strip().split(".")[0]  # quitar decimales si viene como float
             # Solo crear si no existe ya en esta semana
-            existe = Reporte.query.filter_by(semana=semana, tienda=tienda, producto=producto).first()
+            existe = Reporte.query.filter_by(semana=semana, tienda=tienda, producto=producto, negocio=negocio).first()
             if existe:
                 omitidos += 1
                 continue
-            r = Reporte(tienda=tienda, producto=producto, item_nbr=item_nbr or None, semana=semana,
+            r = Reporte(negocio=negocio, tienda=tienda, producto=producto, item_nbr=item_nbr or None, semana=semana,
                         usuario="inventario", fecha=datetime.now().strftime("%Y-%m-%d"))
             db.session.add(r)
             creados += 1
@@ -1176,11 +1728,12 @@ def cargar_inventario():
         db.session.commit()
         # Guardar timestamp de última actualización de inventario
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        cfg_ts = Config.query.get("inventario_ultima_actualizacion")
+        clave_ts = f"{negocio}:inventario_ultima_actualizacion"
+        cfg_ts = Config.query.get(clave_ts)
         if cfg_ts:
             cfg_ts.valor = ts
         else:
-            db.session.add(Config(clave="inventario_ultima_actualizacion", valor=ts))
+            db.session.add(Config(clave=clave_ts, valor=ts))
         db.session.commit()
         return jsonify({"ok": True, "creados": creados, "omitidos": omitidos, "semana": semana, "modo": "agregar", "timestamp": ts})
     except Exception as e:
@@ -1189,7 +1742,12 @@ def cargar_inventario():
 
 @app.route("/api/inventario-historial")
 def inventario_historial():
-    cfg = Config.query.get("inventario_ultima_actualizacion")
+    negocio  = request.args.get("negocio", "mundo_vegano")
+    clave_ts = f"{negocio}:inventario_ultima_actualizacion"
+    cfg = Config.query.get(clave_ts)
+    # fallback legacy para mundo_vegano
+    if not cfg and negocio == "mundo_vegano":
+        cfg = Config.query.get("inventario_ultima_actualizacion")
     return jsonify({"ultima": cfg.valor if cfg else None})
 
 def _leer_excel_walmart(archivo):
@@ -1277,9 +1835,9 @@ def _leer_excel_automercado(archivo):
 @app.route("/api/actualizar-inventario", methods=["POST"])
 def actualizar_inventario():
     """Actualiza tabla Inventario con cantidades del Excel. NO toca Reporte (fotos/comentarios intactos)."""
-    print(f"[actualizar-inventario] request recibido — files: {list(request.files.keys())}", flush=True)
     archivo_wm = request.files.get("archivo_wm")
     archivo_am = request.files.get("archivo_am")
+    negocio    = request.form.get("negocio", "mundo_vegano")
     if not archivo_wm and not archivo_am:
         return jsonify({"error": "Se requiere al menos un archivo"}), 400
 
@@ -1290,8 +1848,8 @@ def actualizar_inventario():
         if archivo_am:
             registros += _leer_excel_automercado(archivo_am)
 
-        # Cargar todo el inventario en memoria una sola vez (evita N+1 queries)
-        mapa_inv = {(inv.tienda, inv.producto): inv for inv in Inventario.query.all()}
+        # Cargar inventario del negocio en memoria (evita N+1 queries)
+        mapa_inv = {(inv.tienda, inv.producto): inv for inv in Inventario.query.filter_by(negocio=negocio).all()}
 
         actualizados = 0
         nuevos = 0
@@ -1304,17 +1862,18 @@ def actualizar_inventario():
                     inv.item_nbr = r["item_nbr"]
                 actualizados += 1
             else:
-                nuevo = Inventario(tienda=r["tienda"], producto=r["producto"],
+                nuevo = Inventario(negocio=negocio, tienda=r["tienda"], producto=r["producto"],
                                    cantidad=r["cantidad"], item_nbr=r.get("item_nbr") or None)
                 db.session.add(nuevo)
                 nuevos += 1
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        cfg_ts = Config.query.get("inventario_ultima_actualizacion")
+        clave_ts = f"{negocio}:inventario_ultima_actualizacion"
+        cfg_ts = Config.query.get(clave_ts)
         if cfg_ts:
             cfg_ts.valor = ts
         else:
-            db.session.add(Config(clave="inventario_ultima_actualizacion", valor=ts))
+            db.session.add(Config(clave=clave_ts, valor=ts))
         db.session.commit()
         return jsonify({"ok": True, "actualizados": actualizados, "nuevos": nuevos,
                         "total": actualizados + nuevos, "timestamp": ts})
@@ -1332,8 +1891,8 @@ def reemplazar_inventario():
     if not archivo.filename.endswith((".xlsx", ".xls")):
         return jsonify({"error": "Solo se aceptan archivos Excel (.xlsx, .xls)"}), 400
 
-    cfg_semana = Config.query.get("semana_activa")
-    semana = cfg_semana.valor if cfg_semana else datetime.now().strftime("%Y-W%W")
+    negocio = request.form.get("negocio", "mundo_vegano")
+    semana  = semana_actual(negocio)
 
     try:
         wb = openpyxl.load_workbook(archivo, data_only=True)
@@ -1369,7 +1928,7 @@ def reemplazar_inventario():
         idx_item_nbr = col_idx(["item nbr", "item_nbr", "itemnbr", "codigo", "barcode", "ean", "upc"])
 
         # Borrar solo los registros SIN foto de esta semana (los que ya tienen foto se conservan)
-        borrados = Reporte.query.filter_by(semana=semana, foto=None, foto_b64=None).delete()
+        borrados = Reporte.query.filter_by(semana=semana, negocio=negocio, foto=None, foto_b64=None).delete(synchronize_session=False)
         db.session.flush()
 
         creados = 0
@@ -1386,10 +1945,10 @@ def reemplazar_inventario():
             if idx_item_nbr is not None and len(row) > idx_item_nbr and row[idx_item_nbr]:
                 item_nbr = str(row[idx_item_nbr]).strip().split(".")[0]
             # No duplicar los que ya tienen foto
-            existe = Reporte.query.filter_by(semana=semana, tienda=tienda, producto=producto).first()
+            existe = Reporte.query.filter_by(semana=semana, tienda=tienda, producto=producto, negocio=negocio).first()
             if existe:
                 continue
-            r = Reporte(tienda=tienda, producto=producto, item_nbr=item_nbr or None, semana=semana,
+            r = Reporte(negocio=negocio, tienda=tienda, producto=producto, item_nbr=item_nbr or None, semana=semana,
                         usuario="inventario", fecha=datetime.now().strftime("%Y-%m-%d"))
             db.session.add(r)
             creados += 1
@@ -1404,34 +1963,37 @@ def reemplazar_inventario():
 @app.route("/api/limpiar-reportes", methods=["POST"])
 def limpiar_reportes():
     data = request.json or {}
-    if data.get("rol") != "supervisor":
+    if data.get("rol") not in ROLES_ADMIN:
         return jsonify({"error": "No autorizado"}), 403
-    count = Reporte.query.count()
-    ValidacionIA.query.delete()
-    Reporte.query.delete()
+    negocio = data.get("negocio", "mundo_vegano")
+    count = Reporte.query.filter_by(negocio=negocio).count()
+    ValidacionIA.query.filter_by(negocio=negocio).delete(synchronize_session=False)
+    Reporte.query.filter_by(negocio=negocio).delete(synchronize_session=False)
     db.session.commit()
     return jsonify({"ok": True, "borrados": count})
 
 @app.route("/api/limpiar-historial", methods=["POST"])
 def limpiar_historial():
     data = request.json or {}
-    if data.get("rol") != "supervisor":
+    if data.get("rol") not in ROLES_ADMIN:
         return jsonify({"error": "No autorizado"}), 403
-    count = Diferencia.query.count()
-    Diferencia.query.delete()
+    negocio = data.get("negocio", "mundo_vegano")
+    count = Diferencia.query.filter_by(negocio=negocio).count()
+    Diferencia.query.filter_by(negocio=negocio).delete(synchronize_session=False)
     db.session.commit()
     return jsonify({"ok": True, "borrados": count})
 
 @app.route("/api/limpiar-todo", methods=["POST"])
 def limpiar_todo():
     data = request.json or {}
-    if data.get("rol") != "supervisor":
+    if data.get("rol") not in ROLES_ADMIN:
         return jsonify({"error": "No autorizado"}), 403
-    r = Reporte.query.count()
-    d = Diferencia.query.count()
-    ValidacionIA.query.delete()
-    Reporte.query.delete()
-    Diferencia.query.delete()
+    negocio = data.get("negocio", "mundo_vegano")
+    r = Reporte.query.filter_by(negocio=negocio).count()
+    d = Diferencia.query.filter_by(negocio=negocio).count()
+    ValidacionIA.query.filter_by(negocio=negocio).delete(synchronize_session=False)
+    Reporte.query.filter_by(negocio=negocio).delete(synchronize_session=False)
+    Diferencia.query.filter_by(negocio=negocio).delete(synchronize_session=False)
     db.session.commit()
     return jsonify({"ok": True, "reportes_borrados": r, "historial_borrado": d})
 
@@ -1442,8 +2004,9 @@ def ver_foto_reporte(reporte_id):
 
 @app.route("/api/diferencias-semana")
 def diferencias_semana():
-    semana = semana_actual()
-    reportes = Reporte.query.filter_by(semana=semana).all()
+    negocio = request.args.get("negocio", "mundo_vegano")
+    semana  = semana_actual(negocio)
+    reportes = Reporte.query.filter_by(semana=semana, negocio=negocio).all()
 
     # Resumen por tienda
     tiendas_reporte = {}  # {tienda: {fotos, comentarios}}
@@ -1458,7 +2021,10 @@ def diferencias_semana():
 
     # Productos esperados por tienda según inventario
     inv_por_tienda = {}
-    for inv in Inventario.query.filter(Inventario.cantidad > 0).all():
+    habilitada = filtro_tiendas(negocio)
+    for inv in Inventario.query.filter(Inventario.cantidad > 0, Inventario.negocio == negocio).all():
+        if not habilitada(inv.tienda):
+            continue
         inv_por_tienda.setdefault(inv.tienda, 0)
         inv_por_tienda[inv.tienda] += 1
 
@@ -1491,17 +2057,16 @@ def eliminar_reporte(reporte_id):
 @app.route("/api/validacion/encolar", methods=["POST"])
 def validacion_encolar():
     """Crea registros PENDIENTE en ValidacionIA para todos los reportes con foto de la semana actual."""
-    data = request.json or {}
-    if data.get("rol") != "supervisor":
+    data    = request.json or {}
+    if data.get("rol") not in ROLES_ADMIN:
         return jsonify({"error": "No autorizado"}), 403
-
-    semana = semana_actual()
-    reportes = Reporte.query.filter_by(semana=semana).all()
+    negocio = data.get("negocio", "mundo_vegano")
+    semana  = semana_actual(negocio)
+    reportes = Reporte.query.filter_by(semana=semana, negocio=negocio).all()
     encolados = 0
     for rep in reportes:
         if not rep.foto_b64 and not rep.foto:
             continue
-        # Evitar duplicados (pero re-encolar ERRORes y PROCESANDO huérfanos)
         existe = ValidacionIA.query.filter_by(reporte_id=rep.id, semana=semana).first()
         forzar = data.get("forzar", False)
         if existe:
@@ -1511,8 +2076,9 @@ def validacion_encolar():
                 existe.procesado_en = None
                 encolados += 1
             continue
-        inv = Inventario.query.filter_by(tienda=rep.tienda, producto=rep.producto).first()
+        inv = Inventario.query.filter_by(tienda=rep.tienda, producto=rep.producto, negocio=negocio).first()
         val = ValidacionIA(
+            negocio         = negocio,
             reporte_id      = rep.id,
             semana          = semana,
             tienda          = rep.tienda,
@@ -1532,17 +2098,18 @@ def validacion_encolar():
 @app.route("/api/validacion/progreso")
 def validacion_progreso():
     """Retorna el progreso de validación IA de la semana actual."""
-    semana = request.args.get("semana", semana_actual())
-    total      = ValidacionIA.query.filter_by(semana=semana).count()
-    pendientes = ValidacionIA.query.filter_by(semana=semana, estado="PENDIENTE").count()
-    procesando = ValidacionIA.query.filter_by(semana=semana, estado="PROCESANDO").count()
-    aprobados  = ValidacionIA.query.filter_by(semana=semana, estado="APROBADO").count()
-    rechazados = ValidacionIA.query.filter_by(semana=semana, estado="RECHAZADO").count()
-    revisar    = ValidacionIA.query.filter_by(semana=semana, estado="REVISAR").count()
-    errores    = ValidacionIA.query.filter_by(semana=semana, estado="ERROR").count()
+    negocio = request.args.get("negocio", "mundo_vegano")
+    semana  = request.args.get("semana", semana_actual(negocio))
+    total      = ValidacionIA.query.filter_by(semana=semana, negocio=negocio).count()
+    pendientes = ValidacionIA.query.filter_by(semana=semana, negocio=negocio, estado="PENDIENTE").count()
+    procesando = ValidacionIA.query.filter_by(semana=semana, negocio=negocio, estado="PROCESANDO").count()
+    aprobados  = ValidacionIA.query.filter_by(semana=semana, negocio=negocio, estado="APROBADO").count()
+    rechazados = ValidacionIA.query.filter_by(semana=semana, negocio=negocio, estado="RECHAZADO").count()
+    revisar    = ValidacionIA.query.filter_by(semana=semana, negocio=negocio, estado="REVISAR").count()
+    errores    = ValidacionIA.query.filter_by(semana=semana, negocio=negocio, estado="ERROR").count()
 
     costo_total = db.session.query(db.func.sum(ValidacionIA.costo_usd))\
-        .filter_by(semana=semana).scalar() or 0.0
+        .filter_by(semana=semana, negocio=negocio).scalar() or 0.0
 
     return jsonify({
         "semana": semana,
@@ -1561,10 +2128,11 @@ def validacion_progreso():
 @app.route("/api/validacion/resultados")
 def validacion_resultados():
     """Lista de validaciones con filtro por estado para revisión manual."""
-    semana = request.args.get("semana", semana_actual())
-    estado = request.args.get("estado", "")  # RECHAZADO, REVISAR, etc.
+    negocio = request.args.get("negocio", "mundo_vegano")
+    semana  = request.args.get("semana", semana_actual(negocio))
+    estado  = request.args.get("estado", "")
 
-    q = ValidacionIA.query.filter_by(semana=semana)
+    q = ValidacionIA.query.filter_by(semana=semana, negocio=negocio)
     if estado:
         q = q.filter_by(estado=estado)
     q = q.order_by(ValidacionIA.estado, ValidacionIA.tienda)
@@ -1642,6 +2210,82 @@ ESTADO: [APROBADO|RECHAZADO|REVISAR]
 CONFIANZA: [alta|media|baja]
 MOTIVO: [una sola oración: color visto, palabra clave identificada y decisión]"""
 
+PROMPT_IA_LUSTIG = """Eres un auditor de displays de productos Lustig en supermercados de Costa Rica.
+Tu trabajo es verificar que el producto "{producto}" está presente en la foto.
+
+Las fotos son de góndolas con VARIOS productos juntos. Es normal ver múltiples productos en la misma foto.
+
+══ CÓMO EVALUAR ══
+
+PASO 1 — Identificá el COLOR del empaque Lustig solicitado (guía abajo).
+PASO 2 — Buscá ese color específico en cualquier parte de la foto.
+PASO 3 — Verificá que al menos UNA palabra clave del producto es visible en ese empaque.
+
+→ Color correcto + palabra clave visible = APROBADO
+→ Color correcto pero texto ilegible = REVISAR
+→ El empaque con ese color no aparece en ninguna parte de la foto = RECHAZADO
+
+IMPORTANTE: Cada producto Lustig tiene su propio color de bolsa. Todos llevan la marca "LUSTIG" en la parte superior. Si hay varios productos Lustig en la foto, identificá el que corresponde al COLOR del producto solicitado e ignorá los demás.
+
+══ GUÍA DE PRODUCTOS ══
+
+- "LUSTIG MUESLI NUECES HIGO 300GR" o "CEREAL MULTICEREAL NUECES HIGO" o "LUSTIG MUESLI NUECES HIGO" → bolsa AMARILLO/DORADO oscuro con rayo blanco y parte inferior marrón · clave: "MÜESLI" + "NUECES" o "HIGO". OJO: ignorá el Müesli Proteína que es VERDE TEAL.
+- "CEREAL MUESLI CACAO ARANDANO" → bolsa MARRÓN CHOCOLATE oscuro con flecha blanca hacia arriba · clave: "MÜESLI" + "CACAO" o "ARÁNDANO". OJO: el marrón es la bolsa entera, no solo la parte inferior como el Nueces-Higo.
+- "LUSTIG MUESLI ARANDANO GOJI 300GR" o "CEREAL MULTICE ARANDANO GOJI" → bolsa AZUL MARINO oscuro con diseño de ojo/mandala blanco · clave: "MÜESLI" + "ARÁNDANO" o "GOJI".
+- "LUSTIG GRANOLA ORIGINAL 300 GR" o "GRANOLA ORIGINAL" o "GRANOLA" → bolsa ROJA con signo de exclamación "!" blanco grande · clave: "GRANOLA" + "ORIGINAL". OJO: ignorá cualquier bolsa que NO sea roja.
+- "GRANOLA PASAS" → bolsa MORADA/LILA con diseño de diente blanco · clave: "GRANOLA" + "PASAS". OJO: ignorá el Müesli Arándano-Goji que también es azul-morado pero más oscuro.
+- "MUESLI PROTE LUSTIG 300GR" o "GRANOLA PROTEIN POWER" o "MÜESLI PROTEIN POWER" → bolsa VERDE TEAL/ESMERALDA con figura de corredor · clave: "PROTEIN" o "PROTE" o "POWER". OJO: ignorá el Müesli Nueces-Higo AMARILLO.
+- "MEZCLA PARA ENSALADA" o "SALAD MIX" → bolsa KRAFT/BEIGE (papel natural marrón claro) con etiqueta verde · clave: "SALAD MIX" o "ENSALADA" o "MEZCLA".
+
+══ CUÁNDO RECHAZAR ══
+Solo rechazá si el empaque con el color del producto solicitado definitivamente no aparece en ninguna parte de la foto.
+
+Responde EXACTAMENTE en este formato (sin texto adicional):
+ESTADO: [APROBADO|RECHAZADO|REVISAR]
+CONFIANZA: [alta|media|baja]
+MOTIVO: [una sola oración: color visto, palabra clave identificada y decisión]"""
+
+PROMPT_IA_GENERICO = """Eres un auditor de displays de productos {negocio} en supermercados de Costa Rica.
+Tu trabajo es verificar que el producto "{producto}" está presente en la foto.
+
+Las fotos son de góndolas con VARIOS productos juntos. Es normal ver múltiples productos en la misma foto.
+
+══ CÓMO EVALUAR ══
+
+PASO 1 — Identificá el empaque del producto solicitado según su color y forma (guía abajo).
+PASO 2 — Buscá ese empaque específico en cualquier parte de la foto.
+PASO 3 — Verificá que al menos UNA palabra clave del producto es visible en ese empaque.
+
+→ Color correcto + palabra clave visible = APROBADO
+→ Color correcto pero texto ilegible = REVISAR
+→ El empaque con ese color no aparece en ninguna parte de la foto = RECHAZADO
+
+══ GUÍA DE PRODUCTOS ══
+(Agregá una línea por producto, con el nombre como aparece en el inventario. Ejemplo:)
+- "NOMBRE DEL PRODUCTO" → empaque COLOR (forma) · clave: "palabra visible". OJO: ignorá el producto parecido de otro color.
+
+══ CUÁNDO RECHAZAR ══
+Solo rechazá si el empaque con el color del producto solicitado definitivamente no aparece en ninguna parte de la foto.
+
+Responde EXACTAMENTE en este formato (sin texto adicional):
+ESTADO: [APROBADO|RECHAZADO|REVISAR]
+CONFIANZA: [alta|media|baja]
+MOTIVO: [una sola oración: color visto, palabra clave identificada y decisión]"""
+
+def _prompt_por_defecto(slug, nombre=""):
+    if slug == "mundo_vegano":
+        return PROMPT_IA
+    if slug == "lustig":
+        return PROMPT_IA_LUSTIG
+    return PROMPT_IA_GENERICO.replace("{negocio}", nombre or "del cliente")
+
+def prompt_de(slug):
+    """Prompt que usa la IA para un negocio: el editado en Sistema → Negocios, o el de fábrica."""
+    n = Negocio.query.get(slug)
+    if n and (n.prompt or "").strip():
+        return n.prompt
+    return _prompt_por_defecto(slug, n.nombre if n else "")
+
 PARALELO = 5  # fotos simultáneas
 
 
@@ -1669,7 +2313,7 @@ def _procesar_una(val_id, client):
                 with open(ruta, "rb") as f:
                     foto_raw = base64.b64encode(f.read()).decode()
 
-            prompt = PROMPT_IA.format(producto=val.producto)
+            prompt = prompt_de(val.negocio).replace("{producto}", val.producto or "")
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=150,
@@ -1682,7 +2326,7 @@ def _procesar_una(val_id, client):
             texto      = response.content[0].text.strip()
             tokens_in  = response.usage.input_tokens
             tokens_out = response.usage.output_tokens
-            costo      = (tokens_in * 0.80 + tokens_out * 4.00) / 1_000_000
+            costo      = (tokens_in * 1.00 + tokens_out * 5.00) / 1_000_000   # Haiku 4.5
 
             estado_ia, confianza, motivo = "REVISAR", "baja", texto
             for linea in texto.splitlines():
@@ -1751,7 +2395,7 @@ def _procesar_validaciones():
 def validacion_decision(val_id):
     """Supervisor aprueba o deniega manualmente una validación REVISAR o RECHAZADO."""
     data = request.json or {}
-    if data.get("rol") != "supervisor":
+    if data.get("rol") not in ROLES_ADMIN:
         return jsonify({"error": "No autorizado"}), 403
     decision = data.get("decision", "").upper()
     if decision not in ("APROBADO", "RECHAZADO"):
@@ -1791,10 +2435,10 @@ def validacion_procesar():
         return jsonify({"error": "ANTHROPIC_API_KEY no configurada"}), 500
 
     data = request.json or {}
-    if data.get("rol") != "supervisor":
+    if data.get("rol") not in ROLES_ADMIN:
         return jsonify({"error": "No autorizado"}), 403
-
-    pendientes = ValidacionIA.query.filter_by(estado="PENDIENTE").count()
+    negocio   = data.get("negocio", "mundo_vegano")
+    pendientes = ValidacionIA.query.filter_by(estado="PENDIENTE", negocio=negocio).count()
     if pendientes == 0:
         return jsonify({"ok": True, "mensaje": "No hay fotos pendientes", "iniciado": False})
 
@@ -1808,35 +2452,101 @@ def validacion_procesar():
     return jsonify({"ok": True, "mensaje": f"Procesando {pendientes} fotos en background", "iniciado": True})
 
 
+DB_LIMITE_MB = 1024   # disco del Postgres en Render (displays-db)
+TAM_FOTO_ESTIMADO = 95_000   # caracteres base64 de una foto 800px q0.70, si aún no hay fotos
+
+def tamano_db_mb():
+    try:
+        if db.engine.dialect.name == "postgresql":
+            r = db.session.execute(db.text("SELECT pg_database_size(current_database())")).fetchone()
+            return round(r[0] / 1024 / 1024, 2)
+        ruta = db.engine.url.database
+        return round(os.path.getsize(ruta) / 1024 / 1024, 2) if ruta and os.path.exists(ruta) else 0
+    except Exception:
+        return None
+
+def _suma_largo(columna, *filtros):
+    return int(db.session.query(db.func.coalesce(db.func.sum(db.func.length(columna)), 0)).filter(*filtros).scalar() or 0)
+
+@app.route("/api/sistema/consumo")
+def sistema_consumo():
+    """Superadmin: cuánto ocupa cada negocio en la base y cuánto gasta en IA."""
+    if request.args.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    MB = 1024 * 1024
+    negocios = []
+    for n in Negocio.query.order_by(Negocio.orden, Negocio.nombre).all():
+        slug = n.slug
+        fotos_b = _suma_largo(Reporte.foto_b64, Reporte.negocio == slug)
+        n_fotos = Reporte.query.filter(Reporte.negocio == slug, Reporte.foto_b64.isnot(None), Reporte.foto_b64 != "").count()
+        liq_b = (_suma_largo(Liquidacion.foto1_b64, Liquidacion.negocio == slug)
+                 + _suma_largo(Liquidacion.foto2_b64, Liquidacion.negocio == slug)
+                 + _suma_largo(Liquidacion.foto3_b64, Liquidacion.negocio == slug))
+        filas = {
+            "reportes":      Reporte.query.filter_by(negocio=slug).count(),
+            "inventario":    Inventario.query.filter_by(negocio=slug).count(),
+            "diferencias":   Diferencia.query.filter_by(negocio=slug).count(),
+            "validaciones":  ValidacionIA.query.filter_by(negocio=slug).count(),
+            "liquidaciones": Liquidacion.query.filter_by(negocio=slug).count(),
+            "usuarios":      Usuario.query.filter_by(negocio=slug).count(),
+        }
+        datos_b = sum(filas.values()) * 250 + len(n.logo_b64 or "")   # filas sin foto: ~250 bytes c/u
+        ia_costo = float(db.session.query(db.func.coalesce(db.func.sum(ValidacionIA.costo_usd), 0.0))
+                         .filter(ValidacionIA.negocio == slug).scalar() or 0)
+        ia_fotos = ValidacionIA.query.filter(ValidacionIA.negocio == slug,
+                                             ValidacionIA.estado.in_(["APROBADO", "RECHAZADO", "REVISAR"])).count()
+        # proyección: una semana completa = una foto por producto con existencia en tiendas habilitadas
+        habilitada = filtro_tiendas(slug)
+        esperadas = sum(1 for i in Inventario.query.filter(Inventario.negocio == slug, Inventario.cantidad > 0)
+                        .with_entities(Inventario.tienda).all() if habilitada(i.tienda))
+        prom_foto = (fotos_b / n_fotos) if n_fotos else TAM_FOTO_ESTIMADO
+        negocios.append({
+            "slug": slug, "nombre": n.nombre, "activo": bool(n.activo),
+            "logo": f"/api/negocios/{slug}/logo" if n.logo_b64 else "",
+            "fotos_mb": round(fotos_b / MB, 2), "n_fotos": n_fotos,
+            "liquidaciones_mb": round(liq_b / MB, 2),
+            "datos_mb": round(datos_b / MB, 2),
+            "total_mb": round((fotos_b + liq_b + datos_b) / MB, 2),
+            "filas": filas,
+            "ia_costo_usd": round(ia_costo, 4), "ia_fotos": ia_fotos,
+            "fotos_semana_esperadas": esperadas,
+            "proyeccion_semana_mb": round(esperadas * prom_foto / MB, 1),
+        })
+    negocios.sort(key=lambda x: -x["total_mb"])
+    total = tamano_db_mb()
+    medido = sum(x["total_mb"] for x in negocios)
+    proy = sum(x["proyeccion_semana_mb"] for x in negocios if x["activo"])
+    return jsonify({
+        "db_mb": total, "limite_mb": DB_LIMITE_MB,
+        "medido_mb": round(medido, 2),
+        "otros_mb": round(max((total or 0) - medido, 0), 2),   # índices, historial interno, espacio libre de la base
+        "proyeccion_semana_mb": round(proy, 1),
+        "pico_estimado_mb": round((total or 0) - sum(x["fotos_mb"] + x["liquidaciones_mb"] for x in negocios) + proy, 1),
+        "ia_costo_total_usd": round(sum(x["ia_costo_usd"] for x in negocios), 4),
+        "motor": db.engine.dialect.name,
+        "negocios": negocios,
+    })
+
 @app.route("/api/sistema/stats")
 def sistema_stats():
     data = request.args
-    if request.args.get("rol") != "supervisor":
+    if request.args.get("rol") not in ROLES_ADMIN:
         return jsonify({"error": "No autorizado"}), 403
+    negocio = request.args.get("negocio", "mundo_vegano")
 
     # Conteo de registros
-    n_reportes     = Reporte.query.count()
-    n_diferencias  = Diferencia.query.count()
-    n_inventario   = Inventario.query.count()
+    n_reportes     = Reporte.query.filter_by(negocio=negocio).count()
+    n_diferencias  = Diferencia.query.filter_by(negocio=negocio).count()
+    n_inventario   = Inventario.query.filter_by(negocio=negocio).count()
     n_usuarios     = Usuario.query.count()
-    n_validaciones = ValidacionIA.query.count()
+    n_validaciones = ValidacionIA.query.filter_by(negocio=negocio).count()
 
     # Costo acumulado total en la llave
     costo_total = db.session.query(db.func.sum(ValidacionIA.costo_usd)).scalar() or 0.0
     fotos_total = ValidacionIA.query.filter(ValidacionIA.estado.in_(["APROBADO","RECHAZADO","REVISAR"])).count()
 
     # Tamaño de la base de datos
-    db_size_mb = None
-    try:
-        if db.engine.dialect.name == "postgresql":
-            result = db.session.execute(db.text("SELECT pg_database_size(current_database())")).fetchone()
-            db_size_mb = round(result[0] / 1024 / 1024, 2)
-        else:
-            import os as _os
-            db_path = _os.path.join(_os.path.dirname(__file__), "reportes.db")
-            db_size_mb = round(_os.path.getsize(db_path) / 1024 / 1024, 2) if _os.path.exists(db_path) else 0
-    except Exception:
-        db_size_mb = None
+    db_size_mb = tamano_db_mb()
 
     # Semanas con historial
     semanas = db.session.query(Diferencia.semana).distinct().count()

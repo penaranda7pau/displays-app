@@ -3,3 +3,4 @@ fotos/
 __pycache__/
 *.pyc
 *.db
+.env
