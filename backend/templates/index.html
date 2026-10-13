@@ -1140,6 +1140,7 @@
         <div style="display:flex;gap:8px;margin-top:6px;">
           <button class="btn btn-verde" style="width:auto;padding:9px 18px;" onclick="guardarNegocio()">Guardar</button>
           <button class="btn btn-gris" style="width:auto;padding:9px 18px;" onclick="cerrarFormNegocio()">Cancelar</button>
+          <button class="btn btn-gris" id="neg-eliminar" style="width:auto;padding:9px 18px;margin-left:auto;color:var(--rojo, #C0392B);" onclick="eliminarNegocio()">Eliminar negocio</button>
         </div>
       </div>
     </div>
@@ -2296,7 +2297,7 @@ async function cerrarSemana() {
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
-      if (r.status === 409) { toast(d.error, 'error'); return; }
+      if (r.status === 409) { toast(d.error, 'err'); return; }
       if (confirm('Error al cerrar semana (' + r.status + ').\n\nSi el cierre alcanzó a generarse, se puede descargar el último ZIP guardado. ¿Intentar descargarlo?')) {
         window.location = API + '/api/ultimo-cierre?negocio=' + encodeURIComponent(negocioActual);
       }
@@ -3077,6 +3078,8 @@ async function abrirFormNegocio(n) {
   await cargarCatalogoCadenas();
   document.getElementById('neg-form-titulo').textContent = n ? 'Editar ' + n.nombre : 'Nuevo negocio';
   document.getElementById('neg-slug').value = n ? n.slug : '';
+  document.getElementById('neg-eliminar').style.display = n ? '' : 'none';
+  _negEditando = n || null;
   document.getElementById('neg-nombre').value = n ? n.nombre : '';
   quitarArchivoNeg('wm', true); quitarArchivoNeg('am', true);
   document.getElementById('neg-paso1-txt').textContent = n ? 'Inventario (opcional: subí uno nuevo para actualizarlo)' : 'Inventario (Excel)';
@@ -3272,6 +3275,25 @@ async function guardarNegocio() {
     mostrarSelectorNegocio().then(() => abrirSistemaGlobal('negocios'));
   }
   if (slug === negocioActual) { pintarCliente(); await cargarRurales(); cargarTiendas(); }
+}
+
+let _negEditando = null;
+async function eliminarNegocio() {
+  const n = _negEditando;
+  if (!n) return;
+  const escrito = prompt('Se borrarán PARA SIEMPRE ' + n.nombre + ' y todos sus datos: reportes, fotos, inventario, historial, novedades y usuarios.\n\nSi solo querés ocultarlo, usá "Desactivar".\n\nPara confirmar, escribí el nombre del negocio:');
+  if (escrito === null) return;
+  const r = await fetch(API + '/api/negocios/' + encodeURIComponent(n.slug), {
+    method: 'DELETE', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({solicitante_rol: usuario.rol, confirmar: escrito})
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) { toast(d.error || ('Error ' + r.status), 'err'); return; }
+  toast(n.nombre + ' eliminado', 'ok');
+  cerrarFormNegocio();
+  await cargarNegociosAdmin();
+  await cargarNegocios();
+  mostrarSelectorNegocio().then(() => abrirSistemaGlobal('negocios'));
 }
 
 async function toggleNegocioActivo(n) {

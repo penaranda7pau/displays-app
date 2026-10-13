@@ -93,7 +93,7 @@ class Usuario(db.Model):
     usuario  = db.Column(db.String(100), unique=True)
     password = db.Column(db.String(100))
     rol      = db.Column(db.String(20), default="display")
-    # "mundo_vegano", "lustig", o "ambos" para super-admin
+    # "mundo_vegano", "rooster", o "ambos" para super-admin
     negocio  = db.Column(db.String(50), default="mundo_vegano")
 
 class Config(db.Model):
@@ -163,8 +163,8 @@ USUARIOS_INICIALES = [
     {"nombre": "Display 1",    "usuario": "display1",  "password": "1234",       "rol": "display",     "negocio": "mundo_vegano"},
     {"nombre": "Supervisor MV","usuario": "admin",     "password": "admin123",   "rol": "supervisor",  "negocio": "mundo_vegano"},
     {"nombre": "Super Admin",  "usuario": "superadmin","password": "super2024",  "rol": "superadmin",  "negocio": "ambos"},
-    {"nombre": "Display L1",   "usuario": "ldisplay1", "password": "lustig1234", "rol": "display",     "negocio": "lustig"},
-    {"nombre": "Admin Lustig", "usuario": "ladmin",    "password": "ladmin123",  "rol": "supervisor",  "negocio": "lustig"},
+    {"nombre": "Display R1",   "usuario": "rdisplay1", "password": "rooster1234", "rol": "display",    "negocio": "rooster"},
+    {"nombre": "Admin Rooster","usuario": "radmin",    "password": "radmin123",   "rol": "supervisor", "negocio": "rooster"},
 ]
 
 def _migrar_columnas():
@@ -354,8 +354,8 @@ TIENDAS_RURALES = {
     "A10 AUTO MERCADO HERRADURA", "A11 AUTO MERCADO TAMARINDO", "A12 AUTO MERCADO COCO",
 }
 
-# Lustig — visita mensual (rurales WM/MXM/MP/AM + Occidente MP)
-TIENDAS_RURALES_LUSTIG = {
+# Rooster — visita mensual (rurales WM/MXM/MP/AM + Occidente MP)
+TIENDAS_RURALES_ROOSTER = {
     # WM rurales
     "WM LA LIMA", "WM LIBERIA", "WM CIUDAD QUESADA", "WM PEREZ ZELEDON",
     # MXM rurales
@@ -444,17 +444,17 @@ def filtro_tiendas(negocio):
 
 def rurales_maestro():
     """'Memoria' de tiendas rurales: las de fábrica + las marcadas en cualquier negocio."""
-    todas = set(TIENDAS_RURALES) | set(TIENDAS_RURALES_LUSTIG)
+    todas = set(TIENDAS_RURALES) | set(TIENDAS_RURALES_ROOSTER)
     for n in Negocio.query.all():
         todas |= _lineas(n.rurales)
     return {t.upper() for t in todas}
 
 # Datos iniciales: solo se usan para sembrar la tabla negocio la primera vez
 NEGOCIOS_INICIALES = [
-    {"slug": "mundo_vegano", "nombre": "Mundo Vegano", "cadenas": "WM,MXM,PALI,AM,VINDI",
+    {"slug": "mundo_vegano", "nombre": "Mundo Vegano", "cadenas": "WM,MXM,PALI,AM",
      "rurales": TIENDAS_RURALES, "logo": "mv_logo.png", "orden": 1},
-    {"slug": "lustig", "nombre": "Lustig", "cadenas": "WM,MXM,MP,PALI,AM",
-     "rurales": TIENDAS_RURALES_LUSTIG, "logo": "lustig_logo.png", "orden": 2},
+    {"slug": "rooster", "nombre": "Rooster", "cadenas": "WM,MXM,MP,AM",
+     "rurales": TIENDAS_RURALES_ROOSTER, "logo": "rooster_logo.jpg", "orden": 2},
 ]
 
 def _seed_negocios():
@@ -472,7 +472,8 @@ def _seed_negocios_():
         ruta = os.path.join(static_dir, n["logo"])
         if os.path.exists(ruta):
             with open(ruta, "rb") as f:
-                logo = "data:image/png;base64," + base64.b64encode(f.read()).decode()
+                mime = "jpeg" if ruta.lower().endswith((".jpg", ".jpeg")) else "png"
+                logo = f"data:image/{mime};base64," + base64.b64encode(f.read()).decode()
         db.session.add(Negocio(slug=n["slug"], nombre=n["nombre"], cadenas=n["cadenas"],
                                rurales="\n".join(sorted(n["rurales"])), logo_b64=logo,
                                activo=True, orden=n["orden"],
@@ -659,13 +660,10 @@ def _formato_excel(archivo):
     """'wm' (Retail Link: Store Name + Signing Desc), 'am' (Auto Mercado: NombrePDX) o None."""
     try:
         wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), read_only=True, data_only=True)
-        ws = wb.active
-        for i, row in enumerate(ws.iter_rows(min_row=1, max_row=30, values_only=True)):
-            vals = {str(v).strip() for v in row if v is not None}
-            if "Store Name" in vals and "Signing Desc" in vals:
-                return "wm"
-            if i == 0 and "NombrePDX" in vals:
-                return "am"
+        if _buscar_encabezados(wb, ("Store Name", "Signing Desc"))[0]:
+            return "wm"
+        if _buscar_encabezados(wb, ("NombrePDX", "NombreProducto"))[0]:
+            return "am"
         return None
     except Exception:
         return None
@@ -822,6 +820,31 @@ def editar_negocio(slug):
             return jsonify({"ok": False, "error": str(e)}), 400
     db.session.commit()
     return jsonify({"ok": True, "negocio": _negocio_json(n, admin=True)})
+
+@app.route("/api/negocios/<slug>", methods=["DELETE"])
+def eliminar_negocio(slug):
+    """Borra el negocio y TODOS sus datos (reportes, inventario, historial, novedades, usuarios, config)."""
+    data = request.get_json(force=True, silent=True) or {}
+    if not _es_superadmin(data):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    n = Negocio.query.get_or_404(slug)
+    if (data.get("confirmar") or "").strip().lower() != n.nombre.strip().lower():
+        return jsonify({"ok": False, "error": "Para eliminar, escribí el nombre exacto del negocio"}), 400
+    if Negocio.query.count() <= 1:
+        return jsonify({"ok": False, "error": "No se puede eliminar el único negocio"}), 400
+    ValidacionIA.query.filter_by(negocio=slug).delete()
+    for modelo in (Reporte, Inventario, Diferencia, Liquidacion, Usuario):
+        modelo.query.filter_by(negocio=slug).delete()
+    Config.query.filter(Config.clave.like(f"{slug}:%")).delete(synchronize_session=False)
+    db.session.delete(n)
+    db.session.commit()
+    try:
+        for f in os.listdir(CIERRES_DIR):
+            if f.startswith(f"{slug}__"):
+                os.remove(os.path.join(CIERRES_DIR, f))
+    except FileNotFoundError:
+        pass
+    return jsonify({"ok": True})
 
 @app.route("/api/semanas")
 def listar_semanas():
@@ -1839,19 +1862,22 @@ def inventario_historial():
         cfg = Config.query.get("inventario_ultima_actualizacion")
     return jsonify({"ultima": cfg.valor if cfg else None})
 
+def _buscar_encabezados(wb, requeridas, max_filas=40):
+    """Busca en TODAS las hojas (empezando por la activa) la fila que contiene las columnas requeridas.
+    Así funcionan exportes de Power BI / Retail Link con notas de filtros u hojas extra."""
+    hojas = [wb.active] + [w for w in wb.worksheets if w is not wb.active]
+    for ws in hojas:
+        for idx, row in enumerate(ws.iter_rows(min_row=1, max_row=max_filas, values_only=True), 1):
+            vals = [str(v).strip() if v is not None else "" for v in row]
+            if all(r in vals for r in requeridas):
+                return ws, idx, vals
+    return None, None, None
+
 def _leer_excel_walmart(archivo):
     """Lee INV MV de Walmart. Devuelve lista de {tienda, producto, cantidad}."""
     wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), data_only=True)
-    ws = wb.active
-    # Buscar fila de headers (tiene 'Store Name' y 'Signing Desc')
-    headers = None
-    header_row_idx = None
-    for row_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=30, values_only=True), 1):
-        vals = [str(v).strip() if v is not None else "" for v in row]
-        if "Store Name" in vals and "Signing Desc" in vals:
-            headers = vals
-            header_row_idx = row_idx
-            break
+    # Fila de headers (tiene 'Store Name' y 'Signing Desc'), en cualquier hoja
+    ws, header_row_idx, headers = _buscar_encabezados(wb, ("Store Name", "Signing Desc"))
     if not headers:
         raise ValueError("No se encontró la fila de encabezados (Store Name / Signing Desc)")
 
@@ -1887,10 +1913,13 @@ def _leer_excel_walmart(archivo):
 
 
 def _leer_excel_automercado(archivo):
-    """Lee Excel de Automercado. Tienda=NombrePDX, Producto=NombreProducto, Cantidad=Contenido."""
+    """Lee Excel de Automercado. Tienda=NombrePDX, Producto=NombreProducto, Cantidad=Contenido,
+    Código=CodigoProducto (o CodigoBarras). Los encabezados pueden estar en cualquier hoja y fila."""
     wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), data_only=True)
-    ws = wb.active
-    headers = [str(v).strip() if v is not None else "" for v in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
+    ws, header_row_idx, headers = _buscar_encabezados(wb, ("NombrePDX", "NombreProducto"))
+    if not headers:
+        hojas = ", ".join(w.title for w in wb.worksheets)
+        raise ValueError(f"No se encontraron las columnas NombrePDX y NombreProducto en ninguna hoja ({hojas})")
 
     def col_idx(nombre):
         try:
@@ -1901,12 +1930,12 @@ def _leer_excel_automercado(archivo):
     idx_tienda   = col_idx("NombrePDX")
     idx_producto = col_idx("NombreProducto")
     idx_cantidad = col_idx("Contenido")
-
-    if idx_tienda is None or idx_producto is None:
-        raise ValueError(f"No se encontraron columnas NombrePDX/NombreProducto. Detectadas: {[h for h in headers if h][:15]}")
+    idx_codigo   = col_idx("CodigoProducto")
+    if idx_codigo is None:
+        idx_codigo = col_idx("CodigoBarras")
 
     resultados = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
         tienda   = str(row[idx_tienda]).strip()   if len(row) > idx_tienda   and row[idx_tienda]   else ""
         producto = str(row[idx_producto]).strip()  if len(row) > idx_producto and row[idx_producto]  else ""
         if not tienda or not producto or tienda == "None" or producto == "None":
@@ -1917,7 +1946,10 @@ def _leer_excel_automercado(archivo):
                 cantidad = int(float(row[idx_cantidad]))
             except (ValueError, TypeError):
                 cantidad = 0
-        resultados.append({"tienda": tienda, "producto": producto, "cantidad": cantidad})
+        item_nbr = ""
+        if idx_codigo is not None and len(row) > idx_codigo and row[idx_codigo] is not None:
+            item_nbr = str(row[idx_codigo]).strip().split(".")[0]
+        resultados.append({"tienda": tienda, "producto": producto, "cantidad": cantidad, "item_nbr": item_nbr})
     return resultados
 
 
@@ -2305,41 +2337,6 @@ ESTADO: [APROBADO|RECHAZADO|REVISAR]
 CONFIANZA: [alta|media|baja]
 MOTIVO: [una sola oración: color visto, palabra clave identificada y decisión]"""
 
-PROMPT_IA_LUSTIG = """Eres un auditor de displays de productos Lustig en supermercados de Costa Rica.
-Tu trabajo es verificar que el producto "{producto}" está presente en la foto.
-
-Las fotos son de góndolas con VARIOS productos juntos. Es normal ver múltiples productos en la misma foto.
-
-══ CÓMO EVALUAR ══
-
-PASO 1 — Identificá el COLOR del empaque Lustig solicitado (guía abajo).
-PASO 2 — Buscá ese color específico en cualquier parte de la foto.
-PASO 3 — Verificá que al menos UNA palabra clave del producto es visible en ese empaque.
-
-→ Color correcto + palabra clave visible = APROBADO
-→ Color correcto pero texto ilegible = REVISAR
-→ El empaque con ese color no aparece en ninguna parte de la foto = RECHAZADO
-
-IMPORTANTE: Cada producto Lustig tiene su propio color de bolsa. Todos llevan la marca "LUSTIG" en la parte superior. Si hay varios productos Lustig en la foto, identificá el que corresponde al COLOR del producto solicitado e ignorá los demás.
-
-══ GUÍA DE PRODUCTOS ══
-
-- "LUSTIG MUESLI NUECES HIGO 300GR" o "CEREAL MULTICEREAL NUECES HIGO" o "LUSTIG MUESLI NUECES HIGO" → bolsa AMARILLO/DORADO oscuro con rayo blanco y parte inferior marrón · clave: "MÜESLI" + "NUECES" o "HIGO". OJO: ignorá el Müesli Proteína que es VERDE TEAL.
-- "CEREAL MUESLI CACAO ARANDANO" → bolsa MARRÓN CHOCOLATE oscuro con flecha blanca hacia arriba · clave: "MÜESLI" + "CACAO" o "ARÁNDANO". OJO: el marrón es la bolsa entera, no solo la parte inferior como el Nueces-Higo.
-- "LUSTIG MUESLI ARANDANO GOJI 300GR" o "CEREAL MULTICE ARANDANO GOJI" → bolsa AZUL MARINO oscuro con diseño de ojo/mandala blanco · clave: "MÜESLI" + "ARÁNDANO" o "GOJI".
-- "LUSTIG GRANOLA ORIGINAL 300 GR" o "GRANOLA ORIGINAL" o "GRANOLA" → bolsa ROJA con signo de exclamación "!" blanco grande · clave: "GRANOLA" + "ORIGINAL". OJO: ignorá cualquier bolsa que NO sea roja.
-- "GRANOLA PASAS" → bolsa MORADA/LILA con diseño de diente blanco · clave: "GRANOLA" + "PASAS". OJO: ignorá el Müesli Arándano-Goji que también es azul-morado pero más oscuro.
-- "MUESLI PROTE LUSTIG 300GR" o "GRANOLA PROTEIN POWER" o "MÜESLI PROTEIN POWER" → bolsa VERDE TEAL/ESMERALDA con figura de corredor · clave: "PROTEIN" o "PROTE" o "POWER". OJO: ignorá el Müesli Nueces-Higo AMARILLO.
-- "MEZCLA PARA ENSALADA" o "SALAD MIX" → bolsa KRAFT/BEIGE (papel natural marrón claro) con etiqueta verde · clave: "SALAD MIX" o "ENSALADA" o "MEZCLA".
-
-══ CUÁNDO RECHAZAR ══
-Solo rechazá si el empaque con el color del producto solicitado definitivamente no aparece en ninguna parte de la foto.
-
-Responde EXACTAMENTE en este formato (sin texto adicional):
-ESTADO: [APROBADO|RECHAZADO|REVISAR]
-CONFIANZA: [alta|media|baja]
-MOTIVO: [una sola oración: color visto, palabra clave identificada y decisión]"""
-
 PROMPT_IA_GENERICO = """Eres un auditor de displays de productos {negocio} en supermercados de Costa Rica.
 Tu trabajo es verificar que el producto "{producto}" está presente en la foto.
 
@@ -2370,8 +2367,6 @@ MOTIVO: [una sola oración: color visto, palabra clave identificada y decisión]
 def _prompt_por_defecto(slug, nombre=""):
     if slug == "mundo_vegano":
         return PROMPT_IA
-    if slug == "lustig":
-        return PROMPT_IA_LUSTIG
     return PROMPT_IA_GENERICO.replace("{negocio}", nombre or "del cliente")
 
 def prompt_de(slug):
