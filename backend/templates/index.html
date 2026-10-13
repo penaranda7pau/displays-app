@@ -1888,13 +1888,13 @@ function irPanel() {
   mostrar('panel'); cargarPanel();
   document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('activo'));
   document.getElementById('sb-panel-item')?.classList.add('activo');
-  // Ocultar tabs según rol
-  const esSupervisor = usuario && esSup();
-  const tabsSoloSupervisor = ['tab-usuarios','tab-ia','tab-inventario','tab-sistema'];
-  document.querySelectorAll('.tabs .tab').forEach(btn => {
+  // Ocultar tabs según rol: el subadmin solo ve Reportes, Por tienda, Diferencias y Displays
+  const esAdmin = usuario && ['supervisor', 'admin', 'superadmin'].includes(usuario.rol);
+  const tabsSoloAdmin = ['tab-usuarios','tab-ia','tab-inventario','tab-sistema'];
+  document.querySelectorAll('#panel .tabs .tab').forEach(btn => {
     const onclick = btn.getAttribute('onclick') || '';
-    const esSoloSupervisor = tabsSoloSupervisor.some(t => onclick.includes(t));
-    btn.style.display = (esSoloSupervisor && !esSupervisor) ? 'none' : '';
+    const esSoloAdmin = tabsSoloAdmin.some(t => onclick.includes(t));
+    btn.style.display = (esSoloAdmin && !esAdmin) ? 'none' : '';
   });
 }
 
