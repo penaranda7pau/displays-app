@@ -1460,7 +1460,14 @@ async function cerrarSemana() {
   try {
     // 1. Cerrar semana actual
     const r = await fetch(API + '/api/cerrar-semana', {method: 'POST'});
-    if (!r.ok) { alert('Error al cerrar semana: ' + r.status); return; }
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 409) { alert(d.error); return; }
+      if (confirm('Error al cerrar semana (' + r.status + ').\n\nSi el cierre alcanzó a generarse, se puede descargar el último ZIP guardado. ¿Intentar descargarlo?')) {
+        window.location = API + '/api/ultimo-cierre';
+      }
+      return;
+    }
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1502,7 +1509,9 @@ async function cerrarSemana() {
     }
     setTimeout(() => cargarPanel(), 400);
   } catch(e) {
-    alert('Error de red al cerrar semana');
+    if (confirm('Error de red al cerrar semana.\n\nSi el cierre alcanzó a generarse, se puede descargar el último ZIP guardado. ¿Intentar descargarlo?')) {
+      window.location = API + '/api/ultimo-cierre';
+    }
   } finally {
     btn.textContent = 'Cerrar semana ↓';
     btn.disabled = false;
