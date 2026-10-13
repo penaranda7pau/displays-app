@@ -49,6 +49,8 @@ else:
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{DB_PATH}"
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+# Render cierra conexiones inactivas: probar cada conexión antes de usarla y renovarlas cada ~5 min
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 280}
 db = SQLAlchemy(app)
 
 class Reporte(db.Model):
@@ -341,6 +343,8 @@ SYNC_KEY = os.environ.get("SYNC_KEY", "cpfr2024")
 
 FOTOS_DIR = os.path.join(os.path.dirname(__file__), '..', 'fotos')
 os.makedirs(FOTOS_DIR, exist_ok=True)
+# ZIP del último cierre (disco del servidor; se pierde al reiniciar/publicar, sirve para re-descargar)
+CIERRES_DIR = os.environ.get("CIERRES_DIR", os.path.join(os.path.dirname(__file__), '..', 'cierres'))
 
 # Mundo Vegano — visita mensual (rurales + occidente ya separados en JS)
 TIENDAS_RURALES = {
@@ -1150,24 +1154,92 @@ def ver_reportes():
     q = Reporte.query.filter_by(semana=semana, negocio=negocio)
     if tienda:
         q = q.filter_by(tienda=tienda)
-    rows = q.order_by(Reporte.id.desc()).all()
     # Cuando se filtra por tienda (pantalla del display, pocas fotos) se incluye foto_b64.
-    # Sin filtro (panel supervisor, carga masiva) solo se indica si tiene foto para ahorrar bandwidth.
+    # Sin filtro (panel supervisor) NO se cargan las fotos en memoria: solo si tiene o no.
     include_b64 = bool(tienda)
+    tiene_b64 = (Reporte.foto_b64.isnot(None) & (Reporte.foto_b64 != "")).label("tiene_b64")
+    if include_b64:
+        rows = [(r, bool(r.foto_b64)) for r in q.order_by(Reporte.id.desc()).all()]
+    else:
+        rows = q.options(db.defer(Reporte.foto_b64)).add_columns(tiene_b64).order_by(Reporte.id.desc()).all()
+    habilitada = filtro_tiendas(negocio)
+    rows = [x for x in rows if habilitada(x[0].tienda)]
     return jsonify([{"id": r.id, "tienda": r.tienda, "producto": r.producto,
                      "comentario": r.comentario, "foto": r.foto,
-                     "tiene_foto": bool(r.foto_b64 or r.foto),
+                     "tiene_foto": bool(tb or r.foto),
                      "foto_b64": (r.foto_b64 or "") if include_b64 else "",
                      "usuario": r.usuario, "fecha": r.fecha,
                      "modificaciones": r.modificaciones or 0,
-                     "modificado_en": r.modificado_en or ""} for r in rows])
+                     "modificado_en": r.modificado_en or ""} for r, tb in rows])
+
+def _grupo_excel(codigo):
+    """Prefijo de hoja del Excel de cierre: Walmart y sus formatos van juntos (WM), Auto Mercado (AM), el resto por su código."""
+    c = next((c for c in CADENAS_CATALOGO if c["codigo"] == codigo), None)
+    if c and c["grupo"] == "walmart":
+        return "WM"
+    if c and c["grupo"] == "automercado":
+        return "AM"
+    return codigo
+
+def _dividir_excel_por_cadena(wb, negocio):
+    """Cada hoja con columna 'Tienda' se separa en una hoja por cadena del negocio ('WM …', 'AM …', …).
+    Filas de cadenas desactivadas se quitan. Hojas sin columna Tienda quedan igual, al final."""
+    from copy import copy
+    n = Negocio.query.get(negocio)
+    activas = parse_cadenas(n.cadenas) if n else []
+    extra = [c for c in activas if c not in {x["codigo"] for x in CADENAS_CATALOGO}]
+    grupos = list(dict.fromkeys(_grupo_excel(c) for c in activas)) or ["WM", "AM"]
+
+    def grupo_de(tienda):
+        cod = cadena_de_tienda(tienda, extra)
+        return _grupo_excel(cod) if cod else grupos[0]   # tienda sin prefijo reconocido: primera cadena
+
+    nuevas = {g: [] for g in grupos}
+    sin_tienda = []
+    for ws in list(wb.worksheets):
+        hdr = [c.value for c in ws[1]]
+        it = next((i for i, h in enumerate(hdr) if h and str(h).strip().lower() == "tienda"), None)
+        if it is None:
+            sin_tienda.append(ws)
+            continue
+        anchos = {k: v.width for k, v in ws.column_dimensions.items()}
+        for g in grupos:
+            dest = wb.create_sheet(f"{g} {ws.title}"[:31])
+            for k, w in anchos.items():
+                dest.column_dimensions[k].width = w
+            dest.freeze_panes = ws.freeze_panes
+            fila_dest = 0
+            for fila in ws.iter_rows():
+                if fila[0].row > 1:
+                    tienda = fila[it].value
+                    if not tienda or grupo_de(tienda) != g:
+                        continue
+                fila_dest += 1
+                for c in fila:
+                    d = dest.cell(row=fila_dest, column=c.column, value=c.value)
+                    if c.has_style:
+                        d.font, d.fill, d.border = copy(c.font), copy(c.fill), copy(c.border)
+                        d.alignment, d.number_format = copy(c.alignment), c.number_format
+            nuevas[g].append(dest)
+        wb.remove(ws)
+    wb._sheets = [h for g in grupos for h in nuevas[g]] + sin_tienda
 
 @app.route("/api/cerrar-semana", methods=["POST"])
 def cerrar_semana():
     data    = request.json or {}
     negocio = (data.get("negocio") or "mundo_vegano").strip()
     semana  = semana_actual(negocio)
-    reportes = Reporte.query.filter_by(semana=semana, negocio=negocio).all()
+    habilitada = filtro_tiendas(negocio)   # cadenas desactivadas / tiendas quitadas no entran al cierre
+    # Las fotos (foto_b64) NO se cargan aquí: se leen de a una al armar el ZIP (ahorra memoria)
+    reportes = [r for r in Reporte.query.options(db.defer(Reporte.foto_b64))
+                .filter_by(semana=semana, negocio=negocio).all() if habilitada(r.tienda)]
+
+    # Seguridad: si la semana ya se cerró y no tiene reportes, cerrarla de nuevo borraría el
+    # historial correcto y lo reemplazaría por "sin foto" en todo.
+    if not reportes and Diferencia.query.filter_by(semana=semana, negocio=negocio).first():
+        return jsonify({"ok": False, "error": f"La semana {semana} ya fue cerrada y no tiene reportes. "
+                        "No se vuelve a cerrar para no perder el historial. "
+                        "Si el ZIP no se descargó, usá 'Descargar último cierre'."}), 409
 
     # Construir mapa de reportes: {(tienda, producto): reporte}
     mapa = {}
@@ -1213,8 +1285,7 @@ def cerrar_semana():
             if d.tienda in rurales_negocio:
                 tiendas_rurales_visitaron_mes.add(d.tienda)
 
-    # Calcular diferencias
-    habilitada = filtro_tiendas(negocio)
+    # Calcular diferencias (solo tiendas de cadenas activas del negocio)
     inventario = [i for i in Inventario.query.filter_by(negocio=negocio).all() if habilitada(i.tienda)]
     Diferencia.query.filter_by(semana=semana, negocio=negocio).delete()
     for inv in inventario:
@@ -1547,22 +1618,12 @@ def cerrar_semana():
             for c in range(1, 5):
                 ws8.cell(r, c).font = font_rural_mal
 
+    # Hojas separadas por cadena del negocio (Walmart / Auto Mercado / otras)
+    _dividir_excel_por_cadena(wb, negocio)
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-
-    # Recopilar fotos + estado de cada producto antes de borrar reportes
-    fotos = {}  # {(tienda, producto): foto_b64_str}
-    for (tienda, producto), rep in mapa.items():
-        if rep.foto_b64:
-            fotos[(tienda, producto)] = rep.foto_b64
-        elif rep.foto:
-            try:
-                ruta = os.path.join(FOTOS_DIR, rep.foto)
-                with open(ruta, "rb") as f:
-                    fotos[(tienda, producto)] = base64.b64encode(f.read()).decode()
-            except Exception:
-                pass
 
     # Mapa de estado por producto para separar carpetas en el ZIP
     estado_cierre = {
@@ -1570,6 +1631,66 @@ def cerrar_semana():
         for d in Diferencia.query.filter_by(semana=semana, negocio=negocio).all()
     }
 
+    # ── 1) ARMAR EL ZIP COMPLETO EN DISCO, ANTES DE BORRAR NADA ──────────────
+    os.makedirs(CIERRES_DIR, exist_ok=True)
+    nombre_zip = f"Cierre_{rango_archivo}.zip"
+    ruta_zip = os.path.join(CIERRES_DIR, f"{negocio}__{nombre_zip}")
+    ruta_tmp = ruta_zip + ".parcial"
+    with zipfile.ZipFile(ruta_tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Excel dentro del ZIP
+        zf.writestr(f"Diferencias_{rango_archivo}.xlsx", buf.getvalue())
+
+        # Fotos separadas en carpetas (OK / Rechazadas / Diferencias), leídas de a una desde la base
+        for (tienda, producto), rep in mapa.items():
+            # Solo se salta una foto dañada o inexistente; si falla la ESCRITURA del ZIP
+            # (memoria, disco), el error sube y el cierre se detiene SIN borrar nada.
+            try:
+                foto_b64 = db.session.query(Reporte.foto_b64).filter(Reporte.id == rep.id).scalar()
+                if foto_b64:
+                    raw = foto_b64.split(",", 1)[1] if "," in foto_b64 else foto_b64
+                    foto_bytes = base64.b64decode(raw)
+                    del foto_b64, raw
+                elif rep.foto:
+                    with open(os.path.join(FOTOS_DIR, rep.foto), "rb") as f:
+                        foto_bytes = f.read()
+                else:
+                    continue
+            except (ValueError, TypeError, OSError):
+                continue  # foto corrupta o archivo inexistente
+            tienda_safe   = re.sub(r'[\\/:*?"<>|]', "_", tienda).strip()
+            producto_safe = re.sub(r'[\\/:*?"<>|]', "_", producto).strip()[:60]
+            estado = estado_cierre.get((tienda, producto), "OK")
+            if estado == "RECHAZADO":
+                carpeta = f"Fotos_Rechazadas_{rango_archivo}"
+            elif estado == "OK":
+                carpeta = f"Fotos_OK_{rango_archivo}"
+            else:
+                carpeta = f"Fotos_Diferencias_{rango_archivo}"
+            zf.writestr(f"{carpeta}/{tienda_safe}/{producto_safe}.jpg", foto_bytes, compress_type=zipfile.ZIP_STORED)
+            del foto_bytes
+
+        # Fotos de novedades (liquidación, vencidos, etc.) en carpetas por tipo
+        for liq in Liquidacion.query.filter_by(semana=semana, negocio=negocio).all():
+            tipo_safe   = re.sub(r'[\\/:*?"<>|]', "_", liq.tipo or "Liquidacion").strip()
+            tienda_safe = re.sub(r'[\\/:*?"<>|]', "_", liq.tienda).strip()
+            for idx, foto_b64 in enumerate([liq.foto1_b64, liq.foto2_b64, liq.foto3_b64], 1):
+                if not foto_b64:
+                    continue
+                try:
+                    raw = foto_b64.split(",", 1)[1] if "," in foto_b64 else foto_b64
+                    foto_bytes = base64.b64decode(raw)
+                except (ValueError, TypeError):
+                    continue  # foto corrupta
+                zf.writestr(f"{tipo_safe}_{rango_archivo}/{tienda_safe}/foto{idx}.jpg", foto_bytes, compress_type=zipfile.ZIP_STORED)
+    # el ZIP quedó completo: recién ahora pasa a ser "el último cierre"
+    for viejo in os.listdir(CIERRES_DIR):
+        if viejo.startswith(f"{negocio}__") and viejo.endswith(".zip") and viejo != os.path.basename(ruta_zip):
+            try: os.remove(os.path.join(CIERRES_DIR, viejo))
+            except Exception: pass
+    os.replace(ruta_tmp, ruta_zip)
+    db.session.expunge_all()   # suelta de memoria los objetos ya usados
+
+    # ── 2) RECIÉN AHORA SE LIMPIA LA SEMANA ──────────────────────────────────
     # Borrar validaciones primero (tienen FK hacia reporte)
     ValidacionIA.query.filter(ValidacionIA.semana <= semana, ValidacionIA.negocio == negocio).delete()
     # Borrar reportes de la semana cerrada y de cualquier semana anterior (limpieza completa)
@@ -1588,56 +1709,10 @@ def cerrar_semana():
         cfg_override.valor = nueva_semana
     elif nueva_semana:
         db.session.add(Config(clave=clave_override, valor=nueva_semana))
+    # Eliminar liquidaciones de la semana cerrada (sus fotos ya están en el ZIP)
+    Liquidacion.query.filter_by(semana=semana, negocio=negocio).delete()
     db.session.commit()
 
-    # Construir ZIP: Excel + fotos separadas en Fotos_OK y Fotos_Diferencias
-    zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Excel dentro del ZIP
-        zf.writestr(f"Diferencias_{rango_archivo}.xlsx", buf.getvalue())
-
-        # Fotos separadas en 3 carpetas:
-        #   Fotos_OK/           → APROBADO o sin validación con foto
-        #   Fotos_Rechazadas/   → RECHAZADO por IA o supervisor
-        #   Fotos_Diferencias/  → (solo referencia; sin foto no genera archivo)
-        for (tienda, producto), foto_b64 in fotos.items():
-            try:
-                raw = foto_b64.split(",", 1)[1] if "," in foto_b64 else foto_b64
-                foto_bytes = base64.b64decode(raw)
-                tienda_safe   = re.sub(r'[\\/:*?"<>|]', "_", tienda).strip()
-                producto_safe = re.sub(r'[\\/:*?"<>|]', "_", producto).strip()[:60]
-                estado = estado_cierre.get((tienda, producto), "OK")
-                if estado == "RECHAZADO":
-                    carpeta = f"Fotos_Rechazadas_{rango_archivo}"
-                elif estado == "OK":
-                    carpeta = f"Fotos_OK_{rango_archivo}"
-                else:
-                    carpeta = f"Fotos_Diferencias_{rango_archivo}"
-                path = f"{carpeta}/{tienda_safe}/{producto_safe}.jpg"
-                zf.writestr(path, foto_bytes)
-            except Exception:
-                pass  # foto corrupta o vacía, se omite
-
-        # Fotos de novedades (liquidación, vencidos, etc.) en carpetas por tipo
-        liqs = Liquidacion.query.filter_by(semana=semana, negocio=negocio).all()
-        for liq in liqs:
-            tipo_safe   = re.sub(r'[\\/:*?"<>|]', "_", liq.tipo or "Liquidacion").strip()
-            tienda_safe = re.sub(r'[\\/:*?"<>|]', "_", liq.tienda).strip()
-            for idx, foto_b64 in enumerate([liq.foto1_b64, liq.foto2_b64, liq.foto3_b64], 1):
-                if not foto_b64:
-                    continue
-                try:
-                    raw = foto_b64.split(",", 1)[1] if "," in foto_b64 else foto_b64
-                    foto_bytes = base64.b64decode(raw)
-                    zf.writestr(f"{tipo_safe}_{rango_archivo}/{tienda_safe}/foto{idx}.jpg", foto_bytes)
-                except Exception:
-                    pass
-        # Eliminar liquidaciones de la semana cerrada
-        Liquidacion.query.filter_by(semana=semana, negocio=negocio).delete()
-        db.session.commit()
-
-    zip_buf.seek(0)
-    nombre_zip = f"Cierre_{rango_archivo}.zip"
 
     # Limpiar archivos de fotos del disco ahora que ya están en el ZIP
     try:
@@ -1648,8 +1723,22 @@ def cerrar_semana():
     except Exception:
         pass
 
-    return send_file(zip_buf, as_attachment=True, download_name=nombre_zip,
+    return send_file(ruta_zip, as_attachment=True, download_name=nombre_zip,
                      mimetype="application/zip")
+
+@app.route("/api/ultimo-cierre")
+def ultimo_cierre():
+    """Vuelve a descargar el ZIP del último cierre del negocio (por si la descarga se cortó)."""
+    negocio = request.args.get("negocio", "mundo_vegano")
+    try:
+        zips = sorted((f for f in os.listdir(CIERRES_DIR) if f.startswith(f"{negocio}__") and f.endswith(".zip")),
+                      key=lambda f: os.path.getmtime(os.path.join(CIERRES_DIR, f)), reverse=True)
+    except FileNotFoundError:
+        zips = []
+    if not zips:
+        return jsonify({"ok": False, "error": "No hay un cierre guardado en el servidor"}), 404
+    return send_file(os.path.join(CIERRES_DIR, zips[0]), as_attachment=True,
+                     download_name=zips[0].split("__", 1)[1], mimetype="application/zip")
 
 @app.route("/api/cargar-inventario", methods=["POST"])
 def cargar_inventario():
@@ -2006,15 +2095,21 @@ def ver_foto_reporte(reporte_id):
 def diferencias_semana():
     negocio = request.args.get("negocio", "mundo_vegano")
     semana  = semana_actual(negocio)
-    reportes = Reporte.query.filter_by(semana=semana, negocio=negocio).all()
+    habilitada = filtro_tiendas(negocio)
+    tiene_b64 = (Reporte.foto_b64.isnot(None) & (Reporte.foto_b64 != "")).label("tiene_b64")
+    # sin cargar las fotos en memoria
+    reportes = (db.session.query(Reporte.tienda, Reporte.foto, Reporte.comentario, tiene_b64)
+                .filter(Reporte.semana == semana, Reporte.negocio == negocio).all())
 
     # Resumen por tienda
     tiendas_reporte = {}  # {tienda: {fotos, comentarios}}
     for r in reportes:
         t = r.tienda
+        if not habilitada(t):
+            continue
         if t not in tiendas_reporte:
             tiendas_reporte[t] = {"fotos": 0, "comentarios": 0}
-        if r.foto or r.foto_b64:
+        if r.foto or r.tiene_b64:
             tiendas_reporte[t]["fotos"] += 1
         if r.comentario:
             tiendas_reporte[t]["comentarios"] += 1
