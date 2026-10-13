@@ -1024,7 +1024,11 @@ def get_ocultar_cadena():
 @app.route("/api/reset-semana-actual", methods=["POST"])
 def reset_semana_actual():
     data    = request.get_json(silent=True) or {}
-    negocio = data.get("negocio", "mundo_vegano")
+    if data.get("rol") not in ROLES_ADMIN:
+        return jsonify({"error": "No autorizado"}), 403
+    negocio = (data.get("negocio") or "").strip()
+    if not Negocio.query.get(negocio):
+        return jsonify({"error": "Negocio no indicado"}), 400
     try:
         ValidacionIA.query.filter_by(negocio=negocio).delete(synchronize_session=False)
         Reporte.query.filter_by(negocio=negocio).delete(synchronize_session=False)
@@ -1039,9 +1043,13 @@ def reset_semana_actual():
 @app.route("/api/reset-historial", methods=["POST"])
 def reset_historial():
     data    = request.get_json(force=True)
+    if data.get("rol") not in ROLES_ADMIN:
+        return jsonify({"error": "No autorizado"}), 403
     if data.get("confirmar") != "BORRAR":
         return jsonify({"error": "Confirmación incorrecta"}), 400
-    negocio = data.get("negocio", "mundo_vegano")
+    negocio = (data.get("negocio") or "").strip()
+    if not Negocio.query.get(negocio):
+        return jsonify({"error": "Negocio no indicado"}), 400
     try:
         sem = semana_actual(negocio)
         Diferencia.query.filter(Diferencia.semana != sem, Diferencia.negocio == negocio).delete(synchronize_session=False)

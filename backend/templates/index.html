@@ -3307,10 +3307,11 @@ async function toggleNegocioActivo(n) {
 
 async function cargarSistema() {
   // Ocultar bloques solo-supervisor si el usuario no lo es
-  const esSupervisor = usuario && esSup();
+  // la zona de borrado es solo para administradores del negocio (no subadmins ni promotores)
+  const esAdmin = usuario && ['supervisor', 'admin', 'superadmin'].includes(usuario.rol);
   ['sis-bloque-automercado','sis-bloque-reset'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = esSupervisor ? 'block' : 'none';
+    if (el) el.style.display = esAdmin ? 'block' : 'none';
   });
   try {
     const r = await fetch(API + '/api/sistema/stats?rol=' + usuario.rol + '&negocio=' + negocioActual);
@@ -3387,7 +3388,7 @@ async function resetSemanaActual() {
     const r = await fetch(API + '/api/reset-semana-actual', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({negocio: negocioActual})
+      body: JSON.stringify({negocio: negocioActual, rol: usuario.rol})
     });
     if (r.ok) {
       alert('Semana restablecida. Recarga la página para ver el cambio.');
@@ -3420,7 +3421,7 @@ async function resetHistorial() {
     const r = await fetch(API + '/api/reset-historial', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({confirmar: 'BORRAR'})
+      body: JSON.stringify({confirmar: 'BORRAR', negocio: negocioActual, rol: usuario.rol})
     });
     if (r.ok) {
       alert('Historial borrado. La semana actual se conservó.');
