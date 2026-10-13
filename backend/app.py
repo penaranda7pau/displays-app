@@ -1258,6 +1258,8 @@ def _dividir_excel_por_cadena(wb, negocio):
 @app.route("/api/cerrar-semana", methods=["POST"])
 def cerrar_semana():
     data    = request.json or {}
+    if data.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "Solo un administrador puede cerrar la semana"}), 403
     negocio = (data.get("negocio") or "mundo_vegano").strip()
     semana  = semana_actual(negocio)
     habilitada = filtro_tiendas(negocio)   # cadenas desactivadas / tiendas quitadas no entran al cierre

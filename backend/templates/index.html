@@ -1686,6 +1686,8 @@ async function doLogin() {
     const data = await r.json();
     if (data.ok) {
       usuario = data;
+      // solo administradores cierran la semana (no subadmins)
+      document.querySelectorAll('.btn-cerrar').forEach(b => b.style.display = data.rol === 'subadmin' ? 'none' : '');
       document.getElementById('login-error').textContent = '';
       await cargarNegocios();
       if (data.selector_negocio) {
@@ -2293,11 +2295,11 @@ async function cerrarSemana() {
     // 1. Cerrar semana actual
     const r = await fetch(API + '/api/cerrar-semana', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({negocio: negocioActual})
+      body: JSON.stringify({negocio: negocioActual, rol: usuario.rol})
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
-      if (r.status === 409) { toast(d.error, 'err'); return; }
+      if (r.status === 409 || r.status === 403) { toast(d.error, 'err'); return; }
       if (confirm('Error al cerrar semana (' + r.status + ').\n\nSi el cierre alcanzó a generarse, se puede descargar el último ZIP guardado. ¿Intentar descargarlo?')) {
         window.location = API + '/api/ultimo-cierre?negocio=' + encodeURIComponent(negocioActual);
       }
