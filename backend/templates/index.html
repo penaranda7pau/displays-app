@@ -1238,7 +1238,7 @@
     <span>Producto</span><span>Cant.</span><span>Foto</span><span>Comentario</span>
   </div>
   <div id="lista-productos"></div>
-  <button class="btn btn-verde btn-enviar" onclick="enviarTodos()">✓ Enviar todos los reportes</button>
+  <button class="btn btn-verde btn-enviar" id="btn-enviar" onclick="enviarTodos()">✓ Enviar todos los reportes</button>
   <div class="status-envio" id="status-envio"></div>
 
   <!-- SECCIÓN LIQUIDACIÓN -->
@@ -1932,10 +1932,20 @@ async function irProductos(tienda) {
     lista.appendChild(aviso);
   }
 
+  const pend = _leerPendientes(tienda);
+  const nPend = Object.keys(pend).length;
+  if (nPend) {
+    const avisoPend = document.createElement('div');
+    avisoPend.style.cssText = 'background:rgba(224,92,92,0.12);border:1px solid var(--rojo);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:var(--rojo);font-weight:600;';
+    avisoPend.textContent = '⚠ Hay ' + nPend + ' reporte(s) de esta tienda que NO se enviaron. Ya están cargados abajo: presioná "Enviar todos los reportes".';
+    lista.appendChild(avisoPend);
+  }
+
   productos.forEach((p, i) => {
     const rep = mapaReportes[p.nombre];
-    const fotoExistente = rep?.foto_b64 || '';
-    const comentarioExistente = rep?.comentario || '';
+    const pen = pend[p.nombre];
+    const fotoExistente = pen?.foto_b64 || rep?.foto_b64 || '';
+    const comentarioExistente = pen?.comentario || rep?.comentario || '';
     filas.push({nombre: p.nombre, cantidad: p.cantidad, foto_b64: fotoExistente, comentario: comentarioExistente});
     const fila = document.createElement('div');
     fila.className = 'fila';
@@ -2120,26 +2130,70 @@ function mostrarInstruccionesFoto(onOk) {
   };
 }
 
-async function enviarTodos() {
-  document.getElementById('status-envio').textContent = 'Enviando...';
-  let enviados = 0;
-  for (const fd of filas) {
+// Reportes que fallaron se guardan en el celular hasta que se envíen (por si cierran la app)
+function _clavePend(tienda) { return 'pend:' + negocioActual + ':' + tienda; }
+function _leerPendientes(tienda) {
+  try { return JSON.parse(localStorage.getItem(_clavePend(tienda)) || '{}') || {}; } catch(e) { return {}; }
+}
+function _guardarPendientes(tienda, pend) {
+  try {
+    if (Object.keys(pend).length) localStorage.setItem(_clavePend(tienda), JSON.stringify(pend));
+    else localStorage.removeItem(_clavePend(tienda));
+  } catch(e) {}
+}
+
+async function _enviarUno(tienda, fd) {
+  // hasta 3 intentos, 60 s cada uno
+  for (let intento = 1; intento <= 3; intento++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 60000);
     try {
       const r = await fetch(API + '/api/reporte', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({tienda: tiendaActual, producto: fd.nombre,
+        method: 'POST', headers: {'Content-Type':'application/json'}, signal: ctrl.signal,
+        body: JSON.stringify({tienda, producto: fd.nombre,
           comentario: fd.comentario, foto: fd.foto_b64, usuario: usuario.nombre || '',
           negocio: negocioActual})
       });
       const d = await r.json();
-      if (d.ok) enviados++;
-    } catch(e) {}
+      if (r.ok && d.ok) return true;
+    } catch(e) {
+    } finally { clearTimeout(t); }
+    if (intento < 3) await new Promise(res => setTimeout(res, intento * 3000));
   }
-  document.getElementById('status-envio').textContent = '✓ ' + enviados + '/' + filas.length + ' reportes enviados';
-  document.getElementById('status-envio').style.color = 'var(--korax-deep)';
-  // Actualizar estado visitada/sin visita inmediatamente
-  tiendasReportadas.add(tiendaActual);
-  filtrarTiendas();
+  return false;
+}
+
+let _enviando = false;
+async function enviarTodos() {
+  if (_enviando) return;
+  _enviando = true;
+  const tienda = tiendaActual;
+  const st = document.getElementById('status-envio');
+  const btn = document.getElementById('btn-enviar');
+  btn.disabled = true;
+  st.style.color = '';
+  const fallidos = {};
+  let enviados = 0;
+  for (const fd of filas) {
+    st.textContent = 'Enviando ' + (enviados + Object.keys(fallidos).length + 1) + ' de ' + filas.length + '... no cierres la app';
+    if (await _enviarUno(tienda, fd)) enviados++;
+    else fallidos[fd.nombre] = {foto_b64: fd.foto_b64, comentario: fd.comentario};
+  }
+  _guardarPendientes(tienda, fallidos);
+  btn.disabled = false;
+  _enviando = false;
+  const nFall = Object.keys(fallidos).length;
+  if (nFall === 0) {
+    st.textContent = '✓ ' + enviados + '/' + filas.length + ' reportes enviados';
+    st.style.color = 'var(--korax-deep)';
+    // Solo se marca visitada si llegó TODO
+    tiendasReportadas.add(tienda);
+    filtrarTiendas();
+  } else {
+    st.innerHTML = '⚠ NO se enviaron ' + nFall + ' de ' + filas.length + ' reportes. Revisá la señal y presioná <b>Enviar todos los reportes</b> otra vez. Las fotos quedan guardadas en este celular.';
+    st.style.color = 'var(--rojo)';
+    alert('⚠ No se enviaron ' + nFall + ' de ' + filas.length + ' reportes de ' + tienda + '.\n\nRevisá la señal y volvé a presionar "Enviar todos los reportes". La tienda NO queda como visitada hasta que se envíen todos.');
+  }
 }
 
 function toggleCambiarSemana() {
