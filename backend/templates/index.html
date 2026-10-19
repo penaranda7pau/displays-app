@@ -2166,47 +2166,64 @@ async function cargarLiquidacionExistente(tienda, tipo) {
 }
 // --- FIN LIQUIDACIÓN ---
 
-function comprimirFoto(file, maxPx, calidad, callback) {
-  const url = URL.createObjectURL(file);
-  const img = new Image();
-  img.onload = () => {
-    URL.revokeObjectURL(url);
-    let w = img.width, h = img.height;
+function comprimirFoto(file, maxPx, calidad, callback, onError) {
+  const fallo = msg => { if (onError) onError(msg); else toast(msg, 'err'); };
+  if (!file || !file.size) { fallo('La foto llegó vacía (puede estar solo en la nube). Abrila primero en Google Fotos para que se descargue, o usá Cámara.'); return; }
+  const dibujar = (src, w0, h0, liberar) => {
+    let w = w0, h = h0;
     if (w > maxPx || h > maxPx) {
       if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
       else       { w = Math.round(w * maxPx / h); h = maxPx; }
     }
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
-    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-    callback(canvas.toDataURL('image/jpeg', calidad));
+    canvas.getContext('2d').drawImage(src, 0, 0, w, h);
+    const url = canvas.toDataURL('image/jpeg', calidad);
     canvas.width = 0; canvas.height = 0;
+    if (liberar) liberar();
+    if (!url || url.length < 1000) { fallo('No se pudo procesar la foto. Probá de nuevo o usá Cámara.'); return; }
+    callback(url);
   };
-  img.onerror = () => URL.revokeObjectURL(url);
-  img.src = url;
+  const conImg = () => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); dibujar(img, img.naturalWidth || img.width, img.naturalHeight || img.height); };
+    img.onerror = () => { URL.revokeObjectURL(url); fallo('No se pudo leer esa foto (formato no compatible o muy pesada). Probá con Cámara o elegí otra foto.'); };
+    img.src = url;
+  };
+  if (window.createImageBitmap) {
+    createImageBitmap(file).then(bmp => dibujar(bmp, bmp.width, bmp.height, () => bmp.close && bmp.close())).catch(conImg);
+  } else conImg();
 }
 
 function _procesarArchivoFoto(file, i) {
+  const wrap = document.getElementById('foto-wrap-' + i);
+  if (wrap) wrap.innerHTML = '<span style="font-size:11px;color:var(--muted);">Cargando...</span>';
   comprimirFoto(file, 1200, 0.80, dataUrl => {
     filas[i].foto_b64 = dataUrl.split(',')[1];
-    const wrap = document.getElementById('foto-wrap-' + i);
-    wrap.innerHTML = `<img src="${dataUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #668BCD;" onclick="abrirMenuFoto(${i})">`;
-  });
+    const w = document.getElementById('foto-wrap-' + i);
+    w.innerHTML = `<img src="${dataUrl}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #668BCD;" onclick="abrirMenuFoto(${i})">`;
+  }, msg => { abrirMenuFoto(i); toast(msg, 'err'); });
 }
 
-function tomarFotoCamara(i) {
+// El selector de archivo se pega a la página: en algunos Android, si queda suelto, el navegador
+// lo descarta mientras está abierta la galería (Google Fotos) y la foto elegida nunca llega.
+function _pedirFoto(i, camara) {
+  document.querySelectorAll('input.inp-foto-tmp').forEach(x => x.remove());
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
-  inp.onchange = e => { const f = e.target.files[0]; if (f) _procesarArchivoFoto(f, i); };
+  inp.type = 'file'; inp.accept = 'image/*'; inp.className = 'inp-foto-tmp';
+  if (camara) inp.capture = 'environment';
+  inp.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;';
+  document.body.appendChild(inp);
+  inp.onchange = e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) _procesarArchivoFoto(f, i);
+    setTimeout(() => inp.remove(), 1000);
+  };
   inp.click();
 }
-
-function elegirDeGaleria(i) {
-  const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'image/*';
-  inp.onchange = e => { const f = e.target.files[0]; if (f) _procesarArchivoFoto(f, i); };
-  inp.click();
-}
+function tomarFotoCamara(i) { _pedirFoto(i, true); }
+function elegirDeGaleria(i) { _pedirFoto(i, false); }
 
 function abrirMenuFoto(i) {
   const wrap = document.getElementById('foto-wrap-' + i);
