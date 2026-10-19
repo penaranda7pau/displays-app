@@ -477,6 +477,22 @@
     .cons-row { grid-template-columns: 32px 1fr 80px; }
     .cons-row .pista { grid-column: 1 / -1; }
   }
+  .g-caja { background: var(--korax-surface); border: 1px solid var(--borde); border-radius: 16px; padding: 14px; margin-bottom: 14px; box-shadow: var(--sombra); }
+  #g-analizar:disabled, #g-enviar:disabled { opacity: .45; cursor: not-allowed; }
+  .g-tit { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+  .g-ayuda { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .g-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .g-foto { position: relative; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; border: 2px solid var(--korax-mid); }
+  .g-foto img { width: 100%; height: 100%; object-fit: cover; }
+  .g-foto button { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: none; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; }
+  .g-resumen { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; font-weight: 700; margin: 6px 0 10px; }
+  .g-fila { display: flex; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--borde); }
+  .g-fila .g-ic { font-size: 18px; } .g-nom { font-size: 13px; font-weight: 700; } .g-nota { font-size: 12px; color: var(--muted); }
+  .g-fila textarea { width: 100%; margin-top: 6px; border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; font-family: inherit; font-size: 12px; background: var(--korax-gray-1); color: var(--text); resize: vertical; min-height: 34px; }
+  .g-ausente { background: rgba(224,92,92,.05); } .g-dudoso { background: rgba(232,168,56,.07); }
+  .g-obs { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .g-esperados { font-size: 13px; margin-bottom: 14px; } .g-esperados summary { cursor: pointer; color: var(--korax-deep); font-weight: 700; padding: 6px 0; }
+  .g-esp { padding: 4px 0; border-bottom: 1px solid var(--borde); font-size: 12px; }
   .cons-h { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 10px; letter-spacing: .02em; }
   .ug-in { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--korax-surface); color: var(--text); font-size: 13px; font-family: inherit; min-width: 0; }
   .ug-chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1225,6 +1241,12 @@
           <div class="quitadas" id="neg-quitadas"></div>
         </div>
 
+        <div class="neg-paso">Modo de captura de los displays</div>
+        <select id="neg-modo" class="ug-in" style="width:100%;margin-bottom:6px;">
+          <option value="producto">Una foto por producto (como hasta ahora)</option>
+          <option value="gondola">Fotos de la góndola completa: la IA detecta los productos</option>
+        </select>
+        <div class="neg-hint" style="margin:0 0 12px;">En modo góndola el display toma 1 a 4 fotos de la góndola y la IA marca cada producto como presente, ausente o dudoso.</div>
         <div class="neg-paso"><span class="num" id="neg-paso-prompt-num">4</span>Prompt de la IA <span class="neg-hint" style="margin:0;font-weight:500;" id="neg-prompt-info"></span></div>
         <div class="neg-hint" style="margin:0 0 6px;">Lo que lee la IA para validar cada foto de este negocio. <b>{producto}</b> se reemplaza por el producto a revisar. No cambies las 3 líneas finales (ESTADO / CONFIANZA / MOTIVO).</div>
         <textarea id="neg-prompt" class="neg-prompt" spellcheck="false" oninput="infoPrompt()"></textarea>
@@ -2007,6 +2029,10 @@ function irPanel() {
 
 async function irProductos(tienda) {
   tiendaActual = tienda;
+  const _th = document.querySelector('#productos .tabla-header');
+  if (_th) _th.style.display = _modoGondola() ? 'none' : '';
+  document.getElementById('btn-enviar').style.display = _modoGondola() ? 'none' : '';
+  if (_modoGondola()) { irGondola(tienda); return; }
   document.getElementById('titulo-tienda').textContent = tienda;
   document.getElementById('status-productos').textContent = 'Cargando...';
   document.getElementById('status-envio').textContent = '';
@@ -2070,6 +2096,121 @@ async function irProductos(tienda) {
     `;
     lista.appendChild(fila);
   });
+}
+
+// --- MODO GÓNDOLA: 1 a 4 fotos de la góndola, la IA detecta los productos ---
+function _modoGondola() { return ((NEGOCIOS[negocioActual] || {}).modo_captura) === 'gondola'; }
+let _gFotos = [], _gRes = null, _gProds = [];
+async function irGondola(tienda) {
+  _gFotos = []; _gRes = null;
+  document.getElementById('titulo-tienda').textContent = tienda;
+  document.getElementById('status-productos').textContent = 'Cargando...';
+  document.getElementById('status-envio').textContent = '';
+  const lista = document.getElementById('lista-productos');
+  lista.innerHTML = '';
+  limpiarLiquidacion();
+  mostrar('productos');
+  _gProds = await (await fetch(API + '/api/productos/' + encodeURIComponent(tienda) + '?negocio=' + negocioActual)).json();
+  cargarLiquidacionExistente(tienda);
+  document.getElementById('status-productos').textContent = _gProds.length + ' productos esperados · modo góndola';
+  lista.innerHTML = `<div class="g-caja">
+      <div class="g-tit">Fotos de la góndola</div>
+      <div class="g-ayuda">Tomá de 1 a 4 fotos que muestren toda la góndola o el refrigerador: de frente, con buena luz y que se lean las etiquetas.</div>
+      <div class="g-fotos" id="g-fotos"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;" id="g-agregar">
+        <button class="btn btn-gris" style="width:auto;padding:10px 16px;" onclick="gAgregar(true)">📷 Cámara</button>
+        <button class="btn btn-gris" style="width:auto;padding:10px 16px;" onclick="gAgregar(false)">🖼 Galería</button>
+      </div>
+      <button class="btn btn-verde" id="g-analizar" style="margin-top:12px;" onclick="gAnalizar()" disabled>Analizar con IA</button>
+      <div id="g-estado" class="status-envio"></div>
+    </div>
+    <div id="g-resultado"></div>
+    <details class="g-esperados"><summary>Productos esperados en esta tienda (${_gProds.length})</summary><div id="g-esp"></div></details>`;
+  const esp = document.getElementById('g-esp');
+  _gProds.forEach(p => { const e = document.createElement('div'); e.className = 'g-esp'; e.textContent = (p.item_nbr ? '#' + p.item_nbr + ' · ' : '') + p.nombre; esp.appendChild(e); });
+  gPintarFotos();
+}
+function gAgregar(camara) {
+  if (_gFotos.length >= 4) return;
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  if (camara) inp.capture = 'environment';
+  inp.onchange = e => { const f = e.target.files[0]; if (f) comprimirFoto(f, 1600, 0.85, url => { _gFotos.push(url.split(',')[1]); _gRes = null; document.getElementById('g-resultado').innerHTML = ''; gPintarFotos(); }); };
+  inp.click();
+}
+function gPintarFotos() {
+  const c = document.getElementById('g-fotos');
+  if (!c) return;
+  c.innerHTML = '';
+  _gFotos.forEach((f, i) => {
+    const d = document.createElement('div'); d.className = 'g-foto';
+    d.innerHTML = `<img src="data:image/jpeg;base64,${f}" alt=""><button title="Quitar">×</button>`;
+    d.querySelector('button').onclick = () => { _gFotos.splice(i, 1); _gRes = null; document.getElementById('g-resultado').innerHTML = ''; gPintarFotos(); };
+    c.appendChild(d);
+  });
+  document.getElementById('g-agregar').style.display = _gFotos.length >= 4 ? 'none' : 'flex';
+  document.getElementById('g-analizar').disabled = !_gFotos.length;
+}
+async function gAnalizar() {
+  const st = document.getElementById('g-estado'), btn = document.getElementById('g-analizar');
+  btn.disabled = true; st.style.color = ''; st.textContent = 'Analizando la góndola con IA... puede tardar hasta un minuto, no cierres la app';
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 180000);
+  try {
+    const r = await fetch(API + '/api/gondola/analizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, signal: ctrl.signal,
+      body: JSON.stringify({negocio: negocioActual, tienda: tiendaActual, usuario: usuario.nombre || '', fotos: _gFotos}) });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.error || ('Error ' + r.status));
+    _gRes = d; st.textContent = ''; gPintarResultado();
+  } catch (e) {
+    st.style.color = 'var(--rojo)';
+    st.textContent = '⚠ ' + (e.name === 'AbortError' ? 'La IA tardó demasiado. Revisá la señal y probá de nuevo.' : e.message);
+  } finally { clearTimeout(t); btn.disabled = !_gFotos.length; }
+}
+function gPintarResultado() {
+  const c = document.getElementById('g-resultado');
+  const n = k => _gRes.productos.filter(p => p.estado === k).length;
+  c.innerHTML = `<div class="g-caja">
+      <div class="g-tit">Resultado de la IA</div>
+      <div class="g-resumen"><span class="ok">✅ ${n('presente')} presentes</span><span class="du">⚠️ ${n('dudoso')} dudosos</span><span class="no">❌ ${n('ausente')} ausentes</span></div>
+      <div id="g-lista"></div>
+      <div class="g-obs" id="g-obs"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <button class="btn btn-verde" style="flex:1;" id="g-enviar" onclick="gEnviar()">✓ Enviar resultado</button>
+      </div>
+      <div id="g-envio" class="status-envio"></div>
+    </div>`;
+  if (_gRes.observaciones) document.getElementById('g-obs').textContent = '📝 ' + _gRes.observaciones;
+  const orden = {ausente: 0, dudoso: 1, presente: 2};
+  const lista = document.getElementById('g-lista');
+  [..._gRes.productos].sort((a, b) => orden[a.estado] - orden[b.estado]).forEach(p => {
+    const f = document.createElement('div'); f.className = 'g-fila g-' + p.estado;
+    f.innerHTML = `<div class="g-ic">${p.estado === 'presente' ? '✅' : p.estado === 'dudoso' ? '⚠️' : '❌'}</div>
+      <div style="flex:1;min-width:0;"><div class="g-nom"></div><div class="g-nota"></div></div>`;
+    f.querySelector('.g-nom').textContent = (p.item_nbr ? '#' + p.item_nbr + ' · ' : '') + p.producto + (p.frentes ? ` · ${p.frentes} frente${p.frentes === 1 ? '' : 's'}` : '');
+    f.querySelector('.g-nota').textContent = p.nota || '';
+    if (p.estado === 'ausente') {
+      const ta = document.createElement('textarea'); ta.placeholder = '¿Por qué no está? (opcional: agotado, sin espacio, etc.)';
+      ta.value = p.comentario || ''; ta.oninput = () => p.comentario = ta.value;
+      f.lastElementChild.appendChild(ta);
+    }
+    lista.appendChild(f);
+  });
+}
+async function gEnviar() {
+  const st = document.getElementById('g-envio'), btn = document.getElementById('g-enviar');
+  btn.disabled = true; st.style.color = ''; st.textContent = 'Enviando...';
+  try {
+    const r = await fetch(API + '/api/gondola/confirmar', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({negocio: negocioActual, tienda: tiendaActual, lote: _gRes.lote, usuario: usuario.nombre || '', productos: _gRes.productos}) });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.error || ('Error ' + r.status));
+    st.style.color = 'var(--korax-deep)'; st.textContent = '✓ Resultado enviado (' + d.enviados + ' productos)';
+    tiendasReportadas.add(tiendaActual); filtrarTiendas();
+    toast('Góndola de ' + tiendaActual + ' enviada', 'ok');
+  } catch (e) {
+    st.style.color = 'var(--rojo)'; st.textContent = '⚠ No se envió: ' + e.message + '. Probá de nuevo.';
+    btn.disabled = false;
+  }
 }
 
 // --- LIQUIDACIÓN ---
@@ -3479,6 +3620,7 @@ function restaurarPrompt() {
 
 async function abrirFormNegocio(n) {
   _negLogoNuevo = null;
+  document.getElementById('neg-modo').value = (n && n.modo_captura) || 'producto';
   if (n) {
     _promptOriginal = n.prompt_original || '';
     document.getElementById('neg-prompt').value = n.prompt || _promptOriginal;
@@ -3648,6 +3790,7 @@ async function guardarNegocio() {
     rurales:   [..._negEstado.rur],
     excluidas: [..._negEstado.quit],
     prompt:    document.getElementById('neg-prompt').value,
+    modo_captura: document.getElementById('neg-modo').value,
   };
   if (_negLogoNuevo) body.logo = _negLogoNuevo;
   const err = document.getElementById('neg-error');

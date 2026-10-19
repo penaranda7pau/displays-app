@@ -1,3 +1,4 @@
+import uuid
 import time
 import json
 import os
@@ -112,6 +113,7 @@ class Negocio(db.Model):
     rurales    = db.Column(db.Text, default="")               # una tienda por línea (visita mensual)
     excluidas  = db.Column(db.Text, default="")               # tiendas quitadas (no se visitan), una por línea
     prompt     = db.Column(db.Text)                           # prompt de la IA ({producto} = producto a validar)
+    modo_captura = db.Column(db.String(20), default="producto") # "producto" (1 foto por producto) o "gondola" (fotos de la góndola)
     activo     = db.Column(db.Boolean, default=True)
     orden      = db.Column(db.Integer, default=0)
     creado_en  = db.Column(db.String(30))
@@ -139,6 +141,19 @@ class Liquidacion(db.Model):
     foto2_b64  = db.Column(db.Text)
     foto3_b64  = db.Column(db.Text)
     fecha      = db.Column(db.String(30))
+
+class FotoGondola(db.Model):
+    """Fotos de góndola completa (modo góndola): la IA detecta varios productos en una foto."""
+    id         = db.Column(db.Integer, primary_key=True)
+    negocio    = db.Column(db.String(50), index=True)
+    semana     = db.Column(db.String(20), index=True)
+    tienda     = db.Column(db.String(200))
+    lote       = db.Column(db.String(40), index=True)   # un análisis = 1 a 4 fotos
+    usuario    = db.Column(db.String(100))
+    fecha      = db.Column(db.String(30))
+    foto_b64   = db.Column(db.Text)
+    resultado  = db.Column(db.Text)                     # JSON devuelto por la IA (igual en todas las fotos del lote)
+    costo_usd  = db.Column(db.Float, default=0.0)
 
 class ValidacionIA(db.Model):
     __tablename__ = "validacion_ia"
@@ -306,6 +321,14 @@ def _migrar_negocio():
                 conn.execute(db.text("ALTER TABLE negocio ADD COLUMN IF NOT EXISTS excluidas TEXT DEFAULT ''"))
             else:
                 conn.execute(db.text("ALTER TABLE negocio ADD COLUMN excluidas TEXT DEFAULT ''"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("ALTER TABLE negocio ADD COLUMN IF NOT EXISTS modo_captura VARCHAR(20) DEFAULT 'producto'"))
+            else:
+                conn.execute(db.text("ALTER TABLE negocio ADD COLUMN modo_captura VARCHAR(20) DEFAULT 'producto'"))
             conn.commit()
         except Exception:
             conn.rollback()
@@ -654,7 +677,8 @@ def _negocio_json(n, admin=False):
     d = {"slug": n.slug, "nombre": n.nombre, "cadenas": cods,
          "cadenas_txt": " · ".join(cods),
          "logo": f"/api/negocios/{n.slug}/logo" if n.logo_b64 else "",
-         "activo": bool(n.activo), "orden": n.orden or 0}
+         "activo": bool(n.activo), "orden": n.orden or 0,
+         "modo_captura": getattr(n, "modo_captura", None) or "producto"}
     if admin:
         d["rurales"] = n.rurales or ""
         d["excluidas"] = n.excluidas or ""
@@ -872,6 +896,8 @@ def editar_negocio(slug):
         n.prompt = None if p and p == _prompt_por_defecto(n.slug, n.nombre).strip() else p
     if "activo" in data:
         n.activo = bool(data.get("activo"))
+    if data.get("modo_captura") in ("producto", "gondola"):
+        n.modo_captura = data["modo_captura"]
     if data.get("logo"):
         try:
             n.logo_b64 = _validar_logo(data.get("logo"))
@@ -892,7 +918,7 @@ def eliminar_negocio(slug):
     if Negocio.query.count() <= 1:
         return jsonify({"ok": False, "error": "No se puede eliminar el único negocio"}), 400
     ValidacionIA.query.filter_by(negocio=slug).delete()
-    for modelo in (Reporte, Inventario, Diferencia, Liquidacion, Usuario):
+    for modelo in (Reporte, Inventario, Diferencia, Liquidacion, Usuario, FotoGondola):
         modelo.query.filter_by(negocio=slug).delete()
     for u in Usuario.query.filter(Usuario.negocio.like(f"%{slug}%")).all():   # displays de varios negocios
         quedan = [x for x in u.negocio.split(",") if x and x != slug]
@@ -1901,6 +1927,16 @@ def cerrar_semana():
                 except (ValueError, TypeError):
                     continue  # foto corrupta
                 zf.writestr(f"{tipo_safe}_{rango_archivo}/{tienda_safe}/foto{idx}.jpg", foto_bytes, compress_type=zipfile.ZIP_STORED)
+
+        # Fotos de góndola (modo góndola), una por archivo, leídas de a una
+        for (gid, gtienda) in db.session.query(FotoGondola.id, FotoGondola.tienda).filter_by(semana=semana, negocio=negocio).all():
+            try:
+                fb = db.session.query(FotoGondola.foto_b64).filter(FotoGondola.id == gid).scalar() or ""
+                foto_bytes = base64.b64decode(fb.split(",", 1)[1] if "," in fb else fb)
+            except (ValueError, TypeError):
+                continue
+            tienda_safe = re.sub(r'[\\/:*?"<>|]', "_", gtienda or "").strip()
+            zf.writestr(f"Gondolas_{rango_archivo}/{tienda_safe}/gondola_{gid}.jpg", foto_bytes, compress_type=zipfile.ZIP_STORED)
     # el ZIP quedó completo: recién ahora pasa a ser "el último cierre"
     for viejo in os.listdir(CIERRES_DIR):
         if viejo.startswith(f"{negocio}__") and viejo.endswith(".zip") and viejo != os.path.basename(ruta_zip):
@@ -1930,6 +1966,7 @@ def cerrar_semana():
         db.session.add(Config(clave=clave_override, valor=nueva_semana))
     # Eliminar liquidaciones de la semana cerrada (sus fotos ya están en el ZIP)
     Liquidacion.query.filter_by(semana=semana, negocio=negocio).delete()
+    FotoGondola.query.filter(FotoGondola.semana <= semana, FotoGondola.negocio == negocio).delete(synchronize_session=False)
     db.session.commit()
 
 
@@ -2323,6 +2360,9 @@ def limpiar_todo():
 @app.route("/api/reporte/<int:reporte_id>/foto")
 def ver_foto_reporte(reporte_id):
     rep = Reporte.query.get_or_404(reporte_id)
+    if (rep.foto or "").startswith("GONDOLA:"):
+        fotos = [f for (f,) in db.session.query(FotoGondola.foto_b64).filter_by(lote=rep.foto.split(":", 1)[1]).order_by(FotoGondola.id).all()]
+        return jsonify({"foto_b64": fotos[0] if fotos else "", "gondola": fotos})
     return jsonify({"foto_b64": rep.foto_b64 or ""})
 
 @app.route("/api/diferencias-semana")
@@ -2384,6 +2424,170 @@ def eliminar_reporte(reporte_id):
 # VALIDACIÓN IA — Fase 1: encolar y consultar progreso
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# ── MODO GÓNDOLA: una foto de la góndola completa → la IA dice qué productos están ──
+MODELO_GONDOLA = os.environ.get("MODELO_GONDOLA", "claude-opus-5-5")
+PRECIO_MODELO = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0),
+                 "claude-haiku-5-5": (0.10, 0.50), "claude-haiku-4-5": (1.0, 5.0)}   # USD por millón (entrada, salida)
+CON_FALLBACK = {"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-opus-5"}
+ESQUEMA_GONDOLA = {
+    "type": "object",
+    "properties": {
+        "productos": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "producto": {"type": "string"},
+                "estado":   {"type": "string", "enum": ["presente", "ausente", "dudoso"]},
+                "frentes":  {"type": "integer"},
+                "nota":     {"type": "string"},
+            },
+            "required": ["producto", "estado", "frentes", "nota"], "additionalProperties": False}},
+        "observaciones": {"type": "string"},
+    },
+    "required": ["productos", "observaciones"], "additionalProperties": False,
+}
+
+def _sistema_gondola(nombre_negocio, guia):
+    return (
+        f"Sos auditor de exhibición en supermercados de Costa Rica para la marca/distribuidor {nombre_negocio}. "
+        "Recibís una o varias fotos de la misma góndola o refrigerador y la lista de productos que deberían estar exhibidos en esa tienda. "
+        "Para CADA producto de la lista decidí:\n"
+        "- presente: se ve claramente en alguna foto (empaque, color y nombre coinciden).\n"
+        "- ausente: no aparece en ninguna foto.\n"
+        "- dudoso: hay algo parecido pero no se puede confirmar (etiqueta ilegible, tapado, borroso, otro sabor posible).\n"
+        "frentes = cuántas unidades del producto se ven de frente (0 si ausente). "
+        "nota = una frase corta en español con la razón (dónde está, por qué dudás). "
+        "Distinguí con cuidado sabores y presentaciones parecidas; ante la duda usá 'dudoso', no 'presente'. "
+        "Devolvé TODOS los productos de la lista, con el nombre escrito exactamente como en la lista. "
+        "En observaciones anotá en una o dos frases lo relevante de la góndola (desorden, precios faltantes, producto de la competencia ocupando el espacio).\n\n"
+        "Guía visual de los productos de la marca (escrita para revisar fotos individuales; usala para reconocer los empaques):\n"
+        + guia.replace("{producto}", "cada producto de la lista")
+    )
+
+@app.route("/api/gondola/analizar", methods=["POST"])
+def gondola_analizar():
+    d = request.get_json(silent=True) or {}
+    negocio, tienda = d.get("negocio"), (d.get("tienda") or "").strip()
+    fotos = [f.split(",", 1)[1] if "," in f else f for f in (d.get("fotos") or []) if f][:4]
+    if negocio not in slugs_negocios() or not tienda or not fotos:
+        return jsonify({"ok": False, "error": "Faltan datos o fotos"}), 400
+    if not ANTHROPIC_API_KEY:
+        return jsonify({"ok": False, "error": "ANTHROPIC_API_KEY no configurada"}), 500
+    inact = productos_inactivos(negocio)
+    prods = [i for i in Inventario.query.filter_by(negocio=negocio, tienda=tienda).order_by(Inventario.producto).all()
+             if i.producto not in inact]
+    if not prods:
+        return jsonify({"ok": False, "error": "Esta tienda no tiene productos en el inventario"}), 400
+    lista = "\n".join(f"- {p.producto}"
+                      + (f" (empaque: {p.nombre_empaque})" if p.nombre_empaque and p.nombre_empaque != p.producto else "")
+                      for p in prods)
+    neg = db.session.get(Negocio, negocio)
+    contenido = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": f}} for f in fotos]
+    contenido.append({"type": "text", "text": f"Tienda: {tienda}\nProductos que deberían estar exhibidos ({len(prods)}):\n{lista}"})
+    import anthropic as _anth
+    client = _anth.Anthropic(api_key=ANTHROPIC_API_KEY)
+    extra = {"output_config": {"effort": "medium", "format": {"type": "json_schema", "schema": ESQUEMA_GONDOLA}}}
+    betas = []
+    if MODELO_GONDOLA in CON_FALLBACK:          # si la IA se niega por seguridad, reintenta con otro modelo
+        extra["fallbacks"] = "default"
+        betas = ["server-side-fallback-2026-07-01"]
+    try:
+        resp = client.beta.messages.create(
+            model=MODELO_GONDOLA, max_tokens=16000, betas=betas,
+            system=_sistema_gondola(neg.nombre if neg else negocio, prompt_de(negocio)),
+            messages=[{"role": "user", "content": contenido}], extra_body=extra)
+    except _anth.RateLimitError:
+        return jsonify({"ok": False, "error": "La IA está saturada, probá de nuevo en un minuto"}), 503
+    except _anth.APIStatusError as e:
+        return jsonify({"ok": False, "error": f"Error de la IA ({e.status_code}): {e.message}"}), 502
+    except _anth.APIConnectionError as e:
+        app.logger.warning("gondola sin conexion: %r", e.__cause__)
+        return jsonify({"ok": False, "error": "Sin conexión con la IA"}), 502
+    if resp.stop_reason == "refusal":
+        return jsonify({"ok": False, "error": "La IA no pudo analizar estas fotos. Tomalas de nuevo."}), 502
+    try:
+        datos = json.loads(next(b.text for b in resp.content if b.type == "text"))
+    except (StopIteration, ValueError):
+        return jsonify({"ok": False, "error": "Respuesta inválida de la IA, probá de nuevo"}), 502
+    p_in, p_out = PRECIO_MODELO.get(getattr(resp, "model", MODELO_GONDOLA), PRECIO_MODELO.get(MODELO_GONDOLA, (4.0, 20.0)))
+    costo = (resp.usage.input_tokens * p_in + resp.usage.output_tokens * p_out) / 1_000_000
+    # cruzar con la lista (nombre exacto o sin mayúsculas); lo que la IA no devolvió queda dudoso
+    por_nombre = {(x.get("producto") or "").strip().upper(): x for x in datos.get("productos", [])}
+    resultado = []
+    for p in prods:
+        x = por_nombre.get(p.producto.strip().upper())
+        resultado.append({"producto": p.producto, "item_nbr": p.item_nbr or "",
+                          "estado": x["estado"] if x else "dudoso",
+                          "frentes": int(x.get("frentes") or 0) if x else 0,
+                          "nota": (x.get("nota") or "") if x else "La IA no lo reportó"})
+    res = {"productos": resultado, "observaciones": datos.get("observaciones", ""), "modelo": MODELO_GONDOLA,
+           "tokens": [resp.usage.input_tokens, resp.usage.output_tokens]}
+    lote = uuid.uuid4().hex[:12]
+    ahora = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sem = semana_actual(negocio)
+    for i, f in enumerate(fotos):
+        db.session.add(FotoGondola(negocio=negocio, semana=sem, tienda=tienda, lote=lote, usuario=(d.get("usuario") or "")[:100],
+                                   fecha=ahora, foto_b64=f, resultado=json.dumps(res, ensure_ascii=False),
+                                   costo_usd=costo if i == 0 else 0.0))
+    db.session.commit()
+    return jsonify({"ok": True, "lote": lote, "productos": resultado, "observaciones": res["observaciones"],
+                    "costo_usd": round(costo, 4)})
+
+@app.route("/api/gondola/confirmar", methods=["POST"])
+def gondola_confirmar():
+    """El display revisa el resultado y envía: presentes/dudosos quedan como reportes con la foto de la góndola."""
+    d = request.get_json(silent=True) or {}
+    negocio, tienda, lote = d.get("negocio"), (d.get("tienda") or "").strip(), d.get("lote") or ""
+    primera = FotoGondola.query.filter_by(lote=lote, negocio=negocio, tienda=tienda).order_by(FotoGondola.id).first()
+    if not primera:
+        return jsonify({"ok": False, "error": "No se encontraron las fotos de la góndola"}), 404
+    sem, ahora, ref = semana_actual(negocio), datetime.now().strftime("%Y%m%d_%H%M%S"), f"GONDOLA:{lote}"
+    usuario = (d.get("usuario") or "")[:100]
+    costo_pendiente = sum(c for (c,) in db.session.query(FotoGondola.costo_usd).filter_by(lote=lote).all())
+    enviados = 0
+    for p in d.get("productos") or []:
+        prod, estado = p.get("producto") or "", p.get("estado")
+        com = (p.get("comentario") or "").strip()[:500]
+        frentes = int(p.get("frentes") or 0)
+        rep = Reporte.query.filter_by(tienda=tienda, producto=prod, semana=sem, negocio=negocio).first()
+        if estado in ("presente", "dudoso"):
+            texto = ("Góndola (IA): presente" if estado == "presente" else "Góndola (IA): dudoso, revisar") \
+                    + (f", {frentes} frente{'s' if frentes != 1 else ''}" if frentes else "") + (f". {com}" if com else "")
+            if not rep:
+                rep = Reporte(negocio=negocio, tienda=tienda, producto=prod, semana=sem, modificaciones=0)
+                db.session.add(rep)
+            else:
+                rep.modificaciones = (rep.modificaciones or 0) + 1
+                rep.modificado_en = ahora
+            rep.foto, rep.foto_b64, rep.comentario, rep.usuario, rep.fecha = ref, None, texto, usuario, ahora
+            db.session.flush()
+            val = ValidacionIA.query.filter_by(reporte_id=rep.id, semana=sem).first()
+            if not val:
+                val = ValidacionIA(negocio=negocio, reporte_id=rep.id, semana=sem, tienda=tienda, producto=prod,
+                                   intentos=1, creado_en=ahora)
+                db.session.add(val)
+            val.estado = "APROBADO" if estado == "presente" else "REVISAR"
+            val.confianza = "alta" if estado == "presente" else "baja"
+            val.motivo = ("Góndola: " + (p.get("nota") or "")).strip()[:500]
+            val.costo_usd, costo_pendiente = costo_pendiente, 0.0   # el costo del análisis va una sola vez
+            val.procesado_en = ahora
+            enviados += 1
+        else:   # ausente
+            if com:   # el display justifica por qué no está → reporte sin foto (con justificación)
+                if not rep:
+                    rep = Reporte(negocio=negocio, tienda=tienda, producto=prod, semana=sem, modificaciones=0)
+                    db.session.add(rep)
+                if (rep.foto or "").startswith("GONDOLA:"):
+                    rep.foto = ""
+                rep.comentario, rep.usuario, rep.fecha = com, usuario, ahora
+                db.session.flush()
+                ValidacionIA.query.filter_by(reporte_id=rep.id, semana=sem).delete()
+                enviados += 1
+            elif rep and (rep.foto or "").startswith("GONDOLA:"):   # antes estaba por góndola y ya no
+                ValidacionIA.query.filter_by(reporte_id=rep.id, semana=sem).delete()
+                db.session.delete(rep)
+    db.session.commit()
+    return jsonify({"ok": True, "enviados": enviados})
+
 @app.route("/api/validacion/encolar", methods=["POST"])
 def validacion_encolar():
     """Crea registros PENDIENTE en ValidacionIA para todos los reportes con foto de la semana actual."""
@@ -2396,6 +2600,8 @@ def validacion_encolar():
     encolados = 0
     for rep in reportes:
         if not rep.foto_b64 and not rep.foto:
+            continue
+        if (rep.foto or "").startswith("GONDOLA:"):   # validado al analizar la góndola
             continue
         existe = ValidacionIA.query.filter_by(reporte_id=rep.id, semana=semana).first()
         forzar = data.get("forzar", False)
