@@ -1082,6 +1082,7 @@
         <button data-m="proyeccion_semana_mb">Semana completa (estimado)</button>
         <button data-m="ia_costo_usd">Gasto en IA</button>
         <button data-m="filas_total">Registros</button>
+        <button data-m="proyeccion">Fotos y costo por semana / mes</button>
       </div>
       <div id="cons-lista"></div>
       <div class="cons-nota" id="cons-nota"></div>
@@ -2999,8 +3000,43 @@ function pintarMiniConsumo() {
   if (t) t.textContent = `${_fmtMB(_consumo.db_mb)} de ${_consumo.limite_mb} MB · pico estimado ${_fmtMB(_consumo.pico_estimado_mb)}`;
 }
 
+function pintarProyeccion() {
+  const cont = document.getElementById('cons-lista');
+  const iaF = _consumo.ia_por_foto || 0.0024;
+  const lista = _consumo.negocios.filter(n => n.activo && n.proy);
+  const T = {tiendas_semanales: 0, tiendas_rurales: 0, fotos_semana: 0, fotos_rurales: 0, fotos_pico: 0, fotos_mes: 0, mb: 0};
+  const num = v => Math.round(v).toLocaleString();
+  const td = 'padding:9px 10px;border-bottom:1px solid var(--borde);text-align:right;white-space:nowrap;';
+  let filas = '';
+  lista.forEach(n => {
+    const p = n.proy, mbPico = p.fotos_pico * p.mb_por_foto;
+    Object.keys(T).forEach(k => { if (k !== 'mb') T[k] += p[k]; }); T.mb += mbPico;
+    filas += `<tr><td style="${td}text-align:left;font-weight:700;" class="pn"></td>
+      <td style="${td}">${p.tiendas_semanales} + <span style="color:#B7791F;">${p.tiendas_rurales} rurales</span></td>
+      <td style="${td}">${num(p.fotos_semana)}</td><td style="${td}font-weight:700;">${num(p.fotos_pico)}</td>
+      <td style="${td}">${num(p.fotos_mes)}</td><td style="${td}">${_fmtUSD(p.fotos_semana * iaF)}</td>
+      <td style="${td}font-weight:700;">${_fmtUSD(p.fotos_mes * iaF)}</td><td style="${td}">${_fmtMB(mbPico)}</td></tr>`;
+  });
+  const th = 'padding:9px 10px;text-align:right;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid var(--borde);';
+  cont.innerHTML = `<div style="overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <tr><th style="${th}text-align:left;">Negocio</th><th style="${th}">Tiendas</th><th style="${th}">Fotos semana normal</th>
+      <th style="${th}">Semana con rurales (pico)</th><th style="${th}">Fotos al mes</th><th style="${th}">IA semana</th>
+      <th style="${th}">IA al mes</th><th style="${th}">BD en semana pico</th></tr>${filas}
+    <tr style="background:var(--foam-wash-2);font-weight:800;color:var(--korax-deep);"><td style="${td}text-align:left;">Total</td>
+      <td style="${td}">${T.tiendas_semanales} + ${T.tiendas_rurales} rurales</td><td style="${td}">${num(T.fotos_semana)}</td>
+      <td style="${td}">${num(T.fotos_pico)}</td><td style="${td}">${num(T.fotos_mes)}</td><td style="${td}">${_fmtUSD(T.fotos_semana * iaF)}</td>
+      <td style="${td}">${_fmtUSD(T.fotos_mes * iaF)}</td><td style="${td}">${_fmtMB(T.mb)}</td></tr></table></div>
+    <div class="cons-nota" style="margin-top:10px;">Una foto por producto con existencia en cada tienda habilitada (sin productos desactivados).
+      Las rurales se visitan <b>una vez al mes</b>: la <b>semana pico</b> es la semana normal + todas las rurales.
+      <b>Mes</b> = 4.33 semanas normales + rurales una vez. <b>IA</b> = $${iaF.toFixed(4)} por foto (costo real medido).
+      <b>BD en semana pico</b> = fotos de la semana pico × peso promedio real de una foto (se liberan en cada cierre).</div>`;
+  lista.forEach((n, i) => cont.querySelectorAll('.pn')[i].textContent = n.nombre);
+}
+
 function pintarConsumo() {
   const m = _consumoMetrica;
+  if (m === 'proyeccion') { pintarProyeccion(); document.getElementById('cons-nota').style.display = 'none'; return; }
+  document.getElementById('cons-nota').style.display = '';
   const fmt = m === 'ia_costo_usd' ? _fmtUSD : m === 'filas_total' ? (v => v.toLocaleString()) : _fmtMB;
   const lista = [..._consumo.negocios].sort((a, b) => b[m] - a[m]);
   const max = Math.max(...lista.map(n => n[m]), 0) || 1;

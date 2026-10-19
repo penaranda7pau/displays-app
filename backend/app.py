@@ -2653,8 +2653,8 @@ def validacion_procesar():
     return jsonify({"ok": True, "mensaje": f"Procesando {pendientes} fotos en background", "iniciado": True})
 
 
-DB_LIMITE_MB = 1024   # disco del Postgres en Render (displays-db)
-TAM_FOTO_ESTIMADO = 95_000   # caracteres base64 de una foto 800px q0.70, si aún no hay fotos
+DB_LIMITE_MB = int(os.environ.get("DB_LIMITE_MB", "5120"))   # disco del Postgres en Render (displays-db: 5 GB + autoscaling)
+TAM_FOTO_ESTIMADO = 222_000   # caracteres base64 de una foto real (promedio medido en producción, 1200px), si aún no hay fotos
 
 def tamano_db_mb():
     try:
@@ -2701,6 +2701,18 @@ def sistema_consumo():
         esperadas = sum(1 for i in Inventario.query.filter(Inventario.negocio == slug, Inventario.cantidad > 0)
                         .with_entities(Inventario.tienda).all() if habilitada(i.tienda))
         prom_foto = (fotos_b / n_fotos) if n_fotos else TAM_FOTO_ESTIMADO
+        # proyección de fotos: tiendas semanales cada semana, rurales una vez al mes (semana pico = normal + rurales)
+        rur, inact = rurales_de(slug), productos_inactivos(slug)
+        f_sem = f_rur = 0; t_sem, t_rur, prods = set(), set(), set()
+        for tienda, prod in (Inventario.query.filter(Inventario.negocio == slug, Inventario.cantidad > 0)
+                             .with_entities(Inventario.tienda, Inventario.producto).all()):
+            if not habilitada(tienda) or prod in inact:
+                continue
+            prods.add(prod)
+            if (tienda or "").strip().upper() in rur:
+                f_rur += 1; t_rur.add(tienda)
+            else:
+                f_sem += 1; t_sem.add(tienda)
         negocios.append({
             "slug": slug, "nombre": n.nombre, "activo": bool(n.activo),
             "logo": f"/api/negocios/{slug}/logo" if n.logo_b64 else "",
@@ -2712,6 +2724,9 @@ def sistema_consumo():
             "ia_costo_usd": round(ia_costo, 4), "ia_fotos": ia_fotos,
             "fotos_semana_esperadas": esperadas,
             "proyeccion_semana_mb": round(esperadas * prom_foto / MB, 1),
+            "proy": {"tiendas_semanales": len(t_sem), "tiendas_rurales": len(t_rur), "productos": len(prods),
+                     "fotos_semana": f_sem, "fotos_rurales": f_rur, "fotos_pico": f_sem + f_rur,
+                     "fotos_mes": round(f_sem * 52 / 12 + f_rur), "mb_por_foto": round(prom_foto / MB, 3)},
         })
     negocios.sort(key=lambda x: -x["total_mb"])
     total = tamano_db_mb()
@@ -2724,6 +2739,9 @@ def sistema_consumo():
         "proyeccion_semana_mb": round(proy, 1),
         "pico_estimado_mb": round((total or 0) - sum(x["fotos_mb"] + x["liquidaciones_mb"] for x in negocios) + proy, 1),
         "ia_costo_total_usd": round(sum(x["ia_costo_usd"] for x in negocios), 4),
+        # costo real por foto validada (si todavía no hay validaciones: 0.0024 medido en producción)
+        "ia_por_foto": round((sum(x["ia_costo_usd"] for x in negocios) / sum(x["ia_fotos"] for x in negocios))
+                             if sum(x["ia_fotos"] for x in negocios) else 0.0024, 5),
         "motor": db.engine.dialect.name,
         "negocios": negocios,
     })
