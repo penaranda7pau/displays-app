@@ -477,6 +477,36 @@
     .cons-row { grid-template-columns: 32px 1fr 80px; }
     .cons-row .pista { grid-column: 1 / -1; }
   }
+  .cons-h { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 10px; letter-spacing: .02em; }
+  .ug-in { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--korax-surface); color: var(--text); font-size: 13px; font-family: inherit; min-width: 0; }
+  .ug-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ug-chip { border: 1px solid var(--korax-gray-3); background: var(--hi); color: var(--muted); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .ug-chip.on { background: var(--foam-wash-2); border-color: var(--korax-mid); color: var(--korax-deep); font-weight: 700; }
+  .ug-row { display: grid; grid-template-columns: 1.4fr 150px 2fr auto; gap: 10px; align-items: center; padding: 10px 6px; border-bottom: 1px solid var(--borde); }
+  .ug-row .n { font-weight: 700; font-size: 14px; } .ug-row small { color: var(--muted); font-size: 12px; display: block; }
+  .ug-rol { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 3px 9px; display: inline-block; }
+  .r-superadmin { background: #1B2B3A; color: #fff; } .r-admin { background: var(--korax-deep); color: #fff; }
+  .r-supervisor { background: var(--korax-mid); color: #fff; } .r-subadmin { background: var(--foam-wash-2); color: var(--korax-deep); }
+  .r-display { background: var(--korax-gray-2); color: var(--text); }
+  .ug-mapa-top { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .ug-nodo { background: var(--korax-surface); border: 1px solid var(--borde); border-radius: 14px; padding: 10px 14px; box-shadow: var(--sombra); text-align: center; }
+  .ug-linea { width: 2px; height: 18px; background: var(--korax-gray-3); margin: 0 auto; }
+  .ug-negs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; position: relative; padding-top: 18px; border-top: 2px solid var(--korax-gray-3); }
+  .ug-neg { background: var(--korax-gray-1); border: 1px solid var(--borde); border-radius: 16px; padding: 12px; position: relative; }
+  .ug-neg::before { content: ""; position: absolute; top: -20px; left: 50%; width: 2px; height: 18px; background: var(--korax-gray-3); }
+  .ug-neg h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 15px; }
+  .ug-neg h4 img { width: 28px; height: 28px; border-radius: 8px; object-fit: cover; }
+  .ug-nivel { border-left: 2px solid var(--korax-gray-3); margin: 0 0 8px 6px; padding-left: 10px; }
+  .ug-nivel .t { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .ug-u { display: inline-flex; align-items: center; gap: 6px; background: var(--korax-surface); border: 1px solid var(--borde); border-radius: 999px; padding: 4px 6px 4px 10px; margin: 0 4px 4px 0; font-size: 12px; }
+  .ug-u button { border: none; background: var(--korax-gray-2); color: var(--muted); border-radius: 50%; width: 18px; height: 18px; cursor: pointer; font-size: 11px; line-height: 1; }
+  .ug-u button:hover { background: var(--rojo); color: #fff; }
+  .ug-add { width: 100%; margin-top: 4px; }
+  .ug-funcs { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 16px; }
+  .ug-func { border: 1px solid var(--borde); border-radius: 14px; padding: 10px 12px; background: var(--korax-surface); font-size: 12px; }
+  .ug-func ul { margin: 6px 0 0; padding-left: 16px; color: var(--text); } .ug-func li { margin: 2px 0; }
+  .ug-func li.no { color: var(--muted); text-decoration: line-through; }
+  @media (max-width: 760px) { #ug-form { grid-template-columns: 1fr 1fr; } .ug-row { grid-template-columns: 1fr; } }
   .sg-card { background: var(--card); border: 1px solid var(--borde); border-radius: var(--radius-card); padding: 16px; margin-bottom: 12px; box-shadow: var(--sombra); }
   @media (max-width: 860px) {
     #selector-negocio, #sistema-global { padding: 18px 16px 60px; }
@@ -1081,6 +1111,31 @@
   <div class="tabs" style="margin-top:6px;">
     <button class="tab" id="sg-tab-consumo" onclick="abrirSistemaGlobal('consumo')">Memoria y consumo</button>
     <button class="tab activo" id="sg-tab-negocios" onclick="abrirSistemaGlobal('negocios')">Negocios</button>
+    <button class="tab" id="sg-tab-usuarios" onclick="abrirSistemaGlobal('usuarios')">Usuarios</button>
+  </div>
+  <div id="sg-usuarios" style="display:none;">
+    <div class="sg-card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="cons-h" style="margin:0;">USUARIOS · TODA LA APP</div>
+        <div class="cons-tab" id="ug-vista" style="margin:0 0 0 auto;">
+          <button data-v="lista" class="on">Lista</button><button data-v="mapa">Mapa jerárquico</button>
+        </div>
+      </div>
+      <div id="ug-form" style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr auto;gap:8px;align-items:start;margin-bottom:6px;">
+        <input id="ug-nombre" placeholder="Nombre" class="ug-in">
+        <input id="ug-login" placeholder="Usuario" class="ug-in" autocomplete="off">
+        <input id="ug-pass" placeholder="Contraseña" class="ug-in" autocomplete="off">
+        <select id="ug-rol" class="ug-in" onchange="ugPintarNegForm()">
+          <option value="display">Display</option><option value="subadmin">Subadmin</option>
+          <option value="supervisor">Administrador</option><option value="admin">Admin general</option>
+        </select>
+        <button class="btn" style="width:auto;padding:10px 18px;background:var(--korax-deep);color:#fff;" onclick="ugCrear()">+ Agregar</button>
+      </div>
+      <div id="ug-neg-form" class="ug-chips" style="margin-bottom:4px;"></div>
+      <div id="ug-error" style="color:var(--rojo);font-size:12px;min-height:16px;margin-bottom:6px;"></div>
+      <input id="ug-buscar" placeholder="Buscar por nombre o usuario..." class="ug-in" style="width:100%;margin-bottom:10px;" oninput="ugPintar()">
+      <div id="ug-cuerpo"></div>
+    </div>
   </div>
   <div id="sg-consumo" style="display:none;">
     <div class="sg-card">
@@ -2963,11 +3018,11 @@ function abrirSistemaGlobal(seccion) {
   seccion = seccion || 'negocios';
   document.getElementById('sidebar').classList.remove('visible');
   if (!document.getElementById('sistema-global').classList.contains('active')) mostrar('sistema-global');
-  ['consumo', 'negocios'].forEach(x => {
+  ['consumo', 'negocios', 'usuarios'].forEach(x => {
     document.getElementById('sg-' + x).style.display = x === seccion ? '' : 'none';
     document.getElementById('sg-tab-' + x).classList.toggle('activo', x === seccion);
   });
-  if (seccion === 'consumo') cargarConsumo(); else cargarNegociosAdmin();
+  if (seccion === 'consumo') cargarConsumo(); else if (seccion === 'usuarios') ugCargar(); else cargarNegociosAdmin();
 }
 
 // ─── Memoria y consumo (superadmin) ───
@@ -3099,6 +3154,181 @@ document.addEventListener('click', ev => {
   _consumoMetrica = b.dataset.m;
   document.querySelectorAll('#cons-tab button').forEach(x => x.classList.toggle('on', x === b));
   pintarConsumo();
+});
+
+// ── Sistema → Usuarios (solo superadmin): lista + mapa jerárquico ──
+let _ugUsuarios = [], _ugVista = 'lista', _ugNegForm = [];
+const UG_ROL = {superadmin: 'Superadmin', admin: 'Admin general', supervisor: 'Administrador', subadmin: 'Subadmin', display: 'Display'};
+const UG_FUNC = [
+  ['superadmin', 'Superadmin', ['Todos los negocios', 'Sistema: negocios, usuarios, memoria y consumo', 'Todo lo del administrador']],
+  ['admin', 'Admin general', ['Todos los negocios', 'Validación IA, inventario, usuarios, cierre', 'Sistema de cada negocio', '-Sistema general (negocios)']],
+  ['supervisor', 'Administrador', ['Solo sus negocios', 'Reportes, por tienda, diferencias, displays', 'Validación IA, inventario, usuarios', 'Cerrar semana y sistema del negocio', '-Editar negocios']],
+  ['subadmin', 'Subadmin', ['Solo sus negocios', 'Reportes, por tienda, diferencias, displays', '-Cerrar semana, usuarios, validación', '-Inventario y sistema']],
+  ['display', 'Display', ['Solo sus negocios', 'Tiendas: enviar fotos y novedades', '-Panel de supervisor']],
+];
+async function ugCargar() {
+  _ugUsuarios = await (await fetch(API + '/api/usuarios/todos?solicitante_rol=superadmin')).json();
+  if (!Object.keys(NEGOCIOS).length) await cargarNegocios();
+  ugPintarNegForm(); ugPintar();
+}
+function _ugNombreNeg(s) { return (NEGOCIOS[s] || {nombre: s}).nombre; }
+function ugPintarNegForm() {
+  const cont = document.getElementById('ug-neg-form');
+  const rol = document.getElementById('ug-rol').value;
+  if (rol === 'admin') { cont.innerHTML = '<span style="font-size:12px;color:var(--muted);">El admin general entra a todos los negocios.</span>'; return; }
+  if (!_ugNegForm.length) _ugNegForm = [Object.keys(NEGOCIOS)[0]].filter(Boolean);
+  cont.innerHTML = '<span style="font-size:12px;color:var(--muted);align-self:center;">Negocios:</span>';
+  Object.values(NEGOCIOS).forEach(n => {
+    const b = document.createElement('button');
+    b.className = 'ug-chip' + (_ugNegForm.includes(n.slug) ? ' on' : ''); b.textContent = n.nombre;
+    b.onclick = () => { _ugNegForm = _ugNegForm.includes(n.slug) ? _ugNegForm.filter(x => x !== n.slug) : [..._ugNegForm, n.slug]; ugPintarNegForm(); };
+    cont.appendChild(b);
+  });
+}
+async function ugCrear() {
+  const err = document.getElementById('ug-error'); err.textContent = '';
+  const nombre = document.getElementById('ug-nombre').value.trim(), login = document.getElementById('ug-login').value.trim();
+  const password = document.getElementById('ug-pass').value.trim(), rol = document.getElementById('ug-rol').value;
+  if (!nombre || !login || !password) { err.textContent = 'Completá nombre, usuario y contraseña'; return; }
+  if (rol !== 'admin' && !_ugNegForm.length) { err.textContent = 'Elegí al menos un negocio'; return; }
+  const r = await fetch(API + '/api/usuarios', { method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nombre, usuario: login, password, rol, negocio: _ugNegForm[0], negocios: _ugNegForm, solicitante_rol: 'superadmin'}) });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) { err.textContent = d.error || ('Error ' + r.status); return; }
+  ['ug-nombre', 'ug-login', 'ug-pass'].forEach(id => document.getElementById(id).value = '');
+  toast(nombre + ' agregado', 'ok'); ugCargar();
+}
+async function ugGuardar(u, cambios) {
+  const r = await fetch(API + '/api/usuarios/' + u.id, { method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(Object.assign({solicitante_rol: 'superadmin'}, cambios)) });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) { toast(d.error || ('Error ' + r.status), 'err'); ugPintar(); return false; }
+  toast('Cambios de ' + u.nombre + ' guardados', 'ok'); await ugCargar(); return true;
+}
+function ugToggleNeg(u, slug) {
+  const negs = u.negocios.includes(slug) ? u.negocios.filter(x => x !== slug) : [...u.negocios, slug];
+  if (!negs.length) { toast('Debe quedar al menos un negocio (o eliminá el usuario)', 'err'); return; }
+  ugGuardar(u, {negocios: negs});
+}
+function ugCambiarRol(u, rol) {
+  const c = {rol};
+  if (rol !== 'admin' && u.todos) c.negocios = [Object.keys(NEGOCIOS)[0]];
+  ugGuardar(u, c);
+}
+async function ugEliminar(u) {
+  if (!confirm('¿Eliminar a ' + u.nombre + ' (@' + u.usuario + ')? No podrá volver a entrar a ningún negocio.')) return;
+  const r = await fetch(API + '/api/usuarios/' + u.id, { method: 'DELETE', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({solicitante_rol: 'superadmin'}) });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) { toast(d.error || 'Error', 'err'); return; }
+  toast(u.nombre + ' eliminado', 'ok'); ugCargar();
+}
+async function ugPassword(u) {
+  const nueva = prompt('Nueva contraseña para ' + u.nombre + ':');
+  if (!nueva || !nueva.trim()) return;
+  const r = await fetch(API + '/api/usuarios/' + u.id + '/password', { method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({password: nueva.trim(), solicitante_rol: 'superadmin'}) });
+  const d = await r.json().catch(() => ({}));
+  if (d.ok) { toast('Contraseña actualizada', 'ok'); ugCargar(); } else toast(d.error || 'Error', 'err');
+}
+function _ugFiltrados() {
+  const q = (document.getElementById('ug-buscar').value || '').trim().toLowerCase();
+  return _ugUsuarios.filter(u => !q || u.nombre.toLowerCase().includes(q) || u.usuario.toLowerCase().includes(q));
+}
+function ugPintar() {
+  const cont = document.getElementById('ug-cuerpo');
+  cont.innerHTML = '';
+  if (_ugVista === 'mapa') { ugPintarMapa(cont); return; }
+  const orden = {superadmin: 0, admin: 1, supervisor: 2, subadmin: 3, display: 4};
+  _ugFiltrados().sort((a, b) => orden[a.rol] - orden[b.rol] || a.nombre.localeCompare(b.nombre)).forEach(u => {
+    const row = document.createElement('div'); row.className = 'ug-row';
+    row.innerHTML = '<div><div class="n"></div><small></small></div><div class="c-rol"></div><div class="ug-chips c-neg"></div><div class="c-acc" style="display:flex;gap:6px;"></div>';
+    row.querySelector('.n').textContent = u.nombre;
+    row.querySelector('small').textContent = '@' + u.usuario + ' · ' + u.password;
+    const cRol = row.querySelector('.c-rol'), cNeg = row.querySelector('.c-neg'), cAcc = row.querySelector('.c-acc');
+    if (u.rol === 'superadmin') {
+      cRol.innerHTML = '<span class="ug-rol r-superadmin">Superadmin</span>';
+      cNeg.innerHTML = '<span style="font-size:12px;color:var(--muted);">Todos los negocios</span>';
+    } else {
+      const sel = document.createElement('select'); sel.className = 'ug-in'; sel.style.width = '100%';
+      ['display', 'subadmin', 'supervisor', 'admin'].forEach(r => { const o = new Option(UG_ROL[r], r); o.selected = r === u.rol; sel.add(o); });
+      sel.onchange = () => ugCambiarRol(u, sel.value);
+      cRol.appendChild(sel);
+      if (u.todos) cNeg.innerHTML = '<span style="font-size:12px;color:var(--muted);">Todos los negocios</span>';
+      else Object.values(NEGOCIOS).forEach(n => {
+        const b = document.createElement('button'); b.className = 'ug-chip' + (u.negocios.includes(n.slug) ? ' on' : '');
+        b.textContent = n.nombre; b.title = 'Clic para dar o quitar acceso'; b.onclick = () => ugToggleNeg(u, n.slug); cNeg.appendChild(b);
+      });
+      const bp = document.createElement('button'); bp.className = 'btn btn-gris'; bp.style.cssText = 'width:auto;padding:6px 10px;font-size:12px;';
+      bp.textContent = 'Contraseña'; bp.onclick = () => ugPassword(u); cAcc.appendChild(bp);
+      const be = document.createElement('button'); be.className = 'btn-eliminar-usuario'; be.textContent = 'Eliminar'; be.onclick = () => ugEliminar(u); cAcc.appendChild(be);
+    }
+    cont.appendChild(row);
+  });
+}
+function ugPintarMapa(cont) {
+  const us = _ugFiltrados();
+  const chip = (u, slug) => {
+    const e = document.createElement('span'); e.className = 'ug-u'; e.innerHTML = '<span></span>';
+    e.firstChild.textContent = u.nombre;
+    if (slug) { const x = document.createElement('button'); x.textContent = '×'; x.title = 'Quitar acceso a ' + _ugNombreNeg(slug); x.onclick = () => ugToggleNeg(u, slug); e.appendChild(x); }
+    return e;
+  };
+  const top = document.createElement('div'); top.className = 'ug-mapa-top';
+  [['superadmin', 'Superadmin'], ['admin', 'Admins generales · todos los negocios']].forEach(([rol, t], i) => {
+    if (i) top.insertAdjacentHTML('beforeend', '<div class="ug-linea"></div>');
+    const n = document.createElement('div'); n.className = 'ug-nodo';
+    n.innerHTML = `<span class="ug-rol r-${rol}"></span><div style="margin-top:6px;"></div>`;
+    n.firstChild.textContent = t;
+    const lista = us.filter(u => u.rol === rol);
+    lista.forEach(u => n.lastChild.appendChild(chip(u)));
+    if (!lista.length) n.lastChild.innerHTML = '<span style="font-size:12px;color:var(--muted);">Ninguno</span>';
+    top.appendChild(n);
+  });
+  top.insertAdjacentHTML('beforeend', '<div class="ug-linea"></div>');
+  cont.appendChild(top);
+  const negs = document.createElement('div'); negs.className = 'ug-negs';
+  Object.values(NEGOCIOS).forEach(n => {
+    const card = document.createElement('div'); card.className = 'ug-neg';
+    card.innerHTML = '<h4>' + (n.logo ? '<img alt="">' : '') + '<span></span></h4>';
+    if (n.logo) card.querySelector('img').src = n.logo;
+    card.querySelector('h4 span').textContent = n.nombre;
+    [['supervisor', 'Administradores'], ['subadmin', 'Subadmins'], ['display', 'Displays']].forEach(([rol, t]) => {
+      const niv = document.createElement('div'); niv.className = 'ug-nivel';
+      niv.innerHTML = '<div class="t"></div><div class="us"></div>';
+      niv.querySelector('.t').textContent = t;
+      const dentro = us.filter(u => u.rol === rol && !u.todos && u.negocios.includes(n.slug));
+      dentro.forEach(u => niv.querySelector('.us').appendChild(chip(u, n.slug)));
+      const fuera = _ugUsuarios.filter(u => u.rol === rol && !u.todos && !u.negocios.includes(n.slug));
+      if (fuera.length) {
+        const sel = document.createElement('select'); sel.className = 'ug-in ug-add';
+        sel.add(new Option('+ Dar acceso a un ' + UG_ROL[rol].toLowerCase() + ' existente…', ''));
+        fuera.forEach(u => sel.add(new Option(u.nombre + ' (@' + u.usuario + ')', u.id)));
+        sel.onchange = () => { const u = _ugUsuarios.find(x => x.id == sel.value); if (u) ugToggleNeg(u, n.slug); };
+        niv.appendChild(sel);
+      } else if (!dentro.length) niv.querySelector('.us').innerHTML = '<span style="font-size:12px;color:var(--muted);">Ninguno</span>';
+      card.appendChild(niv);
+    });
+    negs.appendChild(card);
+  });
+  cont.appendChild(negs);
+  const f = document.createElement('div');
+  f.innerHTML = '<div class="cons-h" style="margin:22px 0 0;">QUÉ PUEDE HACER CADA TIPO DE USUARIO</div><div class="ug-funcs"></div>';
+  UG_FUNC.forEach(([rol, t, items]) => {
+    const c = document.createElement('div'); c.className = 'ug-func';
+    c.innerHTML = `<span class="ug-rol r-${rol}"></span><ul></ul>`;
+    c.firstChild.textContent = t;
+    items.forEach(it => { const li = document.createElement('li'); if (it[0] === '-') { li.className = 'no'; it = it.slice(1); } li.textContent = it; c.querySelector('ul').appendChild(li); });
+    f.querySelector('.ug-funcs').appendChild(c);
+  });
+  cont.appendChild(f);
+}
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('#ug-vista button');
+  if (!b) return;
+  _ugVista = b.dataset.v;
+  document.querySelectorAll('#ug-vista button').forEach(x => x.classList.toggle('on', x === b));
+  ugPintar();
 });
 
 async function cargarNegociosAdmin() {

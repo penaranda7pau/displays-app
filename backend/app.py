@@ -988,8 +988,10 @@ def negocios_usuario(usuario_id):
     if data.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"ok": False, "error": "No autorizado"}), 403
     u = Usuario.query.get_or_404(usuario_id)
-    if u.rol != "display":
-        return jsonify({"ok": False, "error": "Solo los displays pueden tener varios negocios"}), 400
+    if u.rol in ("superadmin", "admin"):
+        return jsonify({"ok": False, "error": "Ese usuario ya entra a todos los negocios"}), 400
+    if u.rol != "display" and data.get("solicitante_rol") != "superadmin":
+        return jsonify({"ok": False, "error": "Solo el superadmin cambia los negocios de administradores"}), 403
     validos = set(slugs_negocios())
     negs = [x for x in dict.fromkeys(data.get("negocios") or []) if x in validos]
     if not negs:
@@ -1018,12 +1020,55 @@ def crear_usuario():
     negocio = data.get("negocio", "mundo_vegano")
     if rol_nuevo == "admin":
         negocio = "ambos"   # admin general: entra a todos los negocios
+    elif isinstance(data.get("negocios"), list) and _es_superadmin(data):
+        validos = set(slugs_negocios())
+        negs = [x for x in dict.fromkeys(data["negocios"]) if x in validos]
+        if not negs:
+            return jsonify({"ok": False, "error": "Elegí al menos un negocio"}), 400
+        negocio = ",".join(negs)
     elif negocio not in slugs_negocios():
         return jsonify({"ok": False, "error": "Negocio inválido"}), 400
     u = Usuario(nombre=nombre, usuario=usuario, password=password, rol=rol_nuevo, negocio=negocio)
     db.session.add(u)
     db.session.commit()
     return jsonify({"ok": True, "id": u.id})
+
+@app.route("/api/usuarios/todos")
+def usuarios_todos():
+    """Superadmin: todos los usuarios de la app (Sistema → Usuarios)."""
+    if request.args.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    rows = Usuario.query.order_by(Usuario.nombre).all()
+    return jsonify([{"id": u.id, "nombre": u.nombre, "usuario": u.usuario, "password": u.password, "rol": u.rol,
+                     "todos": (u.negocio or "") == "ambos",
+                     "negocios": [] if (u.negocio or "") == "ambos" else negocios_de_usuario(u)} for u in rows])
+
+@app.route("/api/usuarios/<int:usuario_id>", methods=["PUT"])
+def editar_usuario(usuario_id):
+    """Superadmin: cambia nombre, tipo (rol) y negocios de un usuario."""
+    data = request.json or {}
+    if not _es_superadmin(data):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    u = Usuario.query.get_or_404(usuario_id)
+    if u.rol == "superadmin":
+        return jsonify({"ok": False, "error": "El superadmin no se modifica desde aquí"}), 400
+    nombre = (data.get("nombre") or "").strip()
+    if nombre:
+        u.nombre = nombre
+    rol = data.get("rol", u.rol)
+    if rol not in ("admin", "supervisor", "subadmin", "display"):
+        return jsonify({"ok": False, "error": "Tipo de usuario inválido"}), 400
+    if rol == "admin":
+        u.negocio = "ambos"
+    elif "negocios" in data or u.negocio == "ambos":
+        validos = set(slugs_negocios())
+        negs = [x for x in dict.fromkeys(data.get("negocios") or []) if x in validos]
+        if not negs:
+            return jsonify({"ok": False, "error": "Elegí al menos un negocio"}), 400
+        u.negocio = ",".join(negs)
+    u.rol = rol
+    db.session.commit()
+    return jsonify({"ok": True})
 
 @app.route("/api/usuarios/<int:usuario_id>", methods=["DELETE"])
 def eliminar_usuario(usuario_id):
