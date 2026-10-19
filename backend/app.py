@@ -1263,12 +1263,16 @@ def productos_negocio():
     """Catálogo de productos del negocio (del inventario cargado) con su estado activo/inactivo."""
     negocio = request.args.get("negocio", "mundo_vegano")
     inactivos = productos_inactivos(negocio)
+    habilitada = filtro_tiendas(negocio)   # sin cadenas desactivadas (ej. Vindi) ni tiendas quitadas
     cat = {}
-    for p, item, n in (db.session.query(Inventario.producto, db.func.max(Inventario.item_nbr), db.func.count(Inventario.id))
-                       .filter_by(negocio=negocio).group_by(Inventario.producto).all()):
-        cat[p] = {"producto": p, "item_nbr": item or "", "tiendas": n, "activo": p not in inactivos}
-    for p in inactivos - set(cat):   # desactivados que ya no vienen en el inventario
-        cat[p] = {"producto": p, "item_nbr": "", "tiendas": 0, "activo": False}
+    for t, p, item in (db.session.query(Inventario.tienda, Inventario.producto, Inventario.item_nbr)
+                       .filter_by(negocio=negocio).all()):
+        if not habilitada(t):
+            continue
+        x = cat.setdefault(p, {"producto": p, "item_nbr": "", "tiendas": 0, "activo": p not in inactivos})
+        x["tiendas"] += 1
+        x["item_nbr"] = x["item_nbr"] or (item or "")
+    # los desactivados que ya no vienen en el inventario no se muestran, pero siguen desactivados si vuelven
     return jsonify(sorted(cat.values(), key=lambda x: (x["activo"], x["producto"])))
 
 @app.route("/api/productos-negocio", methods=["POST"])
@@ -2188,6 +2192,19 @@ def actualizar_inventario():
                 db.session.add(nuevo)
                 nuevos += 1
 
+        # Quitar lo que ya no viene en el archivo, solo de la(s) cadena(s) del archivo subido
+        # (WM/MXM/MP/PALI con el de Walmart, Auto Mercado con el suyo). Si un archivo no trajo
+        # ninguna tienda de su grupo, no se borra nada de ese grupo (archivo vacío o equivocado).
+        grupo = lambda t: _grupo_excel(cadena_de_tienda(t))
+        llegaron = {(r["tienda"], r["producto"]) for r in registros}
+        grupos = {grupo(r["tienda"]) for r in registros} & ({"WM"} if archivo_wm else set()) | \
+                 ({grupo(r["tienda"]) for r in registros} & ({"AM"} if archivo_am else set()))
+        quitados = 0
+        for key, inv in mapa_inv.items():
+            if key not in llegaron and grupo(inv.tienda) in grupos:
+                db.session.delete(inv)
+                quitados += 1
+
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         clave_ts = f"{negocio}:inventario_ultima_actualizacion"
         cfg_ts = Config.query.get(clave_ts)
@@ -2196,7 +2213,7 @@ def actualizar_inventario():
         else:
             db.session.add(Config(clave=clave_ts, valor=ts))
         db.session.commit()
-        return jsonify({"ok": True, "actualizados": actualizados, "nuevos": nuevos,
+        return jsonify({"ok": True, "actualizados": actualizados, "nuevos": nuevos, "quitados": quitados,
                         "total": actualizados + nuevos, "timestamp": ts})
     except Exception as e:
         db.session.rollback()
