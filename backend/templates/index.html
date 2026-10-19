@@ -918,6 +918,12 @@
   .cpfr-logo:hover .l-adv { transform: translateY(4%); transition-delay: .18s; }
   @keyframes cpfrIn { from { opacity: 0; transform: translateY(14%); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
   .login-logo { display: flex; justify-content: center; margin-bottom: 14px; }
+  .sub-check { width: 1.35em; height: 1.35em; vertical-align: -0.32em; margin-left: .35em; }
+  .sub-check circle { fill: var(--korax-mid); animation: chkPop .5s .55s cubic-bezier(.34,1.56,.64,1) both; transform-origin: center; }
+  .sub-check path { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+    stroke-dasharray: 16; stroke-dashoffset: 16; animation: chkDraw .45s 1s ease-out forwards; }
+  @keyframes chkPop { from { transform: scale(0); } to { transform: scale(1); } }
+  @keyframes chkDraw { to { stroke-dashoffset: 0; } }
   @media (prefers-reduced-motion: reduce) { .cpfr-logo > span { animation: none; transition: none; } }
   ::-webkit-scrollbar-thumb:hover { background: var(--korax-mid); }
 </style>
@@ -996,8 +1002,7 @@
 <div id="login" class="screen active">
   <div class="login-card">
     <div class="login-logo"><span class="cpfr-logo" style="--h:64px" role="img" aria-label="CPFR Advisor"><span class="l-c"></span><span class="l-p"></span><span class="l-f"></span><span class="l-r"></span><span class="l-adv"></span></span></div>
-    <h1>Display<span class="ai">Check</span></h1>
-    <div class="login-sub">Auditoría inteligente de displays</div>
+    <div class="login-sub">Auditoría inteligente de displays<svg class="sub-check" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3.2 3.2L17 9"/></svg></div>
     <div class="login-field">
       
       <input type="text" id="inp-usuario" placeholder="Usuario" autocomplete="off"
