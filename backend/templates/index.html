@@ -1727,7 +1727,9 @@ async function doLogin() {
 }
 
 async function mostrarSelectorNegocio() {
-  const lista = await cargarNegocios();
+  let lista = await cargarNegocios();
+  if (usuario.negocio !== 'ambos' && Array.isArray(usuario.negocios))   // display de varios negocios: solo los suyos
+    lista = lista.filter(n => usuario.negocios.includes(n.slug));
   document.getElementById('sn-saludo').textContent = 'Hola, ' + (usuario.nombre || usuario.usuario) + ' · ¿A cuál negocio ingresás?';
   const cont = document.getElementById('sn-lista');
   cont.innerHTML = '';
@@ -1774,7 +1776,7 @@ function pintarCliente() {
   });
   ['sb-cliente-nombre', 'hero-cliente-nombre'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = c.nombre; });
   const btnCambiar = document.getElementById('sb-cliente-cambiar');
-  if (btnCambiar) btnCambiar.style.display = (usuario.rol === 'superadmin' || usuario.rol === 'admin') ? '' : 'none';
+  if (btnCambiar) btnCambiar.style.display = (usuario.rol === 'superadmin' || usuario.rol === 'admin' || (usuario.negocios || []).length > 1) ? '' : 'none';
 }
 
 async function _entrarAlApp() {
@@ -2826,8 +2828,10 @@ function renderUsuarios() {
         <div class="info">
           <div class="nom">${u.nombre}</div>
           <div class="usr">@${u.usuario} &nbsp;·&nbsp; <span id="pwd-${u.id}">${u.password}</span></div>
+          ${u.rol === 'display' && (u.negocios || []).length > 1 ? `<div class="usr" style="color:var(--korax-mid);font-weight:600;">Entra a: ${u.negocios.map(s => (NEGOCIOS[s] || {nombre: s}).nombre).join(' · ')}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
+          ${u.rol === 'display' && (usuario.rol === 'superadmin' || usuario.rol === 'admin') ? `<button onclick="editarNegociosUsuario(${u.id})" style="background:var(--foam-wash);color:var(--korax-deep);border:1px solid var(--korax-mid);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:600;">Negocios</button>` : ''}
           <button onclick="cambiarPassword(${u.id},'${u.nombre}')" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Contraseña</button>
           ${(u.rol !== 'supervisor' && u.rol !== 'admin') || esSuper ? `<button class="btn-eliminar-usuario" onclick="eliminarUsuario(${u.id})">Eliminar</button>` : ''}
         </div>
@@ -2839,6 +2843,44 @@ function renderUsuarios() {
   renderGrupo('Admins de este negocio', admins);
   renderGrupo('Subadministradores', subadmins);
   renderGrupo('Displays', displays);
+}
+
+function editarNegociosUsuario(id) {
+  const u = usuariosDB.find(x => x.id === id);
+  if (!u) return;
+  const fondo = document.createElement('div');
+  fondo.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const caja = document.createElement('div');
+  caja.style.cssText = 'background:var(--korax-surface);color:var(--text);border-radius:16px;padding:20px;width:100%;max-width:360px;box-shadow:0 12px 40px rgba(0,0,0,.25);';
+  caja.innerHTML = '<div style="font-weight:800;font-size:16px;margin-bottom:4px;"></div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Con una sola cuenta elige el negocio al entrar. Solo puede mandar fotos.</div>'
+    + '<div class="ng-lista"></div><div class="ng-err" style="color:var(--rojo);font-size:12px;min-height:16px;margin-top:6px;"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;"><button class="btn btn-gris ng-cancel" style="width:auto;padding:8px 16px;">Cancelar</button><button class="btn ng-ok" style="width:auto;padding:8px 16px;background:var(--korax-deep);color:#fff;">Guardar</button></div>';
+  caja.querySelector('div').textContent = 'Negocios de ' + u.nombre;
+  const cont = caja.querySelector('.ng-lista');
+  Object.values(NEGOCIOS).forEach(n => {
+    const l = document.createElement('label');
+    l.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--borde);border-radius:10px;margin-bottom:6px;cursor:pointer;font-size:14px;';
+    l.innerHTML = '<input type="checkbox" style="width:18px;height:18px;accent-color:var(--korax-mid);"><span></span>';
+    l.querySelector('input').value = n.slug;
+    l.querySelector('input').checked = (u.negocios || []).includes(n.slug);
+    l.querySelector('span').textContent = n.nombre;
+    cont.appendChild(l);
+  });
+  fondo.appendChild(caja); document.body.appendChild(fondo);
+  const cerrar = () => fondo.remove();
+  caja.querySelector('.ng-cancel').onclick = cerrar;
+  fondo.onclick = e => { if (e.target === fondo) cerrar(); };
+  caja.querySelector('.ng-ok').onclick = async () => {
+    const negocios = [...cont.querySelectorAll('input:checked')].map(i => i.value);
+    const r = await fetch(API + '/api/usuarios/' + id + '/negocios', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({negocios, solicitante_rol: usuario.rol})
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) { caja.querySelector('.ng-err').textContent = d.error || ('Error ' + r.status); return; }
+    cerrar(); toast('Negocios de ' + u.nombre + ' actualizados', 'ok'); cargarUsuarios();
+  };
 }
 
 async function cambiarPassword(id, nombre) {
@@ -3899,11 +3941,15 @@ async function decidirValidacion(id, decision, btn) {
 // ── FIN VALIDACIÓN IA ──────────────────────────────────────────
 
 async function eliminarUsuario(id) {
-  if (!confirm('¿Eliminar este display? No podrá volver a iniciar sesión.')) return;
+  const u = (usuariosDB || []).find(x => x.id === id);
+  const varios = u && u.rol === 'display' && (u.negocios || []).length > 1;
+  const nomNeg = (NEGOCIOS[negocioActual] || {nombre: negocioActual}).nombre;
+  if (!confirm(varios ? '¿Quitarle a ' + u.nombre + ' el acceso a ' + nomNeg + '? Seguirá entrando a sus otros negocios.'
+                      : '¿Eliminar este display? No podrá volver a iniciar sesión.')) return;
   const r = await fetch(API + '/api/usuarios/' + id, {
     method: 'DELETE',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({solicitante_rol: usuario.rol})
+    body: JSON.stringify({solicitante_rol: usuario.rol, negocio: negocioActual})
   });
   const data = await r.json();
   if (!data.ok) { alert(data.error || 'Error al eliminar'); return; }

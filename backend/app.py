@@ -93,8 +93,8 @@ class Usuario(db.Model):
     usuario  = db.Column(db.String(100), unique=True)
     password = db.Column(db.String(100))
     rol      = db.Column(db.String(20), default="display")
-    # "mundo_vegano", "rooster", o "ambos" para super-admin
-    negocio  = db.Column(db.String(50), default="mundo_vegano")
+    # "mundo_vegano", "rooster", "mundo_vegano,rooster" (display en varios) o "ambos" (super-admin / admin general)
+    negocio  = db.Column(db.Text, default="mundo_vegano")
 
 class Config(db.Model):
     clave = db.Column(db.String(120), primary_key=True)
@@ -170,6 +170,13 @@ USUARIOS_INICIALES = [
 def _migrar_columnas():
     # db.create_all() no altera tablas existentes; agrega columnas nuevas a mano.
     with db.engine.connect() as conn:
+        try:
+            if db.engine.dialect.name == "postgresql":   # displays con varios negocios
+                conn.execute(db.text("ALTER TABLE usuario ALTER COLUMN negocio TYPE TEXT"))
+                conn.commit()
+        except Exception:
+            conn.rollback()
+
         try:
             if db.engine.dialect.name == "postgresql":
                 conn.execute(db.text("ALTER TABLE reporte ADD COLUMN IF NOT EXISTS foto_b64 TEXT"))
@@ -483,6 +490,16 @@ def _seed_negocios_():
 with app.app_context():
     _seed_negocios()
 
+def negocios_de_usuario(u):
+    """Lista de negocios a los que entra el usuario ("ambos" = todos)."""
+    v = (getattr(u, "negocio", None) or "mundo_vegano").strip()
+    if v == "ambos":
+        return list(slugs_negocios(solo_activos=True))
+    return [x for x in v.split(",") if x]
+
+def _usuario_en_negocio(u, slug):
+    return (u.negocio or "") == "ambos" or slug in (u.negocio or "").split(",")
+
 def slugs_negocios(solo_activos=False):
     q = Negocio.query
     if solo_activos:
@@ -549,11 +566,13 @@ def login():
     u = Usuario.query.filter_by(usuario=usuario, password=password).first()
     if u:
         negocio = getattr(u, "negocio", None) or "mundo_vegano"
+        negs = negocios_de_usuario(u)
         return jsonify({
             "ok": True, "id": u.id, "nombre": u.nombre, "rol": u.rol,
-            "negocio": negocio,
-            # super-admin ve selector; otros entran directo
-            "selector_negocio": negocio == "ambos",
+            "negocio": negocio if negocio == "ambos" else (negs[0] if negs else "mundo_vegano"),
+            "negocios": negs,
+            # super-admin, admin general y displays de varios negocios eligen; los demás entran directo
+            "selector_negocio": negocio == "ambos" or len(negs) > 1,
         })
     return jsonify({"ok": False, "error": "Usuario o contraseña incorrectos"}), 401
 
@@ -835,6 +854,10 @@ def eliminar_negocio(slug):
     ValidacionIA.query.filter_by(negocio=slug).delete()
     for modelo in (Reporte, Inventario, Diferencia, Liquidacion, Usuario):
         modelo.query.filter_by(negocio=slug).delete()
+    for u in Usuario.query.filter(Usuario.negocio.like(f"%{slug}%")).all():   # displays de varios negocios
+        quedan = [x for x in u.negocio.split(",") if x and x != slug]
+        if quedan: u.negocio = ",".join(quedan)
+        elif u.negocio != "ambos": db.session.delete(u)
     Config.query.filter(Config.clave.like(f"{slug}:%")).delete(synchronize_session=False)
     db.session.delete(n)
     db.session.commit()
@@ -913,10 +936,29 @@ def _es_supervisor(data):
 @app.route("/api/usuarios")
 def listar_usuarios():
     negocio = request.args.get("negocio", "mundo_vegano")
-    rows = (Usuario.query.filter(db.or_(Usuario.negocio == negocio, Usuario.rol == "admin"))
+    rows = (Usuario.query.filter(db.or_(Usuario.negocio.like(f"%{negocio}%"), Usuario.rol == "admin"))
             .order_by(Usuario.rol.desc(), Usuario.nombre).all())
+    rows = [u for u in rows if u.rol == "admin" or _usuario_en_negocio(u, negocio)]
     return jsonify([{"id": u.id, "nombre": u.nombre, "usuario": u.usuario, "password": u.password,
-                     "rol": u.rol, "negocio": u.negocio} for u in rows])
+                     "rol": u.rol, "negocio": u.negocio,
+                     "negocios": negocios_de_usuario(u) if u.rol != "admin" else []} for u in rows])
+
+@app.route("/api/usuarios/<int:usuario_id>/negocios", methods=["POST"])
+def negocios_usuario(usuario_id):
+    """Superadmin / admin general: a qué negocios entra un display (una sola cuenta para varios)."""
+    data = request.json or {}
+    if data.get("solicitante_rol") not in ("superadmin", "admin"):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    u = Usuario.query.get_or_404(usuario_id)
+    if u.rol != "display":
+        return jsonify({"ok": False, "error": "Solo los displays pueden tener varios negocios"}), 400
+    validos = set(slugs_negocios())
+    negs = [x for x in dict.fromkeys(data.get("negocios") or []) if x in validos]
+    if not negs:
+        return jsonify({"ok": False, "error": "Elegí al menos un negocio"}), 400
+    u.negocio = ",".join(negs)
+    db.session.commit()
+    return jsonify({"ok": True, "negocios": negs})
 
 @app.route("/api/usuarios", methods=["POST"])
 def crear_usuario():
@@ -954,6 +996,13 @@ def eliminar_usuario(usuario_id):
         return jsonify({"ok": False, "error": "No se puede eliminar al superadmin"}), 400
     if u.rol in ("supervisor", "admin") and not _es_superadmin(request.json):
         return jsonify({"ok": False, "error": "Solo el superadmin puede eliminar administradores"}), 403
+    # display en varios negocios: desde un negocio solo se le quita ESE acceso
+    neg = (request.json or {}).get("negocio")
+    negs = [x for x in (u.negocio or "").split(",") if x]
+    if u.rol == "display" and neg in negs and len(negs) > 1:
+        u.negocio = ",".join(x for x in negs if x != neg)
+        db.session.commit()
+        return jsonify({"ok": True, "quitado_de": neg})
     db.session.delete(u)
     db.session.commit()
     return jsonify({"ok": True})
