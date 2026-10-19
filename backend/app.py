@@ -1,3 +1,4 @@
+import time
 import json
 import os
 import io
@@ -576,6 +577,42 @@ def login():
             "selector_negocio": negocio == "ambos" or len(negs) > 1,
         })
     return jsonify({"ok": False, "error": "Usuario o contraseña incorrectos"}), 401
+
+# ── Usuarios en línea (latido cada 60 s desde la app; en memoria: gunicorn corre con 1 worker) ──
+_PRESENCIA = {}            # usuario_id -> {nombre, rol, negocio, pantalla, visto}
+_PRESENCIA_LOCK = threading.Lock()
+PRESENCIA_SEG = 150        # sin latido en 2.5 min = desconectado
+
+@app.route("/api/presencia", methods=["POST"])
+def presencia_latido():
+    d = request.get_json(silent=True) or {}
+    try:
+        uid = int(d.get("id"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False}), 400
+    u = db.session.get(Usuario, uid)
+    if not u:
+        return jsonify({"ok": False}), 404
+    with _PRESENCIA_LOCK:
+        if d.get("salir"):
+            _PRESENCIA.pop(uid, None)
+        else:
+            _PRESENCIA[uid] = {"nombre": u.nombre, "usuario": u.usuario, "rol": u.rol,
+                               "negocio": (d.get("negocio") or "")[:50], "pantalla": (d.get("pantalla") or "")[:30],
+                               "visto": time.time()}
+    return jsonify({"ok": True})
+
+@app.route("/api/presencia")
+def presencia_lista():
+    if request.args.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    ahora = time.time()
+    with _PRESENCIA_LOCK:
+        for k in [k for k, v in _PRESENCIA.items() if ahora - v["visto"] > PRESENCIA_SEG]:
+            _PRESENCIA.pop(k)
+        lista = [dict(v, id=k, hace_seg=int(ahora - v["visto"])) for k, v in _PRESENCIA.items()]
+    lista.sort(key=lambda x: (x["rol"] != "display", x["nombre"].lower()))
+    return jsonify({"en_linea": len(lista), "usuarios": lista})
 
 @app.route("/api/semana-activa")
 def get_semana_activa():

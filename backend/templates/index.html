@@ -404,6 +404,19 @@
   .sh-titulo .ai { background: var(--grad-btn); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .sh-saludo { font-size: 12px; color: #1E2B45; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; margin-top: 2px; }
   .sh-salir { border: 1px solid var(--korax-gray-3) !important; margin-right: 70px; }
+  .en-linea { position: relative; margin-left: auto; margin-right: 12px; }
+  .en-linea-btn { display: flex; align-items: center; gap: 8px; border: 1px solid var(--borde); background: var(--korax-surface);
+    color: var(--text); border-radius: 999px; padding: 8px 14px; font-size: 13px; cursor: pointer; font-family: inherit; box-shadow: var(--sombra); }
+  .en-linea-btn b { font-size: 15px; color: var(--korax-deep); }
+  .en-linea .punto { width: 9px; height: 9px; border-radius: 50%; background: #22C55E; box-shadow: 0 0 0 0 rgba(34,197,94,.6); animation: latido 2s infinite; }
+  @keyframes latido { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); } 70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+  .en-linea-pop { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 300px; max-height: 360px; overflow: auto; z-index: 50;
+    background: var(--korax-surface); border: 1px solid var(--borde); border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 8px; }
+  .en-linea-pop.abierto { display: block; }
+  .en-linea-pop .eu { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 10px; }
+  .en-linea-pop .eu:hover { background: var(--korax-gray-1); }
+  .en-linea-pop .av { width: 32px; height: 32px; border-radius: 50%; background: var(--foam-wash-2); color: var(--korax-deep); display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; }
+  .en-linea-pop .eu small { display: block; color: var(--muted); font-size: 11px; }
   .sh-cuerpo { display: grid; grid-template-columns: 1fr 300px; gap: 24px; align-items: start; }
   .sh-cuerpo.sin-sistema { grid-template-columns: 1fr; }
   .sh-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; margin-bottom: 10px; }
@@ -1028,6 +1041,10 @@
         <div class="sh-titulo">Display<span class="ai">Check</span></div>
         <div class="sh-saludo" id="sn-saludo">¿A cuál negocio ingresás?</div>
       </div>
+    </div>
+    <div class="en-linea" id="en-linea" style="display:none;">
+      <button class="en-linea-btn" onclick="toggleEnLinea(event)"><span class="punto"></span><b id="en-linea-n">0</b>&nbsp;en línea</button>
+      <div class="en-linea-pop" id="en-linea-pop"></div>
     </div>
     <button class="sb-logout sh-salir" onclick="cerrarSesion()">Salir</button>
   </div>
@@ -1718,6 +1735,7 @@ async function doLogin() {
     const data = await r.json();
     if (data.ok) {
       usuario = data;
+      iniciarLatido();
       // solo administradores cierran la semana (no subadmins)
       document.querySelectorAll('.btn-cerrar').forEach(b => b.style.display = data.rol === 'subadmin' ? 'none' : '');
       document.getElementById('login-error').textContent = '';
@@ -4163,7 +4181,49 @@ function sbMostrar(nombreUsuario, rol) {
 function sbOcultar() {
   document.getElementById('sidebar').classList.remove('visible');
 }
+// ── Usuarios en línea: latido cada 60 s; el superadmin ve cuántos y quiénes ──
+let _latidoTimer = null, _enLineaTimer = null;
+function _latido(salir) {
+  if (!usuario || !usuario.id) return;
+  const pant = (document.querySelector('.screen.active') || {}).id || '';
+  fetch(API + '/api/presencia', { method: 'POST', headers: {'Content-Type': 'application/json'}, keepalive: true,
+    body: JSON.stringify({id: usuario.id, negocio: typeof negocioActual !== 'undefined' ? negocioActual : '', pantalla: pant, salir: !!salir}) }).catch(() => {});
+}
+function iniciarLatido() {
+  clearInterval(_latidoTimer); _latido(); _latidoTimer = setInterval(_latido, 60000);
+  clearInterval(_enLineaTimer);
+  const box = document.getElementById('en-linea');
+  if (usuario.rol === 'superadmin') { box.style.display = ''; cargarEnLinea(); _enLineaTimer = setInterval(cargarEnLinea, 30000); }
+  else box.style.display = 'none';
+}
+async function cargarEnLinea() {
+  try {
+    const d = await (await fetch(API + '/api/presencia?solicitante_rol=superadmin')).json();
+    document.getElementById('en-linea-n').textContent = d.en_linea;
+    const pop = document.getElementById('en-linea-pop');
+    const ROL = {superadmin: 'Superadmin', admin: 'Admin general', supervisor: 'Administrador', subadmin: 'Subadmin', display: 'Display'};
+    pop.innerHTML = d.usuarios.length ? '' : '<div style="padding:10px;color:var(--muted);font-size:13px;">Nadie en línea</div>';
+    d.usuarios.forEach(u => {
+      const neg = (NEGOCIOS[u.negocio] || {}).nombre || (u.negocio === 'ambos' ? '' : u.negocio);
+      const e = document.createElement('div'); e.className = 'eu';
+      e.innerHTML = '<div class="av"></div><div style="min-width:0;"><div class="nm" style="font-weight:700;font-size:13px;"></div><small></small></div>';
+      e.querySelector('.av').textContent = (u.nombre || '?').trim().charAt(0).toUpperCase();
+      e.querySelector('.nm').textContent = u.nombre;
+      e.querySelector('small').textContent = (ROL[u.rol] || u.rol) + (neg ? ' · ' + neg : '') + ' · ' + (u.hace_seg < 60 ? 'ahora' : 'hace ' + Math.round(u.hace_seg / 60) + ' min');
+      pop.appendChild(e);
+    });
+  } catch (e) {}
+}
+function toggleEnLinea(ev) {
+  ev.stopPropagation();
+  const pop = document.getElementById('en-linea-pop');
+  pop.classList.toggle('abierto');
+  if (pop.classList.contains('abierto')) cargarEnLinea();
+}
+document.addEventListener('click', ev => { if (!ev.target.closest('#en-linea')) { const p = document.getElementById('en-linea-pop'); if (p) p.classList.remove('abierto'); } });
+
 function cerrarSesion() {
+  _latido(true); clearInterval(_latidoTimer); clearInterval(_enLineaTimer);
   sbOcultar();
   usuario = null;
   mostrar('login');
