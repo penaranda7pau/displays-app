@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Korax AI</title>
+<title>CPFR DisplayCheck</title>
 <script>
   try { if (localStorage.getItem('korax-tema') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
 </script>
 <meta name="theme-color" content="#084C8D">
-<link rel="icon" type="image/png" href="/static/korax_icon.png">
-<link rel="apple-touch-icon" href="/static/korax_icon.png">
+<link rel="icon" type="image/png" href="/static/cpfr_icon.png">
+<link rel="apple-touch-icon" href="/static/cpfr_icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -902,6 +902,23 @@
   /* Scrollbar discreto */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--korax-gray-3); border-radius: 10px; border: 2px solid var(--korax-canvas); }
+  .cpfr-logo { position: relative; display: inline-block; height: var(--h, 40px); aspect-ratio: 884 / 361; flex-shrink: 0; cursor: default; }
+  .cpfr-logo > span { position: absolute; inset: 0; background: var(--korax-deep);
+    -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat;
+    animation: cpfrIn .7s cubic-bezier(.22,1,.36,1) both; transition: transform .5s cubic-bezier(.34,1.56,.64,1); }
+  .cpfr-logo .l-c   { --m: url(/static/cpfr_c.png); background: var(--korax-mid); animation-delay: 0s; transform-origin: 18% 60%; }
+  .cpfr-logo .l-p   { --m: url(/static/cpfr_p.png); animation-delay: .08s; }
+  .cpfr-logo .l-f   { --m: url(/static/cpfr_f.png); animation-delay: .16s; }
+  .cpfr-logo .l-r   { --m: url(/static/cpfr_r.png); animation-delay: .24s; }
+  .cpfr-logo .l-adv { --m: url(/static/cpfr_adv.png); animation-delay: .34s; opacity: .85; }
+  .cpfr-logo:hover .l-c   { transform: translate(2%, -5%) rotate(-6deg); }
+  .cpfr-logo:hover .l-p   { transform: translateY(-9%); transition-delay: .04s; }
+  .cpfr-logo:hover .l-f   { transform: translateY(-9%); transition-delay: .09s; }
+  .cpfr-logo:hover .l-r   { transform: translateY(-9%); transition-delay: .14s; }
+  .cpfr-logo:hover .l-adv { transform: translateY(4%); transition-delay: .18s; }
+  @keyframes cpfrIn { from { opacity: 0; transform: translateY(14%); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+  .login-logo { display: flex; justify-content: center; margin-bottom: 14px; }
+  @media (prefers-reduced-motion: reduce) { .cpfr-logo > span { animation: none; transition: none; } }
   ::-webkit-scrollbar-thumb:hover { background: var(--korax-mid); }
 </style>
 </head>
@@ -910,8 +927,8 @@
 <!-- SIDEBAR -->
 <nav id="sidebar">
   <div class="sb-logo">
-    <div class="sb-logo-icon"><img src="/static/korax_k.png" alt="Korax"></div>
-    <div class="sb-logo-text">Korax AI</div>
+    <span class="cpfr-logo" style="--h:26px" role="img" aria-label="CPFR Advisor"><span class="l-c"></span><span class="l-p"></span><span class="l-f"></span><span class="l-r"></span><span class="l-adv"></span></span>
+    <div class="sb-logo-text">DisplayCheck</div>
   </div>
   <div class="sb-cliente" id="sb-cliente">
     <img id="sb-cliente-logo" src="/static/mv_logo.png" alt="">
@@ -978,10 +995,8 @@
 <!-- LOGIN -->
 <div id="login" class="screen active">
   <div class="login-card">
-    <div class="login-avatar">
-      <img src="/static/korax_k.png" alt="Korax AI">
-    </div>
-    <h1>KORAX <span class="ai">AI</span></h1>
+    <div class="login-logo"><span class="cpfr-logo" style="--h:64px" role="img" aria-label="CPFR Advisor"><span class="l-c"></span><span class="l-p"></span><span class="l-f"></span><span class="l-r"></span><span class="l-adv"></span></span></div>
+    <h1>Display<span class="ai">Check</span></h1>
     <div class="login-sub">Auditoría inteligente de displays</div>
     <div class="login-field">
       
@@ -1003,9 +1018,9 @@
 <div id="selector-negocio" class="screen">
   <div class="sh-top">
     <div class="sh-marca">
-      <div class="sh-k"><img src="/static/korax_k.png" alt="Korax AI"></div>
+      <span class="cpfr-logo" style="--h:46px" role="img" aria-label="CPFR Advisor"><span class="l-c"></span><span class="l-p"></span><span class="l-f"></span><span class="l-r"></span><span class="l-adv"></span></span>
       <div>
-        <div class="sh-titulo">KORAX <span class="ai">AI</span></div>
+        <div class="sh-titulo">Display<span class="ai">Check</span></div>
         <div class="sh-saludo" id="sn-saludo">¿A cuál negocio ingresás?</div>
       </div>
     </div>
@@ -1037,7 +1052,7 @@
       <button class="back" onclick="mostrarSelectorNegocio()">←</button>
       <div>
         <div class="sh-titulo" style="font-size:20px;">Sistema</div>
-        <div class="sh-saludo">Configuración general de Korax AI</div>
+        <div class="sh-saludo">Configuración general de CPFR DisplayCheck</div>
       </div>
     </div>
   </div>
@@ -4122,7 +4137,7 @@ new MutationObserver(muts => {
 
 <!-- MARCA DE AGUA CPFR -->
 <div id="cpfr-watermark">
-  <div class="wm-text"><b>Korax AI</b>powered by</div>
+  <div class="wm-text"><b>CPFR DisplayCheck</b>powered by</div>
   <div class="wm-sep"></div>
   <img src="/static/cpfr_advisor.png" alt="CPFR Advisor">
 </div>
