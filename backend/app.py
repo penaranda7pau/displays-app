@@ -514,7 +514,14 @@ def rurales_de(negocio):
         return set()
     return {t.strip().upper() for t in n.rurales.splitlines() if t.strip()}
 
+def semana_captura(negocio="mundo_vegano"):
+    """Semana en la que guardan los displays: la del calendario en hora de Costa Rica (UTC-6).
+    Cambia sola el lunes a las 00:00; no depende de cierres ni de lo que se elija en el panel."""
+    return (datetime.utcnow() - timedelta(hours=6)).strftime("%G-S%V")
+
 def semana_actual(negocio="mundo_vegano"):
+    """Semana del PANEL (la que se revisa, valida y cierra): la elegida con 'Cambiar semana',
+    o la del calendario si no se eligió ninguna."""
     clave = f"{negocio}:semana_override"
     cfg = Config.query.get(clave)
     if cfg and cfg.valor:
@@ -524,7 +531,7 @@ def semana_actual(negocio="mundo_vegano"):
         cfg_leg = Config.query.get("semana_override")
         if cfg_leg and cfg_leg.valor:
             return cfg_leg.valor
-    return datetime.now().strftime("%Y-S%V")
+    return semana_captura(negocio)
 
 MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
@@ -620,7 +627,9 @@ def get_semana_activa():
     codigo = semana_actual(negocio)
     _, legible = rango_de_codigo(codigo)
     ya_cerrada = Diferencia.query.filter_by(semana=codigo, negocio=negocio).first() is not None
-    return jsonify({"semana_activa": codigo, "semana_legible": legible, "ya_cerrada": ya_cerrada})
+    cap = semana_captura(negocio)
+    return jsonify({"semana_activa": codigo, "semana_legible": legible, "ya_cerrada": ya_cerrada,
+                    "semana_captura": cap, "semana_captura_legible": rango_de_codigo(cap)[1]})
 
 @app.route("/api/set-semana", methods=["POST"])
 def set_semana():
@@ -1201,7 +1210,7 @@ def reset_historial():
 @app.route("/api/tiendas-reportadas")
 def tiendas_reportadas():
     negocio = request.args.get("negocio", "mundo_vegano")
-    rows = db.session.query(Reporte.tienda).filter_by(semana=semana_actual(negocio), negocio=negocio).distinct().all()
+    rows = db.session.query(Reporte.tienda).filter_by(semana=semana_captura(negocio), negocio=negocio).distinct().all()
     return jsonify([r.tienda for r in rows])
 
 @app.route("/api/liquidacion", methods=["POST"])
@@ -1210,7 +1219,7 @@ def guardar_liquidacion():
     tienda  = data.get("tienda", "")
     tipo    = data.get("tipo", "Liquidación")
     negocio = data.get("negocio", "mundo_vegano")
-    sem     = semana_actual(negocio)
+    sem     = semana_captura(negocio)
     existente = Liquidacion.query.filter_by(tienda=tienda, semana=sem, tipo=tipo, negocio=negocio).first()
     if existente:
         existente.comentario = data.get("comentario", existente.comentario)
@@ -1236,7 +1245,7 @@ def guardar_liquidacion():
 def ver_liquidacion():
     tienda  = request.args.get("tienda", "")
     negocio = request.args.get("negocio", "mundo_vegano")
-    sem     = request.args.get("semana", semana_actual(negocio))
+    sem     = request.args.get("semana") or (semana_captura(negocio) if tienda else semana_actual(negocio))
     q = Liquidacion.query.filter_by(semana=sem, negocio=negocio)
     if tienda:
         q = q.filter_by(tienda=tienda)
@@ -1335,7 +1344,7 @@ def guardar_reporte():
     usuario     = data.get("usuario", "")
     negocio     = data.get("negocio", "mundo_vegano")
     ahora       = datetime.now().strftime("%Y%m%d_%H%M%S")
-    sem         = semana_actual(negocio)
+    sem         = semana_captura(negocio)
 
     existente = Reporte.query.filter_by(tienda=tienda, producto=producto, semana=sem, negocio=negocio).first()
 
@@ -1368,7 +1377,7 @@ def guardar_reporte():
 def ver_reportes():
     tienda  = request.args.get("tienda", "")
     negocio = request.args.get("negocio", "mundo_vegano")
-    semana  = request.args.get("semana", semana_actual(negocio))
+    semana  = request.args.get("semana") or (semana_captura(negocio) if tienda else semana_actual(negocio))
     q = Reporte.query.filter_by(semana=semana, negocio=negocio)
     if tienda:
         q = q.filter_by(tienda=tienda)
@@ -1449,6 +1458,9 @@ def cerrar_semana():
         return jsonify({"ok": False, "error": "Solo un administrador puede cerrar la semana"}), 403
     negocio = (data.get("negocio") or "mundo_vegano").strip()
     semana  = semana_actual(negocio)
+    if semana >= semana_captura(negocio):
+        return jsonify({"ok": False, "error": "Esa semana todavía no termina: se puede cerrar desde el lunes. "
+                                              "Los displays siguen mandando reportes a esa semana."}), 409
     habilitada = filtro_tiendas(negocio)   # cadenas desactivadas / tiendas quitadas no entran al cierre
     # Las fotos (foto_b64) NO se cargan aquí: se leen de a una al armar el ZIP (ahorra memoria)
     reportes = [r for r in Reporte.query.options(db.defer(Reporte.foto_b64))
@@ -1565,7 +1577,7 @@ def cerrar_semana():
         for i, w in enumerate(cols, 1):
             ws.column_dimensions[get_column_letter(i)].width = w
 
-    rango_archivo, rango_legible = rango_semana_actual()
+    rango_archivo, rango_legible = rango_de_codigo(semana)
 
     # Hoja 1 — Diferencias actuales
     ws1 = wb.active
@@ -1918,20 +1930,12 @@ def cerrar_semana():
     ValidacionIA.query.filter(ValidacionIA.semana <= semana, ValidacionIA.negocio == negocio).delete()
     # Borrar reportes de la semana cerrada y de cualquier semana anterior (limpieza completa)
     Reporte.query.filter(Reporte.semana <= semana, Reporte.negocio == negocio).delete()
-    # Avanzar al override de la semana siguiente (calculado desde la semana cerrada, no desde datetime.now())
-    try:
-        parts = semana.split("-S")
-        lunes_sig = datetime.fromisocalendar(int(parts[0]), int(parts[1]), 1) + timedelta(weeks=1)
-        iso = lunes_sig.isocalendar()
-        nueva_semana = f"{iso[0]}-S{iso[1]:02d}"
-    except Exception:
-        nueva_semana = ""
-    clave_override = f"{negocio}:semana_override"
-    cfg_override = Config.query.get(clave_override)
-    if cfg_override:
-        cfg_override.valor = nueva_semana
-    elif nueva_semana:
-        db.session.add(Config(clave=clave_override, valor=nueva_semana))
+    # El panel vuelve a la semana del calendario (la que están llenando los displays).
+    # Los reportes de semanas posteriores a la cerrada NO se tocan (llegaron durante el cierre).
+    for clave_override in (f"{negocio}:semana_override", "semana_override"):
+        cfg_override = Config.query.get(clave_override)
+        if cfg_override and (clave_override != "semana_override" or negocio == "mundo_vegano"):
+            cfg_override.valor = ""
     # Eliminar liquidaciones de la semana cerrada (sus fotos ya están en el ZIP)
     Liquidacion.query.filter_by(semana=semana, negocio=negocio).delete()
     db.session.commit()

@@ -1879,7 +1879,7 @@ async function _entrarAlApp() {
     const badge = document.getElementById('display-semana-badge');
     const label = document.getElementById('display-semana-label');
     if (badge && label && ds.semana_activa) {
-      label.textContent = ds.semana_legible || ds.semana_activa;
+      label.textContent = ds.semana_captura_legible || ds.semana_legible || ds.semana_activa;   // displays: semana del calendario
       badge.style.display = 'block';
     }
   }).catch(() => {});
