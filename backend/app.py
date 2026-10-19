@@ -282,11 +282,11 @@ def _migrar_columnas():
         try:
             if db.engine.dialect.name == "postgresql":
                 conn.execute(db.text(
-                    "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS negocio VARCHAR(50) DEFAULT 'mundo_vegano'"
+                    "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS negocio TEXT DEFAULT 'mundo_vegano'"
                 ))
             else:
                 conn.execute(db.text(
-                    "ALTER TABLE usuario ADD COLUMN negocio VARCHAR(50) DEFAULT 'mundo_vegano'"
+                    "ALTER TABLE usuario ADD COLUMN negocio TEXT DEFAULT 'mundo_vegano'"
                 ))
             conn.commit()
         except Exception:
