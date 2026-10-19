@@ -492,7 +492,9 @@
   .g-ausente { background: rgba(224,92,92,.05); } .g-dudoso { background: rgba(232,168,56,.07); }
   .g-obs { font-size: 12px; color: var(--muted); margin-top: 8px; }
   .g-esperados { font-size: 13px; margin-bottom: 14px; } .g-esperados summary { cursor: pointer; color: var(--korax-deep); font-weight: 700; padding: 6px 0; }
-  .g-esp { padding: 4px 0; border-bottom: 1px solid var(--borde); font-size: 12px; }
+  .g-esp { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--borde); font-size: 12px; }
+  .g-cod { display: block; font-size: 10px; color: var(--muted); margin-bottom: 1px; }
+  .g-der { text-align: center; min-width: 48px; } .g-der small { display: block; font-size: 10px; color: var(--muted); }
   .cons-h { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 10px; letter-spacing: .02em; }
   .ug-in { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--korax-surface); color: var(--text); font-size: 13px; font-family: inherit; min-width: 0; }
   .ug-chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -2127,7 +2129,14 @@ async function irGondola(tienda) {
     <div id="g-resultado"></div>
     <details class="g-esperados"><summary>Productos esperados en esta tienda (${_gProds.length})</summary><div id="g-esp"></div></details>`;
   const esp = document.getElementById('g-esp');
-  _gProds.forEach(p => { const e = document.createElement('div'); e.className = 'g-esp'; e.textContent = (p.item_nbr ? '#' + p.item_nbr + ' · ' : '') + p.nombre; esp.appendChild(e); });
+  _gProds.forEach(p => {
+    const e = document.createElement('div'); e.className = 'g-esp';
+    e.innerHTML = '<div style="flex:1;min-width:0;"><span class="g-cod"></span><span class="g-n"></span></div><div class="cant"></div>';
+    if (p.item_nbr) e.querySelector('.g-cod').textContent = '#' + p.item_nbr;
+    e.querySelector('.g-n').textContent = p.nombre;
+    e.querySelector('.cant').textContent = p.cantidad; if (p.cantidad <= 0) e.querySelector('.cant').classList.add('cero');
+    esp.appendChild(e);
+  });
   gPintarFotos();
 }
 function gAgregar(camara) {
@@ -2154,11 +2163,18 @@ function gPintarFotos() {
 async function gAnalizar() {
   const st = document.getElementById('g-estado'), btn = document.getElementById('g-analizar');
   btn.disabled = true; st.style.color = ''; st.textContent = 'Analizando la góndola con IA... puede tardar hasta un minuto, no cierres la app';
-  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 180000);
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 360000);
   try {
-    const r = await fetch(API + '/api/gondola/analizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, signal: ctrl.signal,
-      body: JSON.stringify({negocio: negocioActual, tienda: tiendaActual, usuario: usuario.nombre || '', fotos: _gFotos}) });
-    const d = await r.json().catch(() => ({}));
+    let r, d;
+    for (let intento = 0; ; intento++) {
+      r = await fetch(API + '/api/gondola/analizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, signal: ctrl.signal,
+        body: JSON.stringify({negocio: negocioActual, tienda: tiendaActual, usuario: usuario.nombre || '', fotos: _gFotos}) });
+      d = await r.json().catch(() => ({}));
+      if (!(r.status === 429 && d.ocupado) || intento >= 30) break;
+      st.textContent = 'Hay otros análisis en curso, esperando turno... (no cierres la app)';
+      await new Promise(res => setTimeout(res, 5000));
+      st.textContent = 'Analizando la góndola con IA... puede tardar hasta un minuto, no cierres la app';
+    }
     if (!d.ok) throw new Error(d.error || ('Error ' + r.status));
     _gRes = d; st.textContent = ''; gPintarResultado();
   } catch (e) {
@@ -2185,14 +2201,15 @@ function gPintarResultado() {
   [..._gRes.productos].sort((a, b) => orden[a.estado] - orden[b.estado]).forEach(p => {
     const f = document.createElement('div'); f.className = 'g-fila g-' + p.estado;
     f.innerHTML = `<div class="g-ic">${p.estado === 'presente' ? '✅' : p.estado === 'dudoso' ? '⚠️' : '❌'}</div>
-      <div style="flex:1;min-width:0;"><div class="g-nom"></div><div class="g-nota"></div></div>`;
-    f.querySelector('.g-nom').textContent = (p.item_nbr ? '#' + p.item_nbr + ' · ' : '') + p.producto + (p.frentes ? ` · ${p.frentes} frente${p.frentes === 1 ? '' : 's'}` : '');
+      <div style="flex:1;min-width:0;"><span class="g-cod"></span><div class="g-nom"></div><div class="g-nota"></div></div>
+      <div class="g-der"><div class="cant"></div><small>${p.frentes ? p.frentes + ' frente' + (p.frentes === 1 ? '' : 's') : ''}</small></div>`;
+    if (p.item_nbr) f.querySelector('.g-cod').textContent = '#' + p.item_nbr;
+    f.querySelector('.g-nom').textContent = p.producto;
     f.querySelector('.g-nota').textContent = p.nota || '';
-    if (p.estado === 'ausente') {
-      const ta = document.createElement('textarea'); ta.placeholder = '¿Por qué no está? (opcional: agotado, sin espacio, etc.)';
-      ta.value = p.comentario || ''; ta.oninput = () => p.comentario = ta.value;
-      f.lastElementChild.appendChild(ta);
-    }
+    const cant = f.querySelector('.cant'); cant.textContent = p.cantidad ?? ''; if ((p.cantidad || 0) <= 0) cant.classList.add('cero');
+    const ta = document.createElement('textarea'); ta.placeholder = 'Comentario...';
+    ta.value = p.comentario || ''; ta.oninput = () => p.comentario = ta.value;
+    f.children[1].appendChild(ta);
     lista.appendChild(f);
   });
 }

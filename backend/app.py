@@ -2428,6 +2428,9 @@ def eliminar_reporte(reporte_id):
 MODELO_GONDOLA = os.environ.get("MODELO_GONDOLA", "claude-opus-5-5")
 PRECIO_MODELO = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0),
                  "claude-haiku-5-5": (0.10, 0.50), "claude-haiku-4-5": (1.0, 5.0)}   # USD por millón (entrada, salida)
+# Máximo de análisis de góndola a la vez: así siempre quedan hilos libres para fotos, panel, etc.
+# (el servidor corre con 8 hilos). Si está lleno, se responde "ocupado" al instante y el celular reintenta solo.
+_SEM_GONDOLA = threading.BoundedSemaphore(int(os.environ.get("GONDOLA_SIMULTANEOS", "3")))
 CON_FALLBACK = {"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-opus-5"}
 ESQUEMA_GONDOLA = {
     "type": "object",
@@ -2477,6 +2480,14 @@ def gondola_analizar():
              if i.producto not in inact]
     if not prods:
         return jsonify({"ok": False, "error": "Esta tienda no tiene productos en el inventario"}), 400
+    if not _SEM_GONDOLA.acquire(timeout=1):
+        return jsonify({"ok": False, "ocupado": True, "error": "Hay otros análisis en curso"}), 429
+    try:
+        return _gondola_analizar(d, negocio, tienda, fotos, prods)
+    finally:
+        _SEM_GONDOLA.release()
+
+def _gondola_analizar(d, negocio, tienda, fotos, prods):
     lista = "\n".join(f"- {p.producto}"
                       + (f" (empaque: {p.nombre_empaque})" if p.nombre_empaque and p.nombre_empaque != p.producto else "")
                       for p in prods)
@@ -2515,7 +2526,7 @@ def gondola_analizar():
     resultado = []
     for p in prods:
         x = por_nombre.get(p.producto.strip().upper())
-        resultado.append({"producto": p.producto, "item_nbr": p.item_nbr or "",
+        resultado.append({"producto": p.producto, "item_nbr": p.item_nbr or "", "cantidad": p.cantidad or 0,
                           "estado": x["estado"] if x else "dudoso",
                           "frentes": int(x.get("frentes") or 0) if x else 0,
                           "nota": (x.get("nota") or "") if x else "La IA no lo reportó"})
