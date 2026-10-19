@@ -2349,7 +2349,7 @@ async function setSemana(restablecer) {
   if (!restablecer) {
     semana = document.getElementById('input-semana-prueba').value.trim();
   }
-  const res = await fetch(API + '/api/set-semana', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({semana, negocio: negocioActual})});
+  const res = await fetch(API + '/api/set-semana', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({semana, negocio: negocioActual, rol: usuario.rol})});
   await res.json();
   cargarPanel();
   // Recargar tiendas reportadas para que los checks reflejen la nueva semana
@@ -2491,12 +2491,12 @@ async function cerrarSemana() {
     const lista = await r2.json();
     const encontrada = lista.find(s => s.codigo === proxima.codigo);
     if (encontrada) {
-      await fetch(API + '/api/semanas/' + encontrada.id + '/activar', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({negocio: negocioActual})});
+      await fetch(API + '/api/semanas/' + encontrada.id + '/activar', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({negocio: negocioActual, rol: usuario.rol})});
     } else {
       await fetch(API + '/api/set-semana', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({semana: proxima.codigo, negocio: negocioActual})
+        body: JSON.stringify({semana: proxima.codigo, negocio: negocioActual, rol: usuario.rol})
       });
     }
 
@@ -2586,13 +2586,13 @@ async function confirmarSemanaSeleccionada() {
     const lista = await r2.json();
     const encontrada = lista.find(s => s.codigo === _semanaSeleccionada.codigo);
     if (encontrada) {
-      await fetch(API + '/api/semanas/' + encontrada.id + '/activar', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({negocio: negocioActual})});
+      await fetch(API + '/api/semanas/' + encontrada.id + '/activar', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({negocio: negocioActual, rol: usuario.rol})});
     } else {
       // Fallback: usar set-semana directamente
       await fetch(API + '/api/set-semana', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({semana: _semanaSeleccionada.codigo, negocio: negocioActual})
+        body: JSON.stringify({semana: _semanaSeleccionada.codigo, negocio: negocioActual, rol: usuario.rol})
       });
     }
     // Actualizar badge
@@ -3671,6 +3671,7 @@ async function guardarNegocio() {
     if (wm) fd.append('archivo_wm', wm);
     if (am) fd.append('archivo_am', am);
     fd.append('negocio', d.negocio.slug);
+    fd.append('rol', usuario.rol);
     const ri = await fetch(API + '/api/actualizar-inventario', { method: 'POST', body: fd });
     if (!ri.ok) {
       const di = await ri.json().catch(() => ({}));
@@ -3923,7 +3924,7 @@ async function crearSemana() {
 async function activarSemana(id) {
   if (!confirm('¿Activar esta semana? Los reportes que se suban a partir de ahora quedarán asociados a ella.')) return;
   try {
-    const r = await fetch(API + '/api/semanas/' + id + '/activar', {method:'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({negocio: negocioActual})});
+    const r = await fetch(API + '/api/semanas/' + id + '/activar', {method:'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({negocio: negocioActual, rol: usuario.rol})});
     const d = await r.json();
     if (d.ok) {
       // Actualizar badge de semana activa en el header del panel
@@ -4162,7 +4163,7 @@ async function reintentarValidacion(id, btn) {
   btn.disabled = true;
   btn.textContent = '...';
   try {
-    const r = await fetch(API + '/api/validacion/' + id + '/reintentar', { method: 'POST' });
+    const r = await fetch(API + '/api/validacion/' + id + '/reintentar', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({rol: usuario.rol}) });
     const d = await r.json();
     if (d.ok) {
       btn.textContent = 'En cola';
@@ -4352,6 +4353,7 @@ async function actualizarInventario() {
   if (_invArchivos.wm) fd.append('archivo_wm', _invArchivos.wm);
   if (_invArchivos.am) fd.append('archivo_am', _invArchivos.am);
   fd.append('negocio', negocioActual);
+  fd.append('rol', usuario.rol);
 
   try {
     const res  = await fetch('/api/actualizar-inventario', { method: 'POST', body: fd });

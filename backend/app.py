@@ -625,6 +625,8 @@ def get_semana_activa():
 @app.route("/api/set-semana", methods=["POST"])
 def set_semana():
     data = request.json or {}
+    if data.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "Solo un administrador puede hacer esto"}), 403
     semana  = (data.get("semana") or "").strip()
     negocio = (data.get("negocio") or "mundo_vegano").strip()
     clave   = f"{negocio}:semana_override"
@@ -940,6 +942,8 @@ def crear_semana():
 
 @app.route("/api/semanas/<int:sid>/activar", methods=["POST"])
 def activar_semana(sid):
+    if (request.get_json(silent=True) or {}).get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "Solo un administrador puede hacer esto"}), 403
     s = SemanaConfig.query.get_or_404(sid)
     negocio = (request.get_json(silent=True) or {}).get("negocio", "mundo_vegano")
     # Actualizar {negocio}:semana_override para que todo el sistema de ese negocio lo use
@@ -1958,6 +1962,8 @@ def ultimo_cierre():
 @app.route("/api/cargar-inventario", methods=["POST"])
 def cargar_inventario():
     """Recibe un Excel con columnas Tienda y Producto, crea registros SIN_FOTO para la semana activa."""
+    if request.form.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "Solo un administrador puede hacer esto"}), 403
     if "archivo" not in request.files:
         return jsonify({"error": "No se recibió archivo"}), 400
     archivo = request.files["archivo"]
@@ -2148,6 +2154,8 @@ def _leer_excel_automercado(archivo):
 @app.route("/api/actualizar-inventario", methods=["POST"])
 def actualizar_inventario():
     """Actualiza tabla Inventario con cantidades del Excel. NO toca Reporte (fotos/comentarios intactos)."""
+    if request.form.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "Solo un administrador puede hacer esto"}), 403
     archivo_wm = request.files.get("archivo_wm")
     archivo_am = request.files.get("archivo_am")
     negocio    = request.form.get("negocio", "mundo_vegano")
@@ -2198,6 +2206,8 @@ def actualizar_inventario():
 @app.route("/api/reemplazar-inventario", methods=["POST"])
 def reemplazar_inventario():
     """Borra reportes SIN_FOTO de la semana activa y carga el Excel desde cero."""
+    if request.form.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "Solo un administrador puede hacer esto"}), 403
     if "archivo" not in request.files:
         return jsonify({"error": "No se recibió archivo"}), 400
     archivo = request.files["archivo"]
@@ -2694,6 +2704,8 @@ def validacion_decision(val_id):
 @app.route("/api/validacion/<int:val_id>/reintentar", methods=["POST"])
 def validacion_reintentar(val_id):
     """Marca una validación en ERROR como PENDIENTE para que el worker la reprocese."""
+    if (request.get_json(silent=True) or {}).get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "Solo un administrador puede hacer esto"}), 403
     val = ValidacionIA.query.get_or_404(val_id)
     if val.estado != "ERROR":
         return jsonify({"error": "Solo se pueden reintentar validaciones en estado ERROR"}), 400
