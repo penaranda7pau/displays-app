@@ -1,3 +1,4 @@
+import json
 import os
 import io
 import re
@@ -1162,10 +1163,57 @@ def ver_liquidacion():
         "foto3_b64": r.foto3_b64 or ""
     } for r in rows])
 
+def productos_inactivos(negocio):
+    """Productos desactivados del negocio (no se piden a los displays ni entran al cierre). Se guardan por nombre,
+    así siguen desactivados aunque se vuelva a cargar el inventario."""
+    cfg = db.session.get(Config, f"{negocio}:productos_inactivos")
+    try:
+        return set(json.loads(cfg.valor)) if cfg and cfg.valor else set()
+    except Exception:
+        return set()
+
+@app.route("/api/productos-negocio")
+def productos_negocio():
+    """Catálogo de productos del negocio (del inventario cargado) con su estado activo/inactivo."""
+    negocio = request.args.get("negocio", "mundo_vegano")
+    inactivos = productos_inactivos(negocio)
+    cat = {}
+    for p, item, n in (db.session.query(Inventario.producto, db.func.max(Inventario.item_nbr), db.func.count(Inventario.id))
+                       .filter_by(negocio=negocio).group_by(Inventario.producto).all()):
+        cat[p] = {"producto": p, "item_nbr": item or "", "tiendas": n, "activo": p not in inactivos}
+    for p in inactivos - set(cat):   # desactivados que ya no vienen en el inventario
+        cat[p] = {"producto": p, "item_nbr": "", "tiendas": 0, "activo": False}
+    return jsonify(sorted(cat.values(), key=lambda x: (x["activo"], x["producto"])))
+
+@app.route("/api/productos-negocio", methods=["POST"])
+def activar_producto():
+    data = request.json or {}
+    if data.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    negocio = data.get("negocio")
+    producto = (data.get("producto") or "").strip()
+    if negocio not in slugs_negocios() or not producto:
+        return jsonify({"ok": False, "error": "Datos inválidos"}), 400
+    inactivos = productos_inactivos(negocio)
+    if data.get("activo"):
+        inactivos.discard(producto)
+    else:
+        inactivos.add(producto)
+    clave = f"{negocio}:productos_inactivos"
+    cfg = db.session.get(Config, clave)
+    if not cfg:
+        cfg = Config(clave=clave, valor="")
+        db.session.add(cfg)
+    cfg.valor = json.dumps(sorted(inactivos), ensure_ascii=False)
+    db.session.commit()
+    return jsonify({"ok": True, "inactivos": len(inactivos)})
+
 @app.route("/api/productos/<tienda>")
 def productos(tienda):
     negocio = request.args.get("negocio", "mundo_vegano")
-    rows = Inventario.query.filter_by(tienda=tienda, negocio=negocio).order_by(Inventario.cantidad.desc()).all()
+    inactivos = productos_inactivos(negocio)
+    rows = [r for r in Inventario.query.filter_by(tienda=tienda, negocio=negocio).order_by(Inventario.cantidad.desc()).all()
+            if r.producto not in inactivos]
     return jsonify([{"nombre": r.producto, "cantidad": r.cantidad,
                      "nombre_empaque": r.nombre_empaque or r.producto,
                      "item_nbr": r.item_nbr or ""} for r in rows])
@@ -1368,7 +1416,9 @@ def cerrar_semana():
                 tiendas_rurales_visitaron_mes.add(d.tienda)
 
     # Calcular diferencias (solo tiendas de cadenas activas del negocio)
-    inventario = [i for i in Inventario.query.filter_by(negocio=negocio).all() if habilitada(i.tienda)]
+    inactivos = productos_inactivos(negocio)   # productos desactivados no cuentan como diferencia
+    inventario = [i for i in Inventario.query.filter_by(negocio=negocio).all()
+                  if habilitada(i.tienda) and i.producto not in inactivos]
     Diferencia.query.filter_by(semana=semana, negocio=negocio).delete()
     for inv in inventario:
         if inv.cantidad <= 0:
@@ -1489,7 +1539,8 @@ def cerrar_semana():
             ws3.cell(r, c).border = border
 
     # Hoja 4 — Historial matricial: todas las tiendas, ordenado por total de diferencias
-    inventario_actual = {(inv.tienda, inv.producto): inv.cantidad for inv in Inventario.query.filter_by(negocio=negocio).all()}
+    inventario_actual = {(inv.tienda, inv.producto): inv.cantidad for inv in Inventario.query.filter_by(negocio=negocio).all()
+                         if inv.producto not in inactivos}
 
     semanas_arch = sorted(set(
         d.semana for d in Diferencia.query.filter_by(negocio=negocio).with_entities(Diferencia.semana).distinct().all()
@@ -1596,7 +1647,7 @@ def cerrar_semana():
     ws5.append(["Tienda", "Productos en sistema", "Observación"])
     estilo_header(ws5, [40, 20, 40])
     for t in tiendas_sin_visita:
-        prods = Inventario.query.filter_by(tienda=t, negocio=negocio).count()
+        prods = sum(1 for i in Inventario.query.filter_by(tienda=t, negocio=negocio).all() if i.producto not in inactivos)
         ws5.append([t, prods, "Ningún display reportó esta tienda en la semana"])
         r = ws5.max_row
         for c in range(1, 4):
@@ -2208,8 +2259,9 @@ def diferencias_semana():
     # Productos esperados por tienda según inventario
     inv_por_tienda = {}
     habilitada = filtro_tiendas(negocio)
+    inactivos = productos_inactivos(negocio)
     for inv in Inventario.query.filter(Inventario.cantidad > 0, Inventario.negocio == negocio).all():
-        if not habilitada(inv.tienda):
+        if not habilitada(inv.tienda) or inv.producto in inactivos:
             continue
         inv_por_tienda.setdefault(inv.tienda, 0)
         inv_por_tienda[inv.tienda] += 1

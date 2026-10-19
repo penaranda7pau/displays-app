@@ -1473,6 +1473,17 @@
       Borra los registros sin foto de la semana actual y los reemplaza con los productos de los archivos cargados.
     </div>
 
+    <div style="margin-top:26px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+        <div style="font-size:15px;font-weight:800;color:var(--texto);">Productos</div>
+        <div id="prod-resumen" style="font-size:12px;color:var(--muted);"></div>
+        <input id="prod-buscar" placeholder="Buscar producto o código..." oninput="renderProductosNeg()"
+          style="margin-left:auto;padding:8px 12px;border-radius:10px;border:1px solid var(--borde);background:var(--korax-surface);color:var(--text);font-size:13px;min-width:220px;">
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Desactivá los productos que ya no se exhiben: dejan de pedírseles a los displays y no cuentan como diferencia en el cierre. Siguen desactivados aunque vuelvas a cargar el inventario.</div>
+      <div id="prod-lista" style="max-height:420px;overflow:auto;border:1px solid var(--borde);border-radius:12px;"></div>
+    </div>
+
     <div id="inv-resultado" style="display:none;margin-top:20px;background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:18px 20px;">
     </div>
 
@@ -3956,6 +3967,48 @@ async function eliminarUsuario(id) {
   cargarUsuarios();
 }
 
+// ── Productos activos / inactivos del negocio ─────────────────────────────────
+let _productosNeg = [];
+async function cargarProductosNeg() {
+  try {
+    const r = await fetch(API + '/api/productos-negocio?negocio=' + encodeURIComponent(negocioActual));
+    _productosNeg = await r.json();
+  } catch (e) { _productosNeg = []; }
+  renderProductosNeg();
+}
+function renderProductosNeg() {
+  const cont = document.getElementById('prod-lista');
+  if (!cont) return;
+  const q = (document.getElementById('prod-buscar').value || '').trim().toLowerCase();
+  const inact = _productosNeg.filter(p => !p.activo).length;
+  document.getElementById('prod-resumen').textContent = _productosNeg.length + ' productos · ' + inact + ' desactivados';
+  const lista = _productosNeg.filter(p => !q || p.producto.toLowerCase().includes(q) || String(p.item_nbr).includes(q));
+  cont.innerHTML = lista.length ? '' : '<div class="seccion-vacia" style="padding:16px;">Sin productos (cargá un inventario)</div>';
+  lista.forEach(p => {
+    const fila = document.createElement('div');
+    fila.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--borde);' + (p.activo ? '' : 'opacity:.55;');
+    fila.innerHTML = '<div style="flex:1;min-width:0;"><div class="pn" style="font-size:13px;font-weight:600;"></div><div class="pd" style="font-size:11px;color:var(--muted);"></div></div>'
+      + '<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;white-space:nowrap;"><span class="pe"></span><input type="checkbox" style="width:18px;height:18px;accent-color:var(--korax-mid);"></label>';
+    fila.querySelector('.pn').textContent = p.producto;
+    fila.querySelector('.pd').textContent = (p.item_nbr ? '#' + p.item_nbr + ' · ' : '') + (p.tiendas ? p.tiendas + ' tiendas' : 'ya no viene en el inventario');
+    fila.querySelector('.pe').textContent = p.activo ? 'Activo' : 'Desactivado';
+    const chk = fila.querySelector('input');
+    chk.checked = p.activo;
+    chk.onchange = async () => {
+      const r = await fetch(API + '/api/productos-negocio', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({negocio: negocioActual, producto: p.producto, activo: chk.checked, rol: usuario.rol})
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!d.ok) { chk.checked = !chk.checked; toast(d.error || 'Error', 'err'); return; }
+      p.activo = chk.checked;
+      toast(p.producto + (p.activo ? ' activado' : ' desactivado'), 'ok');
+      renderProductosNeg();
+    };
+    cont.appendChild(fila);
+  });
+}
+
 // ── Inventario dos zonas ─────────────────────────────────────────────────────
 const _invArchivos = { wm: null, am: null };
 
@@ -4002,7 +4055,7 @@ function invInitDropZone(zona) {
   function init() { invInitDropZone('wm'); invInitDropZone('am'); }
   document.addEventListener('DOMContentLoaded', init);
   const orig = window.cambiarTab;
-  window.cambiarTab = function(id, btn) { orig && orig(id, btn); if (id === 'tab-inventario') { init(); cargarHistorialInv(); } };
+  window.cambiarTab = function(id, btn) { orig && orig(id, btn); if (id === 'tab-inventario') { init(); cargarHistorialInv(); cargarProductosNeg(); } };
 })();
 
 async function actualizarInventario() {
