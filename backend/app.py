@@ -1908,9 +1908,7 @@ def cerrar_semana():
                 continue  # foto corrupta o archivo inexistente
             tienda_safe   = re.sub(r'[\\/:*?"<>|]', "_", tienda).strip()
             producto_safe = re.sub(r'[\\/:*?"<>|]', "_", producto).strip()[:60]
-            # Si no hay diferencia calculada (ej. inventario 0), manda la validación: una foto rechazada
-            # nunca debe quedar en "OK" solo porque el producto no contaba para el cierre.
-            estado = estado_cierre.get((tienda, producto)) or                 {"RECHAZADO": "RECHAZADO", "REVISAR": "REVISAR"}.get(validaciones.get((tienda, producto)), "OK")
+            estado = estado_cierre.get((tienda, producto), "OK")
             if estado == "RECHAZADO":
                 carpeta = f"Fotos_Rechazadas_{rango_archivo}"
             elif estado == "OK":
