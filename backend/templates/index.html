@@ -1112,6 +1112,18 @@
     <button class="tab" id="sg-tab-consumo" onclick="abrirSistemaGlobal('consumo')">Memoria y consumo</button>
     <button class="tab activo" id="sg-tab-negocios" onclick="abrirSistemaGlobal('negocios')">Negocios</button>
     <button class="tab" id="sg-tab-usuarios" onclick="abrirSistemaGlobal('usuarios')">Usuarios</button>
+    <button class="tab" id="sg-tab-fotos" onclick="abrirSistemaGlobal('fotos')">Fotos con problema</button>
+  </div>
+  <div id="sg-fotos" style="display:none;">
+    <div class="sg-card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+        <div class="cons-h" style="margin:0;">FOTOS CON PROBLEMA · ÚLTIMOS 200 CASOS</div>
+        <button class="btn btn-gris" style="width:auto;padding:6px 12px;font-size:12px;margin-left:auto;" onclick="cargarLogFotos()">↻ Actualizar</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Fotos que el celular no pudo abrir. <b>Convertida</b> = el servidor la arregló sola y el display pudo seguir. <b>Error</b> / <b>Vacía</b> / <b>Sin señal</b> = el display no pudo subirla.</div>
+      <div id="lf-resumen" class="g-resumen" style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px;font-weight:700;margin-bottom:10px;"></div>
+      <div id="lf-tabla" style="overflow:auto;"></div>
+    </div>
   </div>
   <div id="sg-usuarios" style="display:none;">
     <div class="sg-card">
@@ -3081,11 +3093,11 @@ function abrirSistemaGlobal(seccion) {
   seccion = seccion || 'negocios';
   document.getElementById('sidebar').classList.remove('visible');
   if (!document.getElementById('sistema-global').classList.contains('active')) mostrar('sistema-global');
-  ['consumo', 'negocios', 'usuarios'].forEach(x => {
+  ['consumo', 'negocios', 'usuarios', 'fotos'].forEach(x => {
     document.getElementById('sg-' + x).style.display = x === seccion ? '' : 'none';
     document.getElementById('sg-tab-' + x).classList.toggle('activo', x === seccion);
   });
-  if (seccion === 'consumo') cargarConsumo(); else if (seccion === 'usuarios') ugCargar(); else cargarNegociosAdmin();
+  if (seccion === 'consumo') cargarConsumo(); else if (seccion === 'usuarios') ugCargar(); else if (seccion === 'fotos') cargarLogFotos(); else cargarNegociosAdmin();
 }
 
 // ─── Memoria y consumo (superadmin) ───
@@ -3393,6 +3405,51 @@ document.addEventListener('click', ev => {
   document.querySelectorAll('#ug-vista button').forEach(x => x.classList.toggle('on', x === b));
   ugPintar();
 });
+
+// ── Sistema → Fotos con problema (registro de /api/foto/log) ──
+function _lfCelular(ua) {
+  ua = ua || '';
+  const so = (ua.match(/Android [\d.]+/) || ua.match(/iPhone OS [\d_]+/) || [''])[0].replace(/_/g, '.').replace('iPhone OS', 'iPhone iOS');
+  const nav = /; wv\)/.test(ua) ? (/WhatsApp/i.test(ua) ? 'WhatsApp' : 'navegador interno (app)') :
+              /GSA\//.test(ua) ? 'app de Google' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' :
+              /Edg/.test(ua) ? 'Edge' : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /CriOS|Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : (ua ? 'otro' : '');
+  const modelo = (ua.match(/Android [\d.]+; ([^;)]+)/) || [])[1] || '';
+  return [so, modelo && modelo !== 'K' ? modelo : '', nav].filter(Boolean).join(' · ');
+}
+async function cargarLogFotos() {
+  const t = document.getElementById('lf-tabla'), res = document.getElementById('lf-resumen');
+  t.innerHTML = '<div class="seccion-vacia">Cargando...</div>';
+  let lista = [];
+  try { lista = await (await fetch(API + '/api/foto/log?solicitante_rol=superadmin')).json(); } catch (e) {}
+  // un mismo intento puede dejar 2 registros (celular + servidor): se muestran ambos, el más nuevo arriba
+  lista = (lista || []).slice().reverse();
+  const tipoRes = x => /^convertida/.test(x.resultado || '') ? 'ok' : (x.motivo === 'vacia') ? 'vacia' : /sin conexion/i.test(x.resultado || '') ? 'senal' : 'error';
+  const n = k => lista.filter(x => tipoRes(x) === k).length;
+  res.innerHTML = `<span style="color:#15803D;">✅ ${n('ok')} convertidas</span><span style="color:var(--rojo);">❌ ${n('error')} con error</span>`
+    + `<span style="color:#B7791F;">☁️ ${n('vacia')} vacías (nube)</span><span style="color:var(--muted);">📶 ${n('senal')} sin señal</span>`;
+  if (!lista.length) { t.innerHTML = '<div class="seccion-vacia">Sin problemas registrados 🎉</div>'; return; }
+  const th = 'padding:8px 10px;text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid var(--borde);white-space:nowrap;';
+  const td = 'padding:8px 10px;border-bottom:1px solid var(--borde);font-size:12px;vertical-align:top;';
+  const tabla = document.createElement('table');
+  tabla.style.cssText = 'width:100%;border-collapse:collapse;';
+  tabla.innerHTML = `<tr><th style="${th}">Fecha</th><th style="${th}">Display</th><th style="${th}">Negocio · Tienda</th><th style="${th}">Foto</th><th style="${th}">Celular · Navegador</th><th style="${th}">Resultado</th></tr>`;
+  const COL = {ok: ['#DCFCE7', '#15803D', 'Convertida'], error: ['rgba(224,92,92,.12)', 'var(--rojo)', 'Error'], vacia: ['#FEF3C7', '#B7791F', 'Vacía (nube)'], senal: ['var(--korax-gray-2)', 'var(--muted)', 'Sin señal']};
+  lista.forEach(x => {
+    const k = tipoRes(x), c = COL[k];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="${td}white-space:nowrap;"></td><td style="${td}"></td><td style="${td}"></td><td style="${td}"></td><td style="${td}"></td>`
+      + `<td style="${td}"><span style="background:${c[0]};color:${c[1]};border-radius:999px;padding:2px 8px;font-weight:700;font-size:11px;white-space:nowrap;">${c[2]}</span><div class="lf-det" style="color:var(--muted);font-size:11px;margin-top:3px;"></div></td>`;
+    const cel = tr.children;
+    cel[0].textContent = (x.fecha || '').replace('T', ' ').slice(0, 16);
+    cel[1].textContent = x.usuario || '—';
+    cel[2].textContent = [(NEGOCIOS[x.negocio] || {}).nombre || x.negocio, x.tienda].filter(Boolean).join(' · ') || '—';
+    cel[3].textContent = [x.tipo, x.mb ? x.mb + ' MB' : '', x.px, x.formato && x.formato !== x.tipo ? x.formato : ''].filter(Boolean).join(' · ') || '—';
+    cel[4].textContent = _lfCelular(x.ua) || '—';
+    tr.querySelector('.lf-det').textContent = (k === 'ok' || k === 'vacia') ? '' : (x.resultado || '').replace(/^error:?\s*/, '').slice(0, 120);
+    tabla.appendChild(tr);
+  });
+  t.innerHTML = ''; t.appendChild(tabla);
+}
 
 async function cargarNegociosAdmin() {
   if (usuario.rol !== 'superadmin') return;
