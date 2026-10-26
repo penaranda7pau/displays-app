@@ -4,7 +4,8 @@ pandas
 openpyxl
 gunicorn
 flask-sqlalchemy
-pg8000
 anthropic
-pillow
 pillow-heif==1.8.1
+pg8000==1.31.5
+scramp==1.4.17
+pillow==12.2.0
