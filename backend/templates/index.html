@@ -477,6 +477,20 @@
     .cons-row { grid-template-columns: 32px 1fr 80px; }
     .cons-row .pista { grid-column: 1 / -1; }
   }
+  .ga-fila { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--borde); }
+  .ga-est { border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .ga-cnt { font-size: 12px; white-space: nowrap; min-width: 120px; text-align: right; }
+  .gam-cuerpo { display: grid; grid-template-columns: 1.3fr 1fr; gap: 0; min-height: 0; flex: 1; overflow: hidden; }
+  .gam-fotos { padding: 12px; overflow: auto; border-right: 1px solid var(--borde); background: var(--korax-gray-1); }
+  .gam-fotos img { width: 100%; max-height: 62vh; object-fit: contain; border-radius: 10px; background: #000; }
+  .gam-miniaturas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .gam-mini { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--borde); background: var(--korax-surface); cursor: pointer; font-weight: 700; font-family: inherit; color: var(--text); }
+  .gam-mini.on { background: var(--korax-mid); color: #fff; border-color: var(--korax-mid); }
+  .gam-prods { overflow: auto; padding: 6px 12px; }
+  .ga-botones { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+  .ga-botones button { border: 1px solid var(--borde); background: var(--korax-surface); color: var(--text); border-radius: 999px; padding: 2px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .ga-botones button.on { background: var(--foam-wash-2); border-color: var(--korax-mid); color: var(--korax-deep); font-weight: 700; }
+  @media (max-width: 760px) { .gam-cuerpo { grid-template-columns: 1fr; overflow: auto; } }
   .g-caja { background: var(--korax-surface); border: 1px solid var(--borde); border-radius: 16px; padding: 14px; margin-bottom: 14px; box-shadow: var(--sombra); }
   #g-analizar:disabled, #g-enviar:disabled { opacity: .45; cursor: not-allowed; }
   .g-tit { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
@@ -1481,6 +1495,17 @@
 
   <!-- TAB VALIDACIÓN IA -->
   <div id="tab-ia" style="display:none;">
+    <div id="gondola-admin" class="g-caja" style="display:none;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <div class="g-tit" style="margin:0;">Góndolas de la semana (análisis con IA por tienda)</div>
+        <select id="ga-modelo" class="ug-in" style="margin-left:auto;" onchange="gaCambiarModelo(this)"></select>
+        <button class="btn-ia btn-ia-procesar" style="width:auto;" onclick="gaProcesar(false)">Procesar pendientes</button>
+        <button class="btn-ia btn-ia-encolar" style="width:auto;" onclick="gaProcesar(true)">↻ Analizar todo de nuevo</button>
+        <button class="btn btn-gris" style="width:auto;padding:6px 10px;" onclick="cargarGondolaAdmin()">↻</button>
+      </div>
+      <div id="ga-resumen" class="g-resumen" style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;"></div>
+      <div id="ga-lista"></div>
+    </div>
     <div class="subtexto" style="margin-bottom:10px;">Validación automática de fotos</div>
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
       <button class="btn-ia btn-ia-encolar" onclick="encolarValidacion()">Encolar fotos</button>
@@ -2112,11 +2137,11 @@ async function irProductos(tienda) {
   });
 }
 
-// --- MODO GÓNDOLA: 1 a 4 fotos de la góndola, la IA detecta los productos ---
+// --- MODO GÓNDOLA: el display sube hasta 20 fotos de la tienda; el administrador las analiza con IA ---
 function _modoGondola() { return ((NEGOCIOS[negocioActual] || {}).modo_captura) === 'gondola'; }
-let _gFotos = [], _gRes = null, _gProds = [];
+let _gFotos = [], _gProds = [], _gMax = 20, _gYa = 0;
 async function irGondola(tienda) {
-  _gFotos = []; _gRes = null;
+  _gFotos = [];
   document.getElementById('titulo-tienda').textContent = tienda;
   document.getElementById('status-productos').textContent = 'Cargando...';
   document.getElementById('status-envio').textContent = '';
@@ -2124,39 +2149,54 @@ async function irGondola(tienda) {
   lista.innerHTML = '';
   limpiarLiquidacion();
   mostrar('productos');
-  _gProds = await (await fetch(API + '/api/productos/' + encodeURIComponent(tienda) + '?negocio=' + negocioActual)).json();
+  const q = '?negocio=' + negocioActual;
+  const [rp, re] = await Promise.all([fetch(API + '/api/productos/' + encodeURIComponent(tienda) + q),
+                                      fetch(API + '/api/gondola/estado' + q + '&tienda=' + encodeURIComponent(tienda))]);
+  _gProds = await rp.json();
+  const est = await re.json().catch(() => ({fotos: 0, max: 20, comentarios: {}}));
+  _gYa = est.fotos || 0; _gMax = est.max || 20;
   cargarLiquidacionExistente(tienda);
-  document.getElementById('status-productos').textContent = _gProds.length + ' productos esperados · modo góndola';
+  document.getElementById('status-productos').textContent = _gProds.length + ' productos · modo góndola';
   lista.innerHTML = `<div class="g-caja">
-      <div class="g-tit">Fotos de la góndola</div>
-      <div class="g-ayuda">Tomá de 1 a 4 fotos que muestren toda la góndola o el refrigerador: de frente, con buena luz y que se lean las etiquetas.</div>
+      <div class="g-tit">Fotos de la tienda</div>
+      <div class="g-ayuda">Tomá fotos de las góndolas o refrigeradores donde están los productos de la lista (máximo ${_gMax} por tienda en la semana). De frente, con buena luz y que se lean las etiquetas. Varias fotos pueden mostrar varios productos.</div>
+      <div id="g-ya" class="g-ayuda" style="color:var(--korax-deep);font-weight:700;"></div>
       <div class="g-fotos" id="g-fotos"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;" id="g-agregar">
         <button class="btn btn-gris" style="width:auto;padding:10px 16px;" onclick="gAgregar(true)">📷 Cámara</button>
         <button class="btn btn-gris" style="width:auto;padding:10px 16px;" onclick="gAgregar(false)">🖼 Galería</button>
       </div>
-      <button class="btn btn-verde" id="g-analizar" style="margin-top:12px;" onclick="gAnalizar()" disabled>Analizar con IA</button>
-      <div id="g-estado" class="status-envio"></div>
     </div>
-    <div id="g-resultado"></div>
-    <div class="g-esperados"><div class="g-esp-tit">Productos esperados en esta tienda (${_gProds.length})</div><div id="g-esp"></div></div>`;
+    <div class="g-caja"><div class="g-tit">Productos de esta tienda</div>
+      <div class="g-ayuda">Revisá la lista y escribí un comentario si algún producto no está (agotado, sin espacio, en conteo...).</div>
+      <div id="g-esp"></div></div>
+    <button class="btn btn-verde" id="g-enviar" onclick="gEnviar()">✓ Enviar fotos y comentarios</button>
+    <div id="g-envio" class="status-envio"></div>`;
   const esp = document.getElementById('g-esp');
   _gProds.forEach(p => {
-    const e = document.createElement('div'); e.className = 'g-esp';
-    e.innerHTML = '<div style="flex:1;min-width:0;"><span class="g-cod"></span><span class="g-n"></span></div><div class="cant"></div>';
+    const e = document.createElement('div'); e.className = 'g-fila';
+    e.innerHTML = '<div style="flex:1;min-width:0;"><span class="g-cod"></span><div class="g-nom"></div><textarea placeholder="Comentario..."></textarea></div><div class="g-der"><div class="cant"></div></div>';
     if (p.item_nbr) e.querySelector('.g-cod').textContent = '#' + p.item_nbr;
-    e.querySelector('.g-n').textContent = p.nombre;
-    e.querySelector('.cant').textContent = p.cantidad; if (p.cantidad <= 0) e.querySelector('.cant').classList.add('cero');
+    e.querySelector('.g-nom').textContent = p.nombre;
+    const c = e.querySelector('.cant'); c.textContent = p.cantidad; if (p.cantidad <= 0) c.classList.add('cero');
+    const ta = e.querySelector('textarea'); ta.value = (est.comentarios || {})[p.nombre] || ''; ta.dataset.prod = p.nombre;
     esp.appendChild(e);
   });
   gPintarFotos();
 }
 function gAgregar(camara) {
-  if (_gFotos.length >= 4) return;
+  if (_gYa + _gFotos.length >= _gMax) return;
+  document.querySelectorAll('input.inp-foto-tmp').forEach(x => x.remove());
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = 'image/*';
-  if (camara) inp.capture = 'environment';
-  inp.onchange = e => { const f = e.target.files[0]; if (f) comprimirFoto(f, 1600, 0.85, url => { _gFotos.push(url.split(',')[1]); _gRes = null; document.getElementById('g-resultado').innerHTML = ''; gPintarFotos(); }); };
+  inp.type = 'file'; inp.accept = 'image/*'; inp.className = 'inp-foto-tmp';
+  if (camara) inp.capture = 'environment'; else inp.multiple = true;
+  inp.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;';
+  document.body.appendChild(inp);
+  inp.onchange = e => {
+    const files = [...(e.target.files || [])].slice(0, _gMax - _gYa - _gFotos.length);
+    files.forEach(f => comprimirFoto(f, 1600, 0.85, url => { _gFotos.push(url.split(',')[1]); gPintarFotos(); }));
+    setTimeout(() => inp.remove(), 1000);
+  };
   inp.click();
 }
 function gPintarFotos() {
@@ -2166,80 +2206,160 @@ function gPintarFotos() {
   _gFotos.forEach((f, i) => {
     const d = document.createElement('div'); d.className = 'g-foto';
     d.innerHTML = `<img src="data:image/jpeg;base64,${f}" alt=""><button title="Quitar">×</button>`;
-    d.querySelector('button').onclick = () => { _gFotos.splice(i, 1); _gRes = null; document.getElementById('g-resultado').innerHTML = ''; gPintarFotos(); };
+    d.querySelector('button').onclick = () => { _gFotos.splice(i, 1); gPintarFotos(); };
     c.appendChild(d);
   });
-  document.getElementById('g-agregar').style.display = _gFotos.length >= 4 ? 'none' : 'flex';
-  document.getElementById('g-analizar').disabled = !_gFotos.length;
-}
-async function gAnalizar() {
-  const st = document.getElementById('g-estado'), btn = document.getElementById('g-analizar');
-  btn.disabled = true; st.style.color = ''; st.textContent = 'Analizando la góndola con IA... puede tardar hasta un minuto, no cierres la app';
-  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 360000);
-  try {
-    let r, d;
-    for (let intento = 0; ; intento++) {
-      r = await fetch(API + '/api/gondola/analizar', { method: 'POST', headers: {'Content-Type': 'application/json'}, signal: ctrl.signal,
-        body: JSON.stringify({negocio: negocioActual, tienda: tiendaActual, usuario: usuario.nombre || '', fotos: _gFotos}) });
-      d = await r.json().catch(() => ({}));
-      if (!(r.status === 429 && d.ocupado) || intento >= 30) break;
-      st.textContent = 'Hay otros análisis en curso, esperando turno... (no cierres la app)';
-      await new Promise(res => setTimeout(res, 5000));
-      st.textContent = 'Analizando la góndola con IA... puede tardar hasta un minuto, no cierres la app';
-    }
-    if (!d.ok) throw new Error(d.error || ('Error ' + r.status));
-    _gRes = d; st.textContent = ''; gPintarResultado();
-  } catch (e) {
-    st.style.color = 'var(--rojo)';
-    st.textContent = '⚠ ' + (e.name === 'AbortError' ? 'La IA tardó demasiado. Revisá la señal y probá de nuevo.' : e.message);
-  } finally { clearTimeout(t); btn.disabled = !_gFotos.length; }
-}
-function gPintarResultado() {
-  const c = document.getElementById('g-resultado');
-  const n = k => _gRes.productos.filter(p => p.estado === k).length;
-  c.innerHTML = `<div class="g-caja">
-      <div class="g-tit">Resultado de la IA</div>
-      <div class="g-resumen"><span class="ok">✅ ${n('presente')} presentes</span><span class="du">⚠️ ${n('dudoso')} dudosos</span><span class="no">❌ ${n('ausente')} ausentes</span></div>
-      <div id="g-lista"></div>
-      <div class="g-obs" id="g-obs"></div>
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-        <button class="btn btn-verde" style="flex:1;" id="g-enviar" onclick="gEnviar()">✓ Enviar resultado</button>
-      </div>
-      <div id="g-envio" class="status-envio"></div>
-    </div>`;
-  if (_gRes.observaciones) document.getElementById('g-obs').textContent = '📝 ' + _gRes.observaciones;
-  const orden = {ausente: 0, dudoso: 1, presente: 2};
-  const lista = document.getElementById('g-lista');
-  [..._gRes.productos].sort((a, b) => orden[a.estado] - orden[b.estado]).forEach(p => {
-    const f = document.createElement('div'); f.className = 'g-fila g-' + p.estado;
-    f.innerHTML = `<div class="g-ic">${p.estado === 'presente' ? '✅' : p.estado === 'dudoso' ? '⚠️' : '❌'}</div>
-      <div style="flex:1;min-width:0;"><span class="g-cod"></span><div class="g-nom"></div><div class="g-nota"></div></div>
-      <div class="g-der"><div class="cant"></div><small>${p.frentes ? p.frentes + ' frente' + (p.frentes === 1 ? '' : 's') : ''}</small></div>`;
-    if (p.item_nbr) f.querySelector('.g-cod').textContent = '#' + p.item_nbr;
-    f.querySelector('.g-nom').textContent = p.producto;
-    f.querySelector('.g-nota').textContent = p.nota || '';
-    const cant = f.querySelector('.cant'); cant.textContent = p.cantidad ?? ''; if ((p.cantidad || 0) <= 0) cant.classList.add('cero');
-    const ta = document.createElement('textarea'); ta.placeholder = 'Comentario...';
-    ta.value = p.comentario || ''; ta.oninput = () => p.comentario = ta.value;
-    f.children[1].appendChild(ta);
-    lista.appendChild(f);
-  });
+  const total = _gYa + _gFotos.length;
+  document.getElementById('g-ya').textContent = (_gYa ? `Ya enviaste ${_gYa} foto(s) de esta tienda esta semana. ` : '') + `Fotos: ${total} de ${_gMax}.`;
+  document.getElementById('g-agregar').style.display = total >= _gMax ? 'none' : 'flex';
 }
 async function gEnviar() {
   const st = document.getElementById('g-envio'), btn = document.getElementById('g-enviar');
-  btn.disabled = true; st.style.color = ''; st.textContent = 'Enviando...';
+  btn.disabled = true; st.style.color = '';
+  const tienda = tiendaActual, usr = usuario.nombre || '';
   try {
-    const r = await fetch(API + '/api/gondola/confirmar', { method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({negocio: negocioActual, tienda: tiendaActual, lote: _gRes.lote, usuario: usuario.nombre || '', productos: _gRes.productos}) });
+    // las fotos se suben de a una (con reintentos), así una mala señal no hace perder todo
+    while (_gFotos.length) {
+      st.textContent = `Subiendo fotos... quedan ${_gFotos.length}. No cierres la app`;
+      let ok = false, err = '';
+      for (let intento = 1; intento <= 3 && !ok; intento++) {
+        try {
+          const r = await fetch(API + '/api/gondola/foto', { method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({negocio: negocioActual, tienda, usuario: usr, foto: _gFotos[0]}) });
+          const d = await r.json().catch(() => ({}));
+          if (d.ok) { ok = true; _gYa = d.fotos; _gFotos.shift(); gPintarFotos(); }
+          else { err = d.error || ('Error ' + r.status); if (r.status === 400) break; }
+        } catch (e) { err = 'sin señal'; }
+        if (!ok && intento < 3) await new Promise(res => setTimeout(res, intento * 3000));
+      }
+      if (!ok) throw new Error(err);
+    }
+    const comentarios = {};
+    document.querySelectorAll('#g-esp textarea').forEach(t => comentarios[t.dataset.prod] = t.value);
+    const r = await fetch(API + '/api/gondola/enviar', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({negocio: negocioActual, tienda, usuario: usr, comentarios}) });
     const d = await r.json().catch(() => ({}));
     if (!d.ok) throw new Error(d.error || ('Error ' + r.status));
-    st.style.color = 'var(--korax-deep)'; st.textContent = '✓ Resultado enviado (' + d.enviados + ' productos)';
-    tiendasReportadas.add(tiendaActual); filtrarTiendas();
-    toast('Góndola de ' + tiendaActual + ' enviada', 'ok');
+    st.style.color = 'var(--korax-deep)'; st.textContent = `✓ Enviado: ${d.fotos} foto(s) y comentarios`;
+    tiendasReportadas.add(tienda); filtrarTiendas();
+    toast('Tienda ' + tienda + ' enviada', 'ok');
   } catch (e) {
-    st.style.color = 'var(--rojo)'; st.textContent = '⚠ No se envió: ' + e.message + '. Probá de nuevo.';
-    btn.disabled = false;
-  }
+    st.style.color = 'var(--rojo)';
+    st.textContent = '⚠ No se terminó de enviar: ' + e.message + '. Las fotos que faltan siguen aquí: presioná Enviar otra vez.';
+  } finally { btn.disabled = false; }
+}
+
+// --- MODO GÓNDOLA: panel del administrador (Validación) ---
+let _gaTimer = null, _gaData = null;
+async function cargarGondolaAdmin() {
+  const box = document.getElementById('gondola-admin');
+  if (!box) return;
+  box.style.display = _modoGondola() ? '' : 'none';
+  if (!_modoGondola()) return;
+  const d = await (await fetch(API + '/api/gondola/tiendas?negocio=' + negocioActual)).json();
+  _gaData = d;
+  const sel = document.getElementById('ga-modelo');
+  sel.innerHTML = '';
+  Object.entries(d.modelos).forEach(([k, v]) => { const o = new Option(v, k); o.selected = k === d.modelo; sel.add(o); });
+  const n = k => d.tiendas.filter(t => t.estado === k).length;
+  const tot = d.tiendas.reduce((a, t) => ({p: a.p + t.presente, du: a.du + t.dudoso, au: a.au + t.ausente, c: a.c + t.costo_usd}), {p: 0, du: 0, au: 0, c: 0});
+  document.getElementById('ga-resumen').innerHTML =
+    `<span>${d.tiendas.length} tiendas · ${n('PENDIENTE')} pendientes · ${n('PROCESANDO')} procesando · ${n('LISTO')} listas${n('ERROR') ? ' · <b style="color:var(--rojo)">' + n('ERROR') + ' con error</b>' : ''}</span>`
+    + `<span>✅ ${tot.p} · ⚠️ ${tot.du} · ❌ ${tot.au}</span><span>IA: US$${tot.c.toFixed(4)}</span>`;
+  const lista = document.getElementById('ga-lista');
+  lista.innerHTML = d.tiendas.length ? '' : '<div class="seccion-vacia">Todavía no hay fotos de góndola esta semana</div>';
+  const ESTADO = {PENDIENTE: ['Pendiente', 'var(--korax-gray-2)', 'var(--text)'], PROCESANDO: ['Procesando...', '#FEF3C7', '#B7791F'],
+                  LISTO: ['Lista', '#DCFCE7', '#15803D'], ERROR: ['Error', 'rgba(224,92,92,.12)', 'var(--rojo)'], SIN_FOTOS: ['Sin fotos', 'var(--korax-gray-2)', 'var(--muted)']};
+  d.tiendas.forEach(t => {
+    const e = ESTADO[t.estado] || ESTADO.PENDIENTE;
+    const f = document.createElement('div'); f.className = 'ga-fila';
+    f.innerHTML = `<div style="flex:1;min-width:0;"><div class="g-nom"></div><div class="g-nota"></div></div>
+      <span class="ga-est" style="background:${e[1]};color:${e[2]};">${e[0]}</span>
+      <div class="ga-cnt">${t.estado === 'LISTO' ? `✅ ${t.presente} &nbsp;⚠️ ${t.dudoso} &nbsp;❌ ${t.ausente}` : ''}</div>
+      <button class="btn btn-gris" style="width:auto;padding:6px 12px;font-size:12px;">Revisar</button>`;
+    f.querySelector('.g-nom').textContent = t.tienda;
+    f.querySelector('.g-nota').textContent = `${t.fotos} foto(s) · ${t.usuario || '—'}` + (t.modelo ? ` · ${t.modelo.replace('claude-', '')} · US$${t.costo_usd}` : '') + (t.error ? ' · ' + t.error : '');
+    f.querySelector('button').onclick = () => abrirGondolaTienda(t.tienda);
+    lista.appendChild(f);
+  });
+  clearTimeout(_gaTimer);
+  if (d.procesando || n('PROCESANDO') || (n('PENDIENTE') && d.procesando)) _gaTimer = setTimeout(cargarGondolaAdmin, 3000);
+}
+async function gaCambiarModelo(sel) {
+  const r = await fetch(API + '/api/gondola/modelo', { method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({negocio: negocioActual, modelo: sel.value, rol: usuario.rol}) });
+  const d = await r.json().catch(() => ({}));
+  toast(d.ok ? 'Modelo de IA para góndolas: ' + sel.options[sel.selectedIndex].text : (d.error || 'Error'), d.ok ? 'ok' : 'err');
+}
+async function gaProcesar(forzar, tienda) {
+  if (forzar && !tienda && !confirm('¿Volver a analizar TODAS las tiendas de la semana? Se respetan las correcciones manuales.')) return;
+  const r = await fetch(API + '/api/gondola/procesar', { method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({negocio: negocioActual, rol: usuario.rol, forzar: !!forzar, tienda: tienda || ''}) });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) { toast(d.error || 'Error', 'err'); return; }
+  toast(d.encolados ? d.encolados + ' tienda(s) en cola' : 'No hay tiendas pendientes', 'ok');
+  cargarGondolaAdmin();
+}
+async function abrirGondolaTienda(tienda) {
+  const d = await (await fetch(API + '/api/gondola/detalle?negocio=' + negocioActual + '&tienda=' + encodeURIComponent(tienda))).json();
+  if (!d.ok) { toast(d.error || 'Error', 'err'); return; }
+  document.getElementById('ga-modal')?.remove();
+  const fondo = document.createElement('div'); fondo.id = 'ga-modal';
+  fondo.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:3000;display:flex;align-items:center;justify-content:center;padding:12px;';
+  const caja = document.createElement('div');
+  caja.style.cssText = 'background:var(--korax-surface);color:var(--text);border-radius:16px;width:100%;max-width:1100px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;';
+  caja.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--borde);">
+      <div style="flex:1;"><div class="g-tit" id="gam-tit"></div><div class="g-nota" id="gam-sub"></div></div>
+      <button class="btn btn-gris" style="width:auto;padding:6px 12px;font-size:12px;" id="gam-re">↻ Analizar de nuevo</button>
+      <button class="btn btn-gris" style="width:auto;padding:6px 12px;" id="gam-x">✕</button></div>
+    <div class="gam-cuerpo"><div class="gam-fotos"><img id="gam-grande" alt=""><div class="gam-miniaturas" id="gam-min"></div></div>
+      <div class="gam-prods" id="gam-prods"></div></div>`;
+  fondo.appendChild(caja); document.body.appendChild(fondo);
+  const cerrar = () => { fondo.remove(); cargarGondolaAdmin(); };
+  caja.querySelector('#gam-x').onclick = cerrar;
+  fondo.onclick = e => { if (e.target === fondo) cerrar(); };
+  caja.querySelector('#gam-re').onclick = () => { gaProcesar(true, tienda); cerrar(); };
+  caja.querySelector('#gam-tit').textContent = tienda;
+  caja.querySelector('#gam-sub').textContent = `${d.fotos.length} foto(s) · ${d.usuario || '—'}` + (d.modelo ? ` · ${d.modelo.replace('claude-', '')} · US$${d.costo_usd}` : '') + (d.observaciones ? ' · ' + d.observaciones : '') + (d.error ? ' · ' + d.error : '');
+  const cache = {};
+  const verFoto = async n => {
+    const fid = d.fotos[n - 1]; if (!fid) return;
+    caja.querySelectorAll('.gam-mini').forEach((m, i) => m.classList.toggle('on', i === n - 1));
+    if (!cache[fid]) cache[fid] = (await (await fetch(API + '/api/gondola/foto/' + fid)).json()).foto_b64;
+    caja.querySelector('#gam-grande').src = 'data:image/jpeg;base64,' + cache[fid];
+  };
+  const minis = caja.querySelector('#gam-min');
+  d.fotos.forEach((fid, i) => { const b = document.createElement('button'); b.className = 'gam-mini'; b.textContent = i + 1; b.onclick = () => verFoto(i + 1); minis.appendChild(b); });
+  const prods = caja.querySelector('#gam-prods');
+  const ICON = {presente: '✅', dudoso: '⚠️', ausente: '❌', pendiente: '⏳'};
+  const orden = {ausente: 0, dudoso: 1, pendiente: 2, presente: 3};
+  [...d.productos].sort((a, b) => orden[a.estado] - orden[b.estado]).forEach(p => {
+    const f = document.createElement('div'); f.className = 'g-fila g-' + p.estado;
+    f.innerHTML = `<div class="g-ic"></div><div style="flex:1;min-width:0;"><span class="g-cod"></span><div class="g-nom"></div><div class="g-nota"></div>
+      <div class="ga-botones"><button data-e="presente">✅ Está</button><button data-e="dudoso">⚠️ Dudoso</button><button data-e="ausente">❌ No está</button></div></div>
+      <div class="g-der"><div class="cant"></div><small></small></div>`;
+    f.querySelector('.g-ic').textContent = ICON[p.estado] || '⏳';
+    if (p.item_nbr) f.querySelector('.g-cod').textContent = '#' + p.item_nbr;
+    f.querySelector('.g-nom').textContent = p.producto;
+    const com = (d.comentarios || {})[p.producto];
+    f.querySelector('.g-nota').textContent = [p.foto ? 'Foto ' + p.foto : '', p.nota, p.manual ? '(corregido)' : '', com ? 'Display: ' + com : ''].filter(Boolean).join(' · ');
+    const c = f.querySelector('.cant'); c.textContent = p.cantidad; if (p.cantidad <= 0) c.classList.add('cero');
+    f.querySelector('small').textContent = p.frentes ? p.frentes + ' frente' + (p.frentes === 1 ? '' : 's') : '';
+    f.querySelectorAll('.ga-botones button').forEach(b => {
+      b.classList.toggle('on', b.dataset.e === p.estado);
+      b.onclick = async ev => {
+        ev.stopPropagation();
+        const r = await fetch(API + '/api/gondola/corregir', { method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({negocio: negocioActual, tienda, producto: p.producto, estado: b.dataset.e, rol: usuario.rol}) });
+        const x = await r.json().catch(() => ({}));
+        if (!x.ok) { toast(x.error || 'Error', 'err'); return; }
+        abrirGondolaTienda(tienda);
+      };
+    });
+    if (p.foto) f.style.cursor = 'pointer', f.onclick = () => verFoto(p.foto);
+    prods.appendChild(f);
+  });
+  verFoto((d.productos.find(p => p.foto) || {}).foto || 1);
 }
 
 // --- LIQUIDACIÓN ---
@@ -4620,7 +4740,7 @@ function invInitDropZone(zona) {
   function init() { invInitDropZone('wm'); invInitDropZone('am'); }
   document.addEventListener('DOMContentLoaded', init);
   const orig = window.cambiarTab;
-  window.cambiarTab = function(id, btn) { orig && orig(id, btn); if (id === 'tab-inventario') { init(); cargarHistorialInv(); cargarProductosNeg(); } };
+  window.cambiarTab = function(id, btn) { orig && orig(id, btn); if (id === 'tab-inventario') { init(); cargarHistorialInv(); cargarProductosNeg(); } if (id === 'tab-ia') cargarGondolaAdmin(); };
 })();
 
 async function actualizarInventario() {
