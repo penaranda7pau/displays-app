@@ -101,7 +101,7 @@ class Usuario(db.Model):
 
 class Config(db.Model):
     clave = db.Column(db.String(120), primary_key=True)
-    valor = db.Column(db.String(100))
+    valor = db.Column(db.Text)   # JSON largos: productos desactivados, registro de fotos, etc.
 
 class Negocio(db.Model):
     """Cliente de la app. Se crea/edita desde Sistema → Negocios (superadmin)."""
@@ -313,6 +313,7 @@ def _migrar_negocio():
         if db.engine.dialect.name == "postgresql":
             try:
                 conn.execute(db.text("ALTER TABLE config ALTER COLUMN clave TYPE VARCHAR(120)"))
+                conn.execute(db.text("ALTER TABLE config ALTER COLUMN valor TYPE TEXT"))
                 conn.commit()
             except Exception:
                 conn.rollback()
