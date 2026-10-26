@@ -621,6 +621,75 @@ def presencia_lista():
     lista.sort(key=lambda x: (x["rol"] != "display", x["nombre"].lower()))
     return jsonify({"en_linea": len(lista), "usuarios": lista})
 
+# ── FOTOS QUE EL CELULAR NO PUEDE ABRIR: el servidor las convierte (HEIC/HEIF, muy pesadas, etc.) ──
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except Exception:   # sin la librería igual convierte JPG/PNG/WebP pesados
+    pass
+
+_LOG_FOTOS_CLAVE = "log_fotos"
+
+def _log_foto(d):
+    """Guarda los últimos 200 eventos de fotos con problema (para diagnosticar sin pedir capturas)."""
+    app.logger.warning("FOTO %s", json.dumps(d, ensure_ascii=False)[:500])
+    try:
+        cfg = db.session.get(Config, _LOG_FOTOS_CLAVE)
+        lista = json.loads(cfg.valor) if cfg and cfg.valor else []
+        lista = (lista + [d])[-200:]
+        if not cfg:
+            cfg = Config(clave=_LOG_FOTOS_CLAVE, valor="")
+            db.session.add(cfg)
+        cfg.valor = json.dumps(lista, ensure_ascii=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+@app.route("/api/foto/convertir", methods=["POST"])
+def foto_convertir():
+    f = request.files.get("foto")
+    info = {k: (request.form.get(k) or "")[:200] for k in ("usuario", "negocio", "tienda", "ua", "motivo")}
+    if not f:
+        return jsonify({"ok": False, "error": "No llegó la foto"}), 400
+    raw = f.read()
+    info.update({"fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "etapa": "servidor",
+                 "tipo": f.mimetype or "", "nombre": (f.filename or "")[-40:], "mb": round(len(raw) / 1048576, 2)})
+    try:
+        from PIL import Image, ImageOps
+        Image.MAX_IMAGE_PIXELS = 250_000_000          # hasta ~250 MP (celulares de 200 MP)
+        img = Image.open(io.BytesIO(raw))
+        info["formato"] = img.format or ""
+        info["px"] = f"{img.width}x{img.height}"
+        img.draft("RGB", (2400, 2400))                 # JPG grande: decodifica ya reducido (menos memoria)
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        lado = max(400, min(int(request.form.get("max") or 1200), 2000))
+        img.thumbnail((lado, lado))
+        out = io.BytesIO()
+        img.save(out, "JPEG", quality=82, optimize=True)
+        del raw, img
+        info["resultado"] = "convertida"
+        _log_foto(info)
+        return jsonify({"ok": True, "foto_b64": base64.b64encode(out.getvalue()).decode()})
+    except Exception as e:
+        info["resultado"] = f"error: {type(e).__name__}: {str(e)[:120]}"
+        _log_foto(info)
+        return jsonify({"ok": False, "error": "El servidor tampoco pudo leer esa foto", "detalle": info["resultado"]}), 422
+
+@app.route("/api/foto/log", methods=["POST"])
+def foto_log():
+    d = request.get_json(silent=True) or {}
+    d = {k: str(v)[:200] for k, v in d.items() if k in ("usuario", "negocio", "tienda", "ua", "motivo", "tipo", "mb", "nombre", "etapa", "resultado")}
+    d["fecha"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _log_foto(d)
+    return jsonify({"ok": True})
+
+@app.route("/api/foto/log")
+def foto_log_ver():
+    if request.args.get("solicitante_rol") != "superadmin":
+        return jsonify({"error": "No autorizado"}), 403
+    cfg = db.session.get(Config, _LOG_FOTOS_CLAVE)
+    return jsonify(json.loads(cfg.valor) if cfg and cfg.valor else [])
+
 @app.route("/api/semana-activa")
 def get_semana_activa():
     negocio = request.args.get("negocio", "mundo_vegano")

@@ -2166,9 +2166,29 @@ async function cargarLiquidacionExistente(tienda, tipo) {
 }
 // --- FIN LIQUIDACIÓN ---
 
+// Lee la foto en el celular; si no puede (HEIC, muy pesada, etc.) la manda al servidor para convertirla.
+// Cada problema queda registrado (tipo, peso, navegador) para diagnosticar sin pedir capturas.
+function _diagFoto(file) {
+  const mb = file && file.size ? (file.size / 1048576).toFixed(1) : '0';
+  return { tipo: (file && file.type) || 'desconocido', mb, nombre: ((file && file.name) || '').slice(-40) };
+}
+function _logFoto(file, motivo, resultado) {
+  try {
+    const d = _diagFoto(file);
+    fetch(API + '/api/foto/log', { method: 'POST', headers: {'Content-Type': 'application/json'}, keepalive: true,
+      body: JSON.stringify(Object.assign(d, { motivo, resultado, etapa: 'celular', ua: navigator.userAgent,
+        usuario: (typeof usuario !== 'undefined' && usuario) ? (usuario.nombre || usuario.usuario || '') : '',
+        negocio: typeof negocioActual !== 'undefined' ? negocioActual : '', tienda: typeof tiendaActual !== 'undefined' ? tiendaActual : '' })) });
+  } catch (e) {}
+}
 function comprimirFoto(file, maxPx, calidad, callback, onError) {
   const fallo = msg => { if (onError) onError(msg); else toast(msg, 'err'); };
-  if (!file || !file.size) { fallo('La foto llegó vacía (puede estar solo en la nube). Abrila primero en Google Fotos para que se descargue, o usá Cámara.'); return; }
+  const d = _diagFoto(file);
+  if (!file || !file.size) {
+    _logFoto(file, 'vacia', 'error');
+    fallo('La foto llegó vacía (puede estar solo en la nube). Abrila primero en Google Fotos para que se descargue, o usá Cámara.');
+    return;
+  }
   const dibujar = (src, w0, h0, liberar) => {
     let w = w0, h = h0;
     if (w > maxPx || h > maxPx) {
@@ -2181,19 +2201,45 @@ function comprimirFoto(file, maxPx, calidad, callback, onError) {
     const url = canvas.toDataURL('image/jpeg', calidad);
     canvas.width = 0; canvas.height = 0;
     if (liberar) liberar();
-    if (!url || url.length < 1000) { fallo('No se pudo procesar la foto. Probá de nuevo o usá Cámara.'); return; }
-    callback(url);
+    if (!url || url.length < 1000) return false;
+    callback(url); return true;
   };
-  const conImg = () => {
+  // 3) último recurso: el servidor convierte (HEIC/HEIF, fotos enormes, formatos raros)
+  const enServidor = motivo => {
+    const fd = new FormData();
+    fd.append('foto', file); fd.append('max', String(maxPx)); fd.append('motivo', motivo); fd.append('ua', navigator.userAgent);
+    try {
+      fd.append('usuario', (typeof usuario !== 'undefined' && usuario) ? (usuario.nombre || usuario.usuario || '') : '');
+      fd.append('negocio', typeof negocioActual !== 'undefined' ? negocioActual : '');
+      fd.append('tienda', typeof tiendaActual !== 'undefined' ? tiendaActual : '');
+    } catch (e) {}
+    fetch(API + '/api/foto/convertir', { method: 'POST', body: fd })
+      .then(r => r.json().catch(() => ({ ok: false })))
+      .then(r => {
+        if (r.ok && r.foto_b64) callback('data:image/jpeg;base64,' + r.foto_b64);
+        else fallo(`No se pudo leer esa foto (${d.tipo}, ${d.mb} MB). Probá con Cámara o elegí otra foto.`);
+      })
+      .catch(() => { _logFoto(file, motivo, 'sin conexion'); fallo(`No se pudo leer esa foto y no hay señal para convertirla (${d.tipo}, ${d.mb} MB). Probá con Cámara.`); });
+  };
+  // 2) <img> normal
+  const conImg = motivo => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); dibujar(img, img.naturalWidth || img.width, img.naturalHeight || img.height); };
-    img.onerror = () => { URL.revokeObjectURL(url); fallo('No se pudo leer esa foto (formato no compatible o muy pesada). Probá con Cámara o elegí otra foto.'); };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      if (!dibujar(img, img.naturalWidth || img.width, img.naturalHeight || img.height)) enServidor(motivo + '+canvas');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); enServidor(motivo + '+img'); };
     img.src = url;
   };
+  if (/hei[cf]/i.test(d.tipo) || /\.hei[cf]$/i.test(d.nombre)) { enServidor('heic'); return; }
+  // 1) createImageBitmap; si la foto es pesada, se decodifica ya reducida (mucho menos memoria)
   if (window.createImageBitmap) {
-    createImageBitmap(file).then(bmp => dibujar(bmp, bmp.width, bmp.height, () => bmp.close && bmp.close())).catch(conImg);
-  } else conImg();
+    const opts = file.size > 2 * 1048576 ? { resizeWidth: maxPx, resizeQuality: 'high' } : undefined;
+    (opts ? createImageBitmap(file, opts) : createImageBitmap(file))
+      .then(bmp => { if (!dibujar(bmp, bmp.width, bmp.height, () => bmp.close && bmp.close())) conImg('bitmap'); })
+      .catch(() => conImg('bitmap'));
+  } else conImg('sin-bitmap');
 }
 
 function _procesarArchivoFoto(file, i) {

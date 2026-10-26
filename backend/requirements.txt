@@ -6,3 +6,5 @@ gunicorn
 flask-sqlalchemy
 pg8000
 anthropic
+pillow
+pillow-heif==1.8.1
