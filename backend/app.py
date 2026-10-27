@@ -1842,11 +1842,17 @@ def _hoja_xl(wb, nombre, titulo, subtitulo, cols, filas, anchos_extra=None):
         ancho = (anchos_extra or {}).get(cid) or CAMPOS_EXCEL.get(cid, ("", 14))[1]
         ws.column_dimensions[get_column_letter(i)].width = ancho
     ws.row_dimensions[4].height = 30
+    from copy import copy
+    estilos = {}   # cada combinación de estilo se arma una vez y se copia (openpyxl es muy lento armándolo celda por celda)
     for r, fila in enumerate(filas, 5):
         cebra = PatternFill("solid", fgColor=_XL["cebra"] if r % 2 == 0 else "FFFFFF")
         for i, (cid, _) in enumerate(cols, 1):
             v = fila.get(cid, "")
             c = ws.cell(r, i, v)
+            clave = (r % 2, cid, isinstance(v, (int, float)), _estilo_valor(cid, v))
+            if clave in estilos:
+                c._style = copy(estilos[clave])
+                continue
             c.border = caja
             c.font = Font(size=10, color=_XL["texto"])
             c.fill = cebra
@@ -1859,6 +1865,7 @@ def _hoja_xl(wb, nombre, titulo, subtitulo, cols, filas, anchos_extra=None):
             if st:
                 c.fill = PatternFill("solid", fgColor=st[0])
                 c.font = Font(size=10, color=st[1], bold=st[2])
+            estilos[clave] = copy(c._style)
     ws.freeze_panes = "A5"
     if cols:
         ws.auto_filter.ref = f"A4:{get_column_letter(len(cols))}{max(4, 4 + len(filas))}"
@@ -1964,16 +1971,18 @@ def _excel_cierre(negocio, c, vista_previa=False):
 
     # Historial: semanas anteriores (de la base) + la que se cierra (en memoria)
     matriz = {}
-    for d in Diferencia.query.filter(Diferencia.negocio == negocio, Diferencia.semana != semana).order_by(Diferencia.semana).all():
-        m = matriz.setdefault((d.tienda, d.producto), {})
-        if d.estado != "OK": m[d.semana] = 1
-        elif d.semana not in m: m[d.semana] = 0
+    # solo las columnas necesarias (el historial crece cada semana: no se cargan objetos completos)
+    for t, p, sem_d, est in (db.session.query(Diferencia.tienda, Diferencia.producto, Diferencia.semana, Diferencia.estado)
+                             .filter(Diferencia.negocio == negocio, Diferencia.semana != semana).order_by(Diferencia.semana)):
+        m = matriz.setdefault((t, p), {})
+        if est != "OK": m[sem_d] = 1
+        elif sem_d not in m: m[sem_d] = 0
     for d in difs:
         m = matriz.setdefault((d["tienda"], d["producto"]), {})
         m[semana] = 1 if d["estado"] != "OK" else m.get(semana, 0)
     semanas_arch = sorted({s for m in matriz.values() for s in m if re.match(r"^\d{4}-S\d{2}$", s or "")})   # sin códigos inválidos
-    stock_act = {(i.tienda, i.producto): i.cantidad for i in Inventario.query.filter_by(negocio=negocio).all()
-                 if i.producto not in c["inactivos"]}
+    stock_act = {(t, p): q for t, p, q in db.session.query(Inventario.tienda, Inventario.producto, Inventario.cantidad)
+                 .filter_by(negocio=negocio) if p not in c["inactivos"]}
     coment = {k: r.comentario for k, r in mapa.items() if r.comentario}
     hist = []
     for (t, p), m in matriz.items():
@@ -2007,19 +2016,28 @@ def _excel_cierre(negocio, c, vista_previa=False):
                         _total=f["_total"]) for f in filas]
         ws = _hoja_xl(wb, nombre, titulo, subtitulo(g, filas), todas, filas_x,
                       anchos_extra={**{k: 13 for k, _ in sem_cols}, "_total": 8})
+        from copy import copy
         uno, cero, vacio = PatternFill("solid", fgColor=_XL["rojo"][0]), PatternFill("solid", fgColor=_XL["verde"][0]), PatternFill("solid", fgColor=_XL["gris"])
+        estilos = {}
+        def estilo(cel, clave, aplicar):
+            if clave in estilos:
+                cel._style = copy(estilos[clave]); return
+            aplicar(cel); estilos[clave] = copy(cel._style)
+        def semana(cel, v):
+            cel.alignment = Alignment(horizontal="center", vertical="center")
+            if v == 1: cel.fill, cel.font = uno, Font(bold=True, size=10, color=_XL["rojo"][1])
+            elif v == 0: cel.fill, cel.font = cero, Font(bold=True, size=10, color=_XL["verde"][1])
+            else: cel.fill = vacio
+        def total(cel, alto):
+            cel.alignment = Alignment(horizontal="center", vertical="center")
+            cel.font = Font(bold=True, size=10, color="FFFFFF" if alto else _XL["texto"])
+            if alto:
+                cel.fill = PatternFill("solid", fgColor="B91C1C")
         for r, f in enumerate(filas_x, 5):
             for i, v in enumerate(f["_vals"]):
-                cel = ws.cell(r, len(lead) + 1 + i)
-                cel.alignment = Alignment(horizontal="center", vertical="center")
-                if v == 1: cel.fill, cel.font = uno, Font(bold=True, size=10, color=_XL["rojo"][1])
-                elif v == 0: cel.fill, cel.font = cero, Font(bold=True, size=10, color=_XL["verde"][1])
-                else: cel.fill = vacio
-            ct = ws.cell(r, len(lead) + len(sem_cols) + 1)
-            ct.alignment = Alignment(horizontal="center", vertical="center")
-            ct.font = Font(bold=True, size=10, color="FFFFFF" if f["_total"] >= 3 else _XL["texto"])
-            if f["_total"] >= 3:
-                ct.fill = PatternFill("solid", fgColor="B91C1C")
+                estilo(ws.cell(r, len(lead) + 1 + i), ("s", v, r % 2), lambda cel, v=v: semana(cel, v))
+            alto = f["_total"] >= 3
+            estilo(ws.cell(r, len(lead) + len(sem_cols) + 1), ("t", alto, r % 2), lambda cel, alto=alto: total(cel, alto))
 
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
