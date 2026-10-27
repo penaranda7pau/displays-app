@@ -841,9 +841,11 @@ def analizar_inventario_negocio():
     res = _resumen_tiendas(tiendas)
     res["productos"] = len({r["producto"] for r in registros})
     lista = {}
-    for r in registros:   # para armar las categorías antes de guardar el negocio
-        lista.setdefault(r["producto"], r.get("item_nbr") or "")
-    res["lista_productos"] = [{"producto": p, "item_nbr": i} for p, i in sorted(lista.items())]
+    for r in registros:   # productos y sus códigos, para validarlos y armar categorías antes de guardar el negocio
+        cods = lista.setdefault(r["producto"], {})
+        if r.get("item_nbr"):
+            cods[r["item_nbr"]] = cods.get(r["item_nbr"], 0) + 1
+    res["lista_productos"] = [{"producto": p, "codigos": _lista_codigos(c)} for p, c in sorted(lista.items())]
     res["registros"] = len(registros)
     return jsonify(res)
 
@@ -1398,16 +1400,49 @@ def productos_negocio():
     negocio = request.args.get("negocio", "mundo_vegano")
     inactivos = productos_inactivos(negocio)
     habilitada = filtro_tiendas(negocio)   # sin cadenas desactivadas (ej. Vindi) ni tiendas quitadas
-    cat = {}
+    elegidos = codigos_elegidos(negocio)
+    cat, vistos = {}, {}
     for t, p, item in (db.session.query(Inventario.tienda, Inventario.producto, Inventario.item_nbr)
                        .filter_by(negocio=negocio).all()):
         if not habilitada(t):
             continue
         x = cat.setdefault(p, {"producto": p, "item_nbr": "", "tiendas": 0, "activo": p not in inactivos})
         x["tiendas"] += 1
-        x["item_nbr"] = x["item_nbr"] or (item or "")
+        if item:
+            c = vistos.setdefault(p, {})
+            c[item] = c.get(item, 0) + 1
+    for p, x in cat.items():
+        x["codigos"] = _lista_codigos(vistos.get(p, {}))
+        x["elegido"] = elegidos.get(p, "")
+        x["item_nbr"] = x["elegido"] or (x["codigos"][0]["codigo"] if x["codigos"] else "")
     # los desactivados que ya no vienen en el inventario no se muestran, pero siguen desactivados si vuelven
     return jsonify(sorted(cat.values(), key=lambda x: (x["activo"], x["producto"])))
+
+def codigos_elegidos(negocio):
+    """{producto: código} elegido por el administrador cuando el inventario trae dos códigos (viejo y nuevo)."""
+    cfg = db.session.get(Config, f"{negocio}:codigos")
+    try:
+        return json.loads(cfg.valor) if cfg and cfg.valor else {}
+    except Exception:
+        return {}
+
+def _lista_codigos(cuenta):
+    return [{"codigo": c, "tiendas": n} for c, n in sorted(cuenta.items(), key=lambda x: -x[1])]
+
+@app.route("/api/codigos", methods=["POST"])
+def guardar_codigos():
+    d = request.get_json(silent=True) or {}
+    if d.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    negocio = d.get("negocio")
+    if negocio not in slugs_negocios():
+        return jsonify({"ok": False, "error": "Negocio inválido"}), 400
+    cods = {str(p): str(c).strip()[:50] for p, c in (d.get("codigos") or {}).items() if str(c).strip()}
+    clave = f"{negocio}:codigos"
+    cfg = db.session.get(Config, clave) or Config(clave=clave)
+    cfg.valor = json.dumps(cods, ensure_ascii=False)
+    db.session.add(cfg); db.session.commit()
+    return jsonify({"ok": True})
 
 @app.route("/api/productos-negocio", methods=["POST"])
 def activar_producto():
@@ -1482,9 +1517,10 @@ def productos(tienda):
     if request.args.get("categoria"):
         cats = categorias_de(negocio)
         rows = [r for r in rows if categoria_de(cats, r.producto) == request.args["categoria"]]
+    elegidos = codigos_elegidos(negocio)
     return jsonify([{"nombre": r.producto, "cantidad": r.cantidad,
                      "nombre_empaque": r.nombre_empaque or r.producto,
-                     "item_nbr": r.item_nbr or ""} for r in rows])
+                     "item_nbr": elegidos.get(r.producto) or r.item_nbr or ""} for r in rows])
 
 @app.route("/api/sync", methods=["POST"])
 def sync_inventario():
@@ -2910,10 +2946,11 @@ def gondola_detalle():
     if not gt:
         return jsonify({"ok": False, "error": "Sin datos"}), 404
     inv = {p.producto: p for p in _productos_tienda(negocio, tienda, cat)}
+    elegidos = codigos_elegidos(negocio)
     res = json.loads(gt.resultado or "[]") or [{"producto": k, "estado": "pendiente", "foto": 0, "frentes": 0, "nota": "", "manual": False} for k in inv]
     for x in res:
         p = inv.get(x["producto"])
-        x["item_nbr"], x["cantidad"] = (p.item_nbr or "", p.cantidad) if p else ("", 0)
+        x["item_nbr"], x["cantidad"] = (elegidos.get(x["producto"]) or p.item_nbr or "", p.cantidad) if p else ("", 0)
     return jsonify({"ok": True, "tienda": tienda, "categoria": cat, "estado": gt.estado, "fotos": _fotos_gt(gt), "productos": res,
                     "comentarios": json.loads(gt.comentarios or "{}"), "observaciones": gt.observaciones or "",
                     "modelo": gt.modelo or "", "costo_usd": round(gt.costo_usd or 0, 4), "usuario": gt.usuario or "", "error": gt.error or ""})

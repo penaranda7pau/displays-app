@@ -502,6 +502,14 @@
   .cat-item:hover { background: var(--korax-gray-1); }
   .cat-item small { color: var(--muted); }
   .cat-cab input, .cat-item input { width: 16px; height: 16px; accent-color: var(--korax-mid); flex: none; }
+  .np-lista { max-height: 320px; overflow: auto; border: 1px solid var(--borde); border-radius: 12px; background: var(--korax-surface); }
+  .np-fila { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--borde); font-size: 12px; }
+  .np-fila.doble { background: rgba(232,168,56,.10); } .np-fila.ok { background: rgba(34,197,94,.07); }
+  .np-fila .nm { flex: 1; min-width: 0; font-weight: 600; }
+  .np-cods { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+  .np-cod { border: 1px solid var(--borde); background: var(--korax-surface); border-radius: 999px; padding: 3px 9px; font-size: 11px; cursor: pointer; font-family: inherit; color: var(--text); }
+  .np-cod.on { background: var(--korax-mid); color: #fff; border-color: var(--korax-mid); font-weight: 700; }
+  .np-uno { font-size: 11px; color: var(--muted); }
   .nc-cat { border: 1px solid var(--borde); border-radius: 12px; margin-bottom: 8px; background: var(--korax-surface); }
   .nc-cab { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; font-weight: 700; font-size: 13px; }
   .nc-cab .fl { color: var(--muted); width: 12px; }
@@ -1293,9 +1301,17 @@
           </div>
           <div class="neg-hint">⇄ pasa la tienda al otro cuadro · ✕ la quita (no se visita). Las rurales vienen marcadas de fábrica según la memoria de la app.</div>
           <div class="quitadas" id="neg-quitadas"></div>
+
+          <div class="neg-paso"><span class="num">4</span>Productos validados <span class="neg-hint" style="margin:0;font-weight:500;" id="np-resumen"></span></div>
+          <div class="neg-hint" style="margin:0 0 6px;">Revisá nombres y códigos. Si un producto viene con dos códigos (viejo y nuevo), tocá el que se va a usar: ese es el que ven los displays y el panel. Podés cambiarlo cuando cambie el código.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+            <input id="np-buscar" class="ug-in" style="flex:1;min-width:180px;padding:7px 10px;" placeholder="Buscar producto o código..." oninput="npPintar()">
+            <label class="nc-op" style="cursor:pointer;"><input type="checkbox" id="np-dobles" onchange="npPintar()" style="width:16px;height:16px;accent-color:var(--korax-mid);"> Solo los que tienen dos códigos</label>
+          </div>
+          <div id="np-lista" class="np-lista"></div>
         </div>
 
-        <div class="neg-paso">Modo de captura de los displays</div>
+        <div class="neg-paso"><span class="num">5</span>Modo de captura de los displays</div>
         <select id="neg-modo" class="ug-in" style="width:100%;margin-bottom:6px;" onchange="ncMostrar()">
           <option value="producto">Una foto por producto (como hasta ahora)</option>
           <option value="gondola">Fotos de la góndola completa: la IA detecta los productos</option>
@@ -1310,7 +1326,7 @@
           <div class="neg-hint" id="nc-resumen" style="margin:0 0 8px;"></div>
           <div id="nc-lista"></div>
         </div>
-        <div class="neg-paso"><span class="num" id="neg-paso-prompt-num">4</span>Prompt de la IA <span class="neg-hint" style="margin:0;font-weight:500;" id="neg-prompt-info"></span></div>
+        <div class="neg-paso"><span class="num" id="neg-paso-prompt-num">6</span>Prompt de la IA <span class="neg-hint" style="margin:0;font-weight:500;" id="neg-prompt-info"></span></div>
         <div class="neg-hint" style="margin:0 0 6px;">Lo que lee la IA para validar cada foto de este negocio. <b>{producto}</b> se reemplaza por el producto a revisar. No cambies las 3 líneas finales (ESTADO / CONFIANZA / MOTIVO).</div>
         <textarea id="neg-prompt" class="neg-prompt" spellcheck="false" oninput="infoPrompt()"></textarea>
         <button class="btn btn-gris" style="width:auto;padding:6px 12px;font-size:12px;margin-top:6px;" onclick="restaurarPrompt()">↺ Restaurar el prompt original</button>
@@ -3954,9 +3970,13 @@ async function analizarInventarioNegocio() {
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { est.textContent = d.error || ('Error ' + r.status); return; }
   est.textContent = `✓ ${d.tiendas.length} tiendas · ${d.productos} productos · ${d.rurales_sugeridas.length} rurales detectadas`;
-  (d.lista_productos || []).forEach(p => { if (!_nc.prods.some(x => x.producto === p.producto)) _nc.prods.push(p); });
+  (d.lista_productos || []).forEach(p => {
+    const x = _nc.prods.find(y => y.producto === p.producto);
+    if (!x) { _nc.prods.push(p); return; }
+    p.codigos.forEach(c => { if (!x.codigos.some(k => k.codigo === c.codigo)) x.codigos.push(c); });   // un código nuevo aparece junto al viejo
+  });
   _nc.prods.sort((a, b) => a.producto.localeCompare(b.producto));
-  ncPintar();
+  ncPintar(); npPintar();
   // Si se está editando, conservar lo que ya estaba marcado como rural/quitado
   const editando = !!document.getElementById('neg-slug').value;
   _negCargarResumen(d,
@@ -3966,19 +3986,62 @@ async function analizarInventarioNegocio() {
 }
 
 // ── Categorías dentro del formulario del negocio: cada producto puede estar en UNA sola categoría ──
-let _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false};
+let _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false, cod: {}, codCambio: false};
 async function ncCargar(slug) {
-  _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false};
-  ncMostrar();
+  _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false, cod: {}, codCambio: false};
+  ncMostrar(); npPintar();
   if (!slug) return;
   try {
     const [rc, rp] = await Promise.all([fetch(API + '/api/categorias?negocio=' + encodeURIComponent(slug)),
                                         fetch(API + '/api/productos-negocio?negocio=' + encodeURIComponent(slug))]);
     _nc.cats = await rc.json();
-    _nc.prods = (await rp.json()).filter(p => p.activo).map(p => ({producto: p.producto, item_nbr: p.item_nbr}))
-                                 .sort((a, b) => a.producto.localeCompare(b.producto));
+    const prods = (await rp.json()).filter(p => p.activo);
+    _nc.prods = prods.map(p => ({producto: p.producto, codigos: p.codigos || []})).sort((a, b) => a.producto.localeCompare(b.producto));
+    prods.forEach(p => { if (p.elegido) _nc.cod[p.producto] = p.elegido; });
   } catch (e) {}
-  ncPintar();
+  ncPintar(); npPintar();
+}
+// código que se usa: el elegido, o el que traen más tiendas
+function ncCodigo(p) { return _nc.cod[p.producto] || ((p.codigos || [])[0] || {}).codigo || ''; }
+function npPintar() {
+  const cont = document.getElementById('np-lista');
+  if (!cont) return;
+  const dobles = _nc.prods.filter(p => (p.codigos || []).length > 1);
+  const pend = dobles.filter(p => !_nc.cod[p.producto]).length;
+  document.getElementById('np-resumen').textContent = _nc.prods.length
+    ? `· ${_nc.prods.length} productos` + (dobles.length ? ` · ${dobles.length} con dos códigos` + (pend ? ` (${pend} sin elegir)` : ' ✓') : '') : '';
+  const q = (document.getElementById('np-buscar').value || '').trim().toLowerCase();
+  const solo = document.getElementById('np-dobles').checked;
+  const lista = _nc.prods.filter(p => (!solo || (p.codigos || []).length > 1)
+    && (!q || p.producto.toLowerCase().includes(q) || (p.codigos || []).some(c => String(c.codigo).includes(q))));
+  const scroll = cont.scrollTop;
+  cont.innerHTML = lista.length ? '' : `<div class="neg-hint" style="padding:10px;">${_nc.prods.length ? 'Sin productos para mostrar' : 'Subí el inventario y presioná "Leer inventario" para ver los productos.'}</div>`;
+  lista.forEach(p => {
+    const cods = p.codigos || [];
+    const f = document.createElement('div');
+    f.className = 'np-fila' + (cods.length > 1 ? (_nc.cod[p.producto] ? ' ok' : ' doble') : '');
+    f.innerHTML = '<span class="nm"></span><div class="np-cods"></div>';
+    f.querySelector('.nm').textContent = p.producto;
+    const box = f.querySelector('.np-cods');
+    if (cods.length > 1) {
+      cods.forEach(c => {
+        const b = document.createElement('button'); b.type = 'button';
+        b.className = 'np-cod' + (_nc.cod[p.producto] === c.codigo ? ' on' : '');
+        b.textContent = `#${c.codigo} · ${c.tiendas} tienda${c.tiendas === 1 ? '' : 's'}`;
+        b.title = 'Usar este código';
+        b.onclick = () => {
+          if (_nc.cod[p.producto] === c.codigo) delete _nc.cod[p.producto]; else _nc.cod[p.producto] = c.codigo;
+          _nc.codCambio = true; npPintar(); ncPintar();
+        };
+        box.appendChild(b);
+      });
+    } else {
+      box.innerHTML = '<span class="np-uno"></span>';
+      box.firstChild.textContent = cods.length ? '#' + cods[0].codigo : 'sin código';
+    }
+    cont.appendChild(f);
+  });
+  cont.scrollTop = scroll;
 }
 function ncMostrar() {
   document.getElementById('neg-cats').style.display = document.getElementById('neg-modo').value === 'categoria' ? '' : 'none';
@@ -4017,7 +4080,7 @@ function ncPintar() {
       buscar.value = _nc.buscar || ''; solo.checked = !!_nc.solo;
       const visibles = () => {
         const q = buscar.value.trim().toLowerCase();
-        return _nc.prods.filter(p => (!q || p.producto.toLowerCase().includes(q) || String(p.item_nbr).includes(q))
+        return _nc.prods.filter(p => (!q || p.producto.toLowerCase().includes(q) || ncCodigo(p).includes(q))
           && !(solo.checked && categorias.includes(productos[p.producto]) && productos[p.producto] !== cat));
       };
       const llenar = () => {
@@ -4026,7 +4089,7 @@ function ncPintar() {
           const otra = categorias.includes(productos[p.producto]) && productos[p.producto] !== cat ? productos[p.producto] : '';
           const f = document.createElement('label'); f.className = 'nc-prod' + (otra ? ' otra' : '');
           f.innerHTML = '<input type="checkbox"><span style="flex:1;min-width:0;"><small class="cd"></small> <span class="nm"></span></span><small class="en"></small>';
-          if (p.item_nbr) f.querySelector('.cd').textContent = '#' + p.item_nbr;
+          if (ncCodigo(p)) f.querySelector('.cd').textContent = '#' + ncCodigo(p);
           f.querySelector('.nm').textContent = p.producto;
           if (otra) f.querySelector('.en').textContent = 'en ' + otra;
           const chk = f.querySelector('input');
@@ -4288,6 +4351,13 @@ async function guardarNegocio() {
     const dc = await rc.json().catch(() => ({}));
     if (!dc.ok) { err.textContent = 'El negocio se guardó, pero las categorías no: ' + (dc.error || rc.status); return; }
     _nc.cambio = false;
+  }
+  if (_nc.codCambio) {
+    const rk = await fetch(API + '/api/codigos', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({negocio: d.negocio.slug, rol: usuario.rol, codigos: _nc.cod}) });
+    const dk = await rk.json().catch(() => ({}));
+    if (!dk.ok) { err.textContent = 'El negocio se guardó, pero los códigos no: ' + (dk.error || rk.status); return; }
+    _nc.codCambio = false;
   }
   // Cargar el inventario subido al negocio (mismo proceso que "Actualizar inventario")
   if (wm || am) {
