@@ -161,6 +161,7 @@ class GondolaTienda(db.Model):
     negocio       = db.Column(db.String(50), index=True)
     semana        = db.Column(db.String(20), index=True)
     tienda        = db.Column(db.String(200))
+    categoria     = db.Column(db.String(100), default="")   # "" = toda la tienda (modo góndola); si no, modo por categoría
     usuario       = db.Column(db.String(100))
     estado        = db.Column(db.String(20), default="SIN_FOTOS")   # SIN_FOTOS / PENDIENTE / PROCESANDO / LISTO / ERROR
     comentarios   = db.Column(db.Text)   # JSON {producto: comentario del display}
@@ -346,6 +347,14 @@ def _migrar_negocio():
                 conn.execute(db.text("ALTER TABLE negocio ADD COLUMN IF NOT EXISTS modo_captura VARCHAR(20) DEFAULT 'producto'"))
             else:
                 conn.execute(db.text("ALTER TABLE negocio ADD COLUMN modo_captura VARCHAR(20) DEFAULT 'producto'"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("ALTER TABLE gondola_tienda ADD COLUMN IF NOT EXISTS categoria VARCHAR(100) DEFAULT ''"))
+            else:
+                conn.execute(db.text("ALTER TABLE gondola_tienda ADD COLUMN categoria VARCHAR(100) DEFAULT ''"))
             conn.commit()
         except Exception:
             conn.rollback()
@@ -991,7 +1000,7 @@ def editar_negocio(slug):
         n.prompt = None if p and p == _prompt_por_defecto(n.slug, n.nombre).strip() else p
     if "activo" in data:
         n.activo = bool(data.get("activo"))
-    if data.get("modo_captura") in ("producto", "gondola"):
+    if data.get("modo_captura") in ("producto", "gondola", "categoria"):
         n.modo_captura = data["modo_captura"]
     if data.get("logo"):
         try:
@@ -1419,12 +1428,56 @@ def activar_producto():
     db.session.commit()
     return jsonify({"ok": True, "inactivos": len(inactivos)})
 
+# ── Categorías (modo góndola por categoría): el administrador agrupa los productos y el display fotografía por categoría ──
+SIN_CATEGORIA = "Sin categoría"
+
+def categorias_de(negocio):
+    """{"categorias": [nombres en orden], "productos": {producto: categoría}}. Por nombre, así sobrevive a recargar el inventario."""
+    cfg = db.session.get(Config, f"{negocio}:categorias")
+    try:
+        d = json.loads(cfg.valor) if cfg and cfg.valor else {}
+    except Exception:
+        d = {}
+    return {"categorias": d.get("categorias") or [], "productos": d.get("productos") or {}}
+
+def categoria_de(cats, producto):
+    c = cats["productos"].get(producto)
+    return c if c in cats["categorias"] else SIN_CATEGORIA
+
+@app.route("/api/categorias")
+def ver_categorias():
+    return jsonify(categorias_de(request.args.get("negocio", "")))
+
+@app.route("/api/categorias", methods=["POST"])
+def guardar_categorias():
+    d = request.get_json(silent=True) or {}
+    if d.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    negocio = d.get("negocio")
+    if negocio not in slugs_negocios():
+        return jsonify({"ok": False, "error": "Negocio inválido"}), 400
+    cats, vistas = [], set()
+    for c in d.get("categorias") or []:
+        c = str(c).strip()[:60]
+        if not c or c.lower() in vistas or c == SIN_CATEGORIA:
+            return jsonify({"ok": False, "error": f"Nombre de categoría inválido o repetido: {c or '(vacío)'}"}), 400
+        vistas.add(c.lower()); cats.append(c)
+    prods = {str(p): c for p, c in (d.get("productos") or {}).items() if c in cats}
+    clave = f"{negocio}:categorias"
+    cfg = db.session.get(Config, clave) or Config(clave=clave)
+    cfg.valor = json.dumps({"categorias": cats, "productos": prods}, ensure_ascii=False)
+    db.session.add(cfg); db.session.commit()
+    return jsonify({"ok": True})
+
 @app.route("/api/productos/<tienda>")
 def productos(tienda):
     negocio = request.args.get("negocio", "mundo_vegano")
     inactivos = productos_inactivos(negocio)
     rows = [r for r in Inventario.query.filter_by(tienda=tienda, negocio=negocio).order_by(Inventario.cantidad.desc()).all()
             if r.producto not in inactivos]
+    if request.args.get("categoria"):
+        cats = categorias_de(negocio)
+        rows = [r for r in rows if categoria_de(cats, r.producto) == request.args["categoria"]]
     return jsonify([{"nombre": r.producto, "cantidad": r.cantidad,
                      "nombre_empaque": r.nombre_empaque or r.producto,
                      "item_nbr": r.item_nbr or ""} for r in rows])
@@ -2535,6 +2588,7 @@ def eliminar_reporte(reporte_id):
 
 # ── MODO GÓNDOLA: el display sube hasta 20 fotos por tienda; el administrador procesa con IA y revisa ──
 MAX_FOTOS_GONDOLA = 20
+MAX_FOTOS_CATEGORIA = 10
 MODELOS_GONDOLA = {   # USD por millón de tokens (entrada, salida)
     "claude-haiku-5-5": ("Haiku 5.5 (económico)", 0.10, 0.50),
     "claude-sonnet-5-5": ("Sonnet 5.5 (intermedio)", 2.0, 10.0),
@@ -2581,17 +2635,24 @@ def _sistema_gondola(nombre_negocio, guia):
         + guia.replace("{producto}", "cada producto de la lista")
     )
 
-def _productos_tienda(negocio, tienda):
+def _productos_tienda(negocio, tienda, categoria=""):
     inact = productos_inactivos(negocio)
-    return [i for i in Inventario.query.filter_by(negocio=negocio, tienda=tienda).order_by(Inventario.producto).all()
-            if i.producto not in inact]
+    prods = [i for i in Inventario.query.filter_by(negocio=negocio, tienda=tienda).order_by(Inventario.producto).all()
+             if i.producto not in inact]
+    if categoria:
+        cats = categorias_de(negocio)
+        prods = [i for i in prods if categoria_de(cats, i.producto) == categoria]
+    return prods
 
-def _gt(negocio, semana, tienda, crear=False):
-    gt = GondolaTienda.query.filter_by(negocio=negocio, semana=semana, tienda=tienda).first()
+def _gt(negocio, semana, tienda, crear=False, categoria=""):
+    gt = GondolaTienda.query.filter_by(negocio=negocio, semana=semana, tienda=tienda, categoria=categoria).first()
     if not gt and crear:
-        gt = GondolaTienda(negocio=negocio, semana=semana, tienda=tienda, estado="SIN_FOTOS", comentarios="{}")
+        gt = GondolaTienda(negocio=negocio, semana=semana, tienda=tienda, categoria=categoria, estado="SIN_FOTOS", comentarios="{}")
         db.session.add(gt); db.session.flush()
     return gt
+
+def _max_fotos(categoria):
+    return MAX_FOTOS_CATEGORIA if categoria else MAX_FOTOS_GONDOLA
 
 def _fotos_gt(gt):
     return [fid for (fid,) in db.session.query(FotoGondola.id).filter_by(lote=str(gt.id)).order_by(FotoGondola.id).all()]
@@ -2632,10 +2693,10 @@ def _aplicar_gondola(gt):
 def _analizar_gondola(gt_id):
     import anthropic as _anth
     gt = db.session.get(GondolaTienda, gt_id)
-    prods = _productos_tienda(gt.negocio, gt.tienda)
+    prods = _productos_tienda(gt.negocio, gt.tienda, gt.categoria or "")
     fotos = [f for (f,) in db.session.query(FotoGondola.foto_b64).filter_by(lote=str(gt.id)).order_by(FotoGondola.id).all()]
     if not prods or not fotos:
-        gt.estado, gt.error = "ERROR", ("La tienda no tiene productos en el inventario" if not prods else "No hay fotos")
+        gt.estado, gt.error = "ERROR", (("La categoría" if gt.categoria else "La tienda") + " no tiene productos en el inventario" if not prods else "No hay fotos")
         db.session.commit(); return
     modelo = modelo_gondola(gt.negocio)
     neg = db.session.get(Negocio, gt.negocio)
@@ -2644,7 +2705,8 @@ def _analizar_gondola(gt_id):
         contenido.append({"type": "text", "text": f"Foto {n}:"})
         contenido.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": f.split(",", 1)[-1]}})
     lista = "\n".join(f"- {p.producto}" + (f" (empaque: {p.nombre_empaque})" if p.nombre_empaque and p.nombre_empaque != p.producto else "") for p in prods)
-    contenido.append({"type": "text", "text": f"Tienda: {gt.tienda}\nProductos que deberían estar exhibidos ({len(prods)}):\n{lista}"})
+    cat = f"\nCategoría: {gt.categoria} (las fotos son solo de esta categoría)" if gt.categoria else ""
+    contenido.append({"type": "text", "text": f"Tienda: {gt.tienda}{cat}\nProductos que deberían estar exhibidos ({len(prods)}):\n{lista}"})
     extra = {"output_config": {"effort": "medium", "format": {"type": "json_schema", "schema": ESQUEMA_GONDOLA}}}
     betas = []
     if modelo in CON_FALLBACK:
@@ -2723,8 +2785,9 @@ def _lanzar_workers_gondola(n=2):
 @app.route("/api/gondola/estado")
 def gondola_estado():
     negocio, tienda = request.args.get("negocio"), (request.args.get("tienda") or "").strip()
-    gt = _gt(negocio, semana_captura(negocio), tienda)
-    return jsonify({"fotos": len(_fotos_gt(gt)) if gt else 0, "max": MAX_FOTOS_GONDOLA,
+    cat = (request.args.get("categoria") or "").strip()
+    gt = _gt(negocio, semana_captura(negocio), tienda, categoria=cat)
+    return jsonify({"fotos": len(_fotos_gt(gt)) if gt else 0, "max": _max_fotos(cat),
                     "comentarios": json.loads(gt.comentarios or "{}") if gt else {}})
 
 @app.route("/api/gondola/foto", methods=["POST"])
@@ -2733,10 +2796,10 @@ def gondola_subir_foto():
     negocio, tienda, foto = d.get("negocio"), (d.get("tienda") or "").strip(), (d.get("foto") or "")
     if negocio not in slugs_negocios() or not tienda or not foto:
         return jsonify({"ok": False, "error": "Faltan datos"}), 400
-    sem = semana_captura(negocio)
-    gt = _gt(negocio, sem, tienda, crear=True)
-    if len(_fotos_gt(gt)) >= MAX_FOTOS_GONDOLA:
-        return jsonify({"ok": False, "error": f"Máximo {MAX_FOTOS_GONDOLA} fotos por tienda"}), 400
+    sem, cat = semana_captura(negocio), (d.get("categoria") or "").strip()
+    gt = _gt(negocio, sem, tienda, crear=True, categoria=cat)
+    if len(_fotos_gt(gt)) >= _max_fotos(cat):
+        return jsonify({"ok": False, "error": f"Máximo {_max_fotos(cat)} fotos por " + ("categoría" if cat else "tienda")}), 400
     db.session.add(FotoGondola(negocio=negocio, semana=sem, tienda=tienda, lote=str(gt.id), usuario=(d.get("usuario") or "")[:100],
                                fecha=datetime.now().strftime("%Y%m%d_%H%M%S"), foto_b64=foto.split(",", 1)[-1]))
     gt.usuario = (d.get("usuario") or gt.usuario or "")[:100]
@@ -2750,8 +2813,8 @@ def gondola_enviar():
     negocio, tienda = d.get("negocio"), (d.get("tienda") or "").strip()
     if negocio not in slugs_negocios() or not tienda:
         return jsonify({"ok": False, "error": "Faltan datos"}), 400
-    sem = semana_captura(negocio)
-    gt = _gt(negocio, sem, tienda, crear=True)
+    sem, cat = semana_captura(negocio), (d.get("categoria") or "").strip()
+    gt = _gt(negocio, sem, tienda, crear=True, categoria=cat)
     com = json.loads(gt.comentarios or "{}")
     for k, v in (d.get("comentarios") or {}).items():
         if (v or "").strip(): com[k] = v.strip()[:500]
@@ -2761,7 +2824,7 @@ def gondola_enviar():
     n = len(_fotos_gt(gt))
     gt.estado = "PENDIENTE" if n else "SIN_FOTOS"
     ahora = datetime.now().strftime("%Y%m%d_%H%M%S")
-    for p in _productos_tienda(negocio, tienda):   # un reporte por producto: la tienda queda visitada
+    for p in _productos_tienda(negocio, tienda, cat):   # un reporte por producto: la tienda queda visitada
         rep = Reporte.query.filter_by(tienda=tienda, producto=p.producto, semana=sem, negocio=negocio).first()
         if not rep:
             rep = Reporte(negocio=negocio, tienda=tienda, producto=p.producto, semana=sem, foto="", modificaciones=0)
@@ -2772,16 +2835,33 @@ def gondola_enviar():
     db.session.commit()
     return jsonify({"ok": True, "fotos": n})
 
+@app.route("/api/gondola/categorias")
+def gondola_categorias():
+    """Categorías que tienen productos en la tienda, con lo que el display ya envió esta semana."""
+    negocio, tienda = request.args.get("negocio"), (request.args.get("tienda") or "").strip()
+    cats, sem = categorias_de(negocio), semana_captura(negocio)
+    cuenta = {}
+    for p in _productos_tienda(negocio, tienda):
+        c = categoria_de(cats, p.producto)
+        cuenta[c] = cuenta.get(c, 0) + 1
+    out = []
+    for c in cats["categorias"] + [SIN_CATEGORIA]:
+        if cuenta.get(c):
+            gt = _gt(negocio, sem, tienda, categoria=c)
+            out.append({"categoria": c, "productos": cuenta[c], "fotos": len(_fotos_gt(gt)) if gt else 0,
+                        "enviada": bool(gt and gt.estado != "SIN_FOTOS")})
+    return jsonify({"categorias": out, "max": MAX_FOTOS_CATEGORIA})
+
 # ── administrador ──
 @app.route("/api/gondola/tiendas")
 def gondola_tiendas():
     negocio = request.args.get("negocio", "")
     sem = semana_actual(negocio)
     out = []
-    for gt in GondolaTienda.query.filter_by(negocio=negocio, semana=sem).order_by(GondolaTienda.tienda).all():
+    for gt in GondolaTienda.query.filter_by(negocio=negocio, semana=sem).order_by(GondolaTienda.tienda, GondolaTienda.categoria).all():
         res = json.loads(gt.resultado or "[]")
         cuenta = {k: sum(1 for x in res if x["estado"] == k) for k in ("presente", "dudoso", "ausente")}
-        out.append({"tienda": gt.tienda, "estado": gt.estado, "fotos": len(_fotos_gt(gt)), "usuario": gt.usuario or "",
+        out.append({"tienda": gt.tienda, "categoria": gt.categoria or "", "estado": gt.estado, "fotos": len(_fotos_gt(gt)), "usuario": gt.usuario or "",
                     "total": len(res), **cuenta, "costo_usd": round(gt.costo_usd or 0, 4), "modelo": gt.modelo or "", "error": gt.error or ""})
     return jsonify({"semana": sem, "modelo": modelo_gondola(negocio), "modelos": {k: v[0] for k, v in MODELOS_GONDOLA.items()},
                     "procesando": _gondola_hilos > 0, "tiendas": out})
@@ -2808,7 +2888,7 @@ def gondola_procesar():
     negocio = d.get("negocio"); sem = semana_actual(negocio)
     q = GondolaTienda.query.filter_by(negocio=negocio, semana=sem)
     if d.get("tienda"):
-        q = q.filter_by(tienda=d["tienda"])
+        q = q.filter_by(tienda=d["tienda"], categoria=d.get("categoria") or "")
     n = 0
     for gt in q.all():
         if gt.estado in ("PENDIENTE", "ERROR") or (d.get("forzar") and gt.estado == "LISTO"):
@@ -2821,16 +2901,16 @@ def gondola_procesar():
 
 @app.route("/api/gondola/detalle")
 def gondola_detalle():
-    negocio, tienda = request.args.get("negocio"), request.args.get("tienda", "")
-    gt = _gt(negocio, semana_actual(negocio), tienda)
+    negocio, tienda, cat = request.args.get("negocio"), request.args.get("tienda", ""), request.args.get("categoria", "")
+    gt = _gt(negocio, semana_actual(negocio), tienda, categoria=cat)
     if not gt:
         return jsonify({"ok": False, "error": "Sin datos"}), 404
-    inv = {p.producto: p for p in _productos_tienda(negocio, tienda)}
+    inv = {p.producto: p for p in _productos_tienda(negocio, tienda, cat)}
     res = json.loads(gt.resultado or "[]") or [{"producto": k, "estado": "pendiente", "foto": 0, "frentes": 0, "nota": "", "manual": False} for k in inv]
     for x in res:
         p = inv.get(x["producto"])
         x["item_nbr"], x["cantidad"] = (p.item_nbr or "", p.cantidad) if p else ("", 0)
-    return jsonify({"ok": True, "tienda": tienda, "estado": gt.estado, "fotos": _fotos_gt(gt), "productos": res,
+    return jsonify({"ok": True, "tienda": tienda, "categoria": cat, "estado": gt.estado, "fotos": _fotos_gt(gt), "productos": res,
                     "comentarios": json.loads(gt.comentarios or "{}"), "observaciones": gt.observaciones or "",
                     "modelo": gt.modelo or "", "costo_usd": round(gt.costo_usd or 0, 4), "usuario": gt.usuario or "", "error": gt.error or ""})
 
@@ -2844,13 +2924,13 @@ def gondola_corregir():
     d = request.get_json(silent=True) or {}
     if d.get("rol") not in ROLES_ADMIN:
         return jsonify({"ok": False, "error": "No autorizado"}), 403
-    negocio, tienda = d.get("negocio"), d.get("tienda", "")
-    gt = _gt(negocio, semana_actual(negocio), tienda)
+    negocio, tienda, cat = d.get("negocio"), d.get("tienda", ""), d.get("categoria") or ""
+    gt = _gt(negocio, semana_actual(negocio), tienda, categoria=cat)
     if not gt or d.get("estado") not in ("presente", "dudoso", "ausente"):
         return jsonify({"ok": False, "error": "Datos inválidos"}), 400
     res = json.loads(gt.resultado or "[]")
     if not res:
-        res = [{"producto": p.producto, "estado": "ausente", "foto": 0, "frentes": 0, "nota": "", "manual": False} for p in _productos_tienda(negocio, tienda)]
+        res = [{"producto": p.producto, "estado": "ausente", "foto": 0, "frentes": 0, "nota": "", "manual": False} for p in _productos_tienda(negocio, tienda, cat)]
     for x in res:
         if x["producto"] == d.get("producto"):
             x["estado"], x["manual"] = d["estado"], True

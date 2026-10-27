@@ -491,6 +491,18 @@
   .ga-botones button { border: 1px solid var(--borde); background: var(--korax-surface); color: var(--text); border-radius: 999px; padding: 2px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }
   .ga-botones button.on { background: var(--foam-wash-2); border-color: var(--korax-mid); color: var(--korax-deep); font-weight: 700; }
   @media (max-width: 760px) { .gam-cuerpo { grid-template-columns: 1fr; overflow: auto; } }
+  .cat-cajas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .cat-caja { border: 1px solid var(--borde); border-radius: 12px; background: var(--korax-surface); display: flex; flex-direction: column; max-height: 380px; }
+  .cat-caja.sobre { border-color: var(--korax-mid); background: var(--foam-wash-2); }
+  .cat-cab { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--borde); font-weight: 800; font-size: 13px; }
+  .cat-cab button { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 2px 4px; }
+  .cat-cab small { font-weight: 600; color: var(--muted); }
+  .cat-items { overflow: auto; padding: 4px; flex: 1; min-height: 60px; }
+  .cat-item { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 8px; font-size: 12px; cursor: grab; }
+  .cat-item:hover { background: var(--korax-gray-1); }
+  .cat-item small { color: var(--muted); }
+  .cat-cab input, .cat-item input { width: 16px; height: 16px; accent-color: var(--korax-mid); flex: none; }
+  .ga-cat { display: inline-block; font-size: 11px; font-weight: 700; color: var(--korax-deep); background: var(--foam-wash-2); border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
   .g-caja { background: var(--korax-surface); border: 1px solid var(--borde); border-radius: 16px; padding: 14px; margin-bottom: 14px; box-shadow: var(--sombra); }
   #g-analizar:disabled, #g-enviar:disabled { opacity: .45; cursor: not-allowed; }
   .g-tit { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
@@ -1273,8 +1285,9 @@
         <select id="neg-modo" class="ug-in" style="width:100%;margin-bottom:6px;">
           <option value="producto">Una foto por producto (como hasta ahora)</option>
           <option value="gondola">Fotos de la góndola completa: la IA detecta los productos</option>
+          <option value="categoria">Fotos por categoría (para negocios grandes): la IA revisa cada categoría</option>
         </select>
-        <div class="neg-hint" style="margin:0 0 12px;">En modo góndola el display toma 1 a 4 fotos de la góndola y la IA marca cada producto como presente, ausente o dudoso.</div>
+        <div class="neg-hint" style="margin:0 0 12px;">En modo góndola el display toma hasta 20 fotos de la tienda y la IA marca cada producto como presente, ausente o dudoso. Por categoría es igual, pero el display entra a cada categoría (ej. Juguetes, Alimentos) y toma hasta 10 fotos de esa categoría; las categorías se arman en Inventario.</div>
         <div class="neg-paso"><span class="num" id="neg-paso-prompt-num">4</span>Prompt de la IA <span class="neg-hint" style="margin:0;font-weight:500;" id="neg-prompt-info"></span></div>
         <div class="neg-hint" style="margin:0 0 6px;">Lo que lee la IA para validar cada foto de este negocio. <b>{producto}</b> se reemplaza por el producto a revisar. No cambies las 3 líneas finales (ESTADO / CONFIANZA / MOTIVO).</div>
         <textarea id="neg-prompt" class="neg-prompt" spellcheck="false" oninput="infoPrompt()"></textarea>
@@ -1497,8 +1510,9 @@
   <div id="tab-ia" style="display:none;">
     <div id="gondola-admin" class="g-caja" style="display:none;">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-        <div class="g-tit" style="margin:0;">Góndolas de la semana (análisis con IA por tienda)</div>
-        <select id="ga-modelo" class="ug-in" style="margin-left:auto;" onchange="gaCambiarModelo(this)"></select>
+        <div class="g-tit" style="margin:0;" id="ga-titulo">Góndolas de la semana (análisis con IA por tienda)</div>
+        <select id="ga-cat" class="ug-in" style="display:none;width:auto;" onchange="cargarGondolaAdmin()"></select>
+        <select id="ga-modelo" class="ug-in" style="margin-left:auto;width:auto;" onchange="gaCambiarModelo(this)"></select>
         <button class="btn-ia btn-ia-procesar" style="width:auto;" onclick="gaProcesar(false)">Procesar pendientes</button>
         <button class="btn-ia btn-ia-encolar" style="width:auto;" onclick="gaProcesar(true)">↻ Analizar todo de nuevo</button>
         <button class="btn btn-gris" style="width:auto;padding:6px 10px;" onclick="cargarGondolaAdmin()">↻</button>
@@ -1616,6 +1630,23 @@
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Desactivá los productos que ya no se exhiben: dejan de pedírseles a los displays y no cuentan como diferencia en el cierre. Siguen desactivados aunque vuelvas a cargar el inventario.</div>
       <div id="prod-lista" style="max-height:420px;overflow:auto;border:1px solid var(--borde);border-radius:12px;"></div>
+    </div>
+
+    <div id="cat-editor" style="display:none;margin-top:26px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+        <div style="font-size:15px;font-weight:800;color:var(--texto);">Categorías</div>
+        <div id="cat-resumen" style="font-size:12px;color:var(--muted);"></div>
+        <input id="cat-nueva" class="ug-in" placeholder="Nueva categoría (ej. Juguetes)" style="margin-left:auto;min-width:200px;" onkeydown="if (event.key === 'Enter') catAgregar()">
+        <button class="btn btn-verde" style="width:auto;padding:8px 14px;" onclick="catAgregar()">+ Agregar</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Los displays toman las fotos por categoría (hasta 10 por categoría) y la IA revisa cada categoría por separado. Arrastrá los productos a su categoría, o marcalos y usá "Mover". Las categorías se guardan por nombre de producto: siguen igual aunque vuelvas a cargar el inventario.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <input id="cat-buscar" class="ug-in" placeholder="Buscar producto o código..." oninput="renderCategorias()" style="min-width:200px;">
+        <span id="cat-sel" style="font-size:12px;color:var(--muted);"></span>
+        <select id="cat-destino" class="ug-in" style="margin-left:auto;width:auto;"></select>
+        <button class="btn btn-gris" style="width:auto;padding:8px 14px;" onclick="catMoverSel()">Mover marcados</button>
+      </div>
+      <div id="cat-cajas" class="cat-cajas"></div>
     </div>
 
     <div id="inv-resultado" style="display:none;margin-top:20px;background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:18px 20px;">
@@ -2071,7 +2102,7 @@ async function irProductos(tienda) {
   const _th = document.querySelector('#productos .tabla-header');
   if (_th) _th.style.display = _modoGondola() ? 'none' : '';
   document.getElementById('btn-enviar').style.display = _modoGondola() ? 'none' : '';
-  if (_modoGondola()) { irGondola(tienda); return; }
+  if (_modoGondola()) { _modoCategoria() ? irCategorias(tienda) : irGondola(tienda); return; }
   document.getElementById('titulo-tienda').textContent = tienda;
   document.getElementById('status-productos').textContent = 'Cargando...';
   document.getElementById('status-envio').textContent = '';
@@ -2138,10 +2169,11 @@ async function irProductos(tienda) {
 }
 
 // --- MODO GÓNDOLA: el display sube hasta 20 fotos de la tienda; el administrador las analiza con IA ---
-function _modoGondola() { return ((NEGOCIOS[negocioActual] || {}).modo_captura) === 'gondola'; }
-let _gFotos = [], _gProds = [], _gMax = 20, _gYa = 0;
-async function irGondola(tienda) {
-  _gFotos = [];
+function _modoGondola() { return ['gondola', 'categoria'].includes((NEGOCIOS[negocioActual] || {}).modo_captura); }
+function _modoCategoria() { return ((NEGOCIOS[negocioActual] || {}).modo_captura) === 'categoria'; }
+let _gFotos = [], _gProds = [], _gMax = 20, _gYa = 0, _gCat = '';
+async function irCategorias(tienda) {
+  _gCat = ''; _gFotos = [];
   document.getElementById('titulo-tienda').textContent = tienda;
   document.getElementById('status-productos').textContent = 'Cargando...';
   document.getElementById('status-envio').textContent = '';
@@ -2149,17 +2181,47 @@ async function irGondola(tienda) {
   lista.innerHTML = '';
   limpiarLiquidacion();
   mostrar('productos');
-  const q = '?negocio=' + negocioActual;
+  let d = {categorias: [], max: 10};
+  try { d = await (await fetch(API + '/api/gondola/categorias?negocio=' + negocioActual + '&tienda=' + encodeURIComponent(tienda))).json(); } catch (e) {}
+  cargarLiquidacionExistente(tienda);
+  const hechas = d.categorias.filter(c => c.enviada).length;
+  document.getElementById('status-productos').textContent = `${d.categorias.length} categorías · ${hechas} enviadas`;
+  lista.innerHTML = `<div class="g-caja"><div class="g-tit">Categorías de esta tienda</div>
+    <div class="g-ayuda">Entrá a cada categoría, tomá hasta ${d.max} fotos de sus productos y enviá. Podés hacerlas en el orden que quieras y volver a entrar para agregar fotos.</div>
+    <div id="g-cats"></div></div>`;
+  const cont = document.getElementById('g-cats');
+  if (!d.categorias.length) cont.innerHTML = '<div class="seccion-vacia">Esta tienda no tiene productos en el inventario</div>';
+  d.categorias.forEach(c => {
+    const f = document.createElement('div'); f.className = 'ga-fila'; f.style.cursor = 'pointer';
+    f.innerHTML = `<div style="flex:1;min-width:0;"><div class="g-nom"></div><div class="g-nota"></div></div>
+      <span class="ga-est" style="background:${c.enviada ? '#DCFCE7' : 'var(--korax-gray-2)'};color:${c.enviada ? '#15803D' : 'var(--text)'};">${c.enviada ? '✓ Enviada' : 'Pendiente'}</span>
+      <button class="btn btn-gris" style="width:auto;padding:6px 12px;font-size:12px;">Abrir</button>`;
+    f.querySelector('.g-nom').textContent = c.categoria;
+    f.querySelector('.g-nota').textContent = `${c.productos} producto(s)` + (c.fotos ? ` · ${c.fotos} foto(s) enviadas` : '');
+    f.onclick = () => irGondola(tienda, c.categoria);
+    cont.appendChild(f);
+  });
+}
+async function irGondola(tienda, categoria) {
+  _gFotos = []; _gCat = categoria || '';
+  document.getElementById('titulo-tienda').textContent = tienda + (_gCat ? ' · ' + _gCat : '');
+  document.getElementById('status-productos').textContent = 'Cargando...';
+  document.getElementById('status-envio').textContent = '';
+  const lista = document.getElementById('lista-productos');
+  lista.innerHTML = '';
+  limpiarLiquidacion();
+  mostrar('productos');
+  const q = '?negocio=' + negocioActual + (_gCat ? '&categoria=' + encodeURIComponent(_gCat) : '');
   const [rp, re] = await Promise.all([fetch(API + '/api/productos/' + encodeURIComponent(tienda) + q),
                                       fetch(API + '/api/gondola/estado' + q + '&tienda=' + encodeURIComponent(tienda))]);
   _gProds = await rp.json();
   const est = await re.json().catch(() => ({fotos: 0, max: 20, comentarios: {}}));
   _gYa = est.fotos || 0; _gMax = est.max || 20;
   cargarLiquidacionExistente(tienda);
-  document.getElementById('status-productos').textContent = _gProds.length + ' productos · modo góndola';
-  lista.innerHTML = `<div class="g-caja">
-      <div class="g-tit">Fotos de la tienda</div>
-      <div class="g-ayuda">Tomá fotos de las góndolas o refrigeradores donde están los productos de la lista (máximo ${_gMax} por tienda en la semana). De frente, con buena luz y que se lean las etiquetas. Varias fotos pueden mostrar varios productos.</div>
+  document.getElementById('status-productos').textContent = _gProds.length + ' productos · ' + (_gCat ? 'categoría ' + _gCat : 'modo góndola');
+  lista.innerHTML = (_gCat ? `<button class="btn btn-gris" style="width:auto;padding:8px 14px;margin-bottom:10px;" onclick="irCategorias(tiendaActual)">← Categorías</button>` : '') + `<div class="g-caja">
+      <div class="g-tit" id="g-tit-fotos">Fotos de la tienda</div>
+      <div class="g-ayuda">Tomá fotos de las góndolas o refrigeradores donde están los productos de la lista (máximo ${_gMax} por ${_gCat ? 'categoría' : 'tienda'} en la semana). De frente, con buena luz y que se lean las etiquetas; podés acercarte para que se lean bien. Varias fotos pueden mostrar varios productos.</div>
       <div id="g-ya" class="g-ayuda" style="color:var(--korax-deep);font-weight:700;"></div>
       <div class="g-fotos" id="g-fotos"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;" id="g-agregar">
@@ -2167,11 +2229,12 @@ async function irGondola(tienda) {
         <button class="btn btn-gris" style="width:auto;padding:10px 16px;" onclick="gAgregar(false)">🖼 Galería</button>
       </div>
     </div>
-    <div class="g-caja"><div class="g-tit">Productos de esta tienda</div>
+    <div class="g-caja"><div class="g-tit">Productos de esta ${_gCat ? 'categoría' : 'tienda'}</div>
       <div class="g-ayuda">Revisá la lista y escribí un comentario si algún producto no está (agotado, sin espacio, en conteo...).</div>
       <div id="g-esp"></div></div>
     <button class="btn btn-verde" id="g-enviar" onclick="gEnviar()">✓ Enviar fotos y comentarios</button>
     <div id="g-envio" class="status-envio"></div>`;
+  if (_gCat) document.getElementById('g-tit-fotos').textContent = 'Fotos de la categoría ' + _gCat;
   const esp = document.getElementById('g-esp');
   _gProds.forEach(p => {
     const e = document.createElement('div'); e.className = 'g-fila';
@@ -2210,13 +2273,13 @@ function gPintarFotos() {
     c.appendChild(d);
   });
   const total = _gYa + _gFotos.length;
-  document.getElementById('g-ya').textContent = (_gYa ? `Ya enviaste ${_gYa} foto(s) de esta tienda esta semana. ` : '') + `Fotos: ${total} de ${_gMax}.`;
+  document.getElementById('g-ya').textContent = (_gYa ? `Ya enviaste ${_gYa} foto(s) de esta ${_gCat ? 'categoría' : 'tienda'} esta semana. ` : '') + `Fotos: ${total} de ${_gMax}.`;
   document.getElementById('g-agregar').style.display = total >= _gMax ? 'none' : 'flex';
 }
 async function gEnviar() {
   const st = document.getElementById('g-envio'), btn = document.getElementById('g-enviar');
   btn.disabled = true; st.style.color = '';
-  const tienda = tiendaActual, usr = usuario.nombre || '';
+  const tienda = tiendaActual, usr = usuario.nombre || '', categoria = _gCat;
   try {
     // las fotos se suben de a una (con reintentos), así una mala señal no hace perder todo
     while (_gFotos.length) {
@@ -2225,7 +2288,7 @@ async function gEnviar() {
       for (let intento = 1; intento <= 3 && !ok; intento++) {
         try {
           const r = await fetch(API + '/api/gondola/foto', { method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({negocio: negocioActual, tienda, usuario: usr, foto: _gFotos[0]}) });
+            body: JSON.stringify({negocio: negocioActual, tienda, categoria, usuario: usr, foto: _gFotos[0]}) });
           const d = await r.json().catch(() => ({}));
           if (d.ok) { ok = true; _gYa = d.fotos; _gFotos.shift(); gPintarFotos(); }
           else { err = d.error || ('Error ' + r.status); if (r.status === 400) break; }
@@ -2237,12 +2300,13 @@ async function gEnviar() {
     const comentarios = {};
     document.querySelectorAll('#g-esp textarea').forEach(t => comentarios[t.dataset.prod] = t.value);
     const r = await fetch(API + '/api/gondola/enviar', { method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({negocio: negocioActual, tienda, usuario: usr, comentarios}) });
+      body: JSON.stringify({negocio: negocioActual, tienda, categoria, usuario: usr, comentarios}) });
     const d = await r.json().catch(() => ({}));
     if (!d.ok) throw new Error(d.error || ('Error ' + r.status));
     st.style.color = 'var(--korax-deep)'; st.textContent = `✓ Enviado: ${d.fotos} foto(s) y comentarios`;
     tiendasReportadas.add(tienda); filtrarTiendas();
-    toast('Tienda ' + tienda + ' enviada', 'ok');
+    toast((categoria ? categoria + ' de ' : 'Tienda ') + tienda + ' enviada', 'ok');
+    if (categoria) setTimeout(() => { if (tiendaActual === tienda && _gCat === categoria) irCategorias(tienda); }, 1200);
   } catch (e) {
     st.style.color = 'var(--rojo)';
     st.textContent = '⚠ No se terminó de enviar: ' + e.message + '. Las fotos que faltan siguen aquí: presioná Enviar otra vez.';
@@ -2258,6 +2322,17 @@ async function cargarGondolaAdmin() {
   if (!_modoGondola()) return;
   const d = await (await fetch(API + '/api/gondola/tiendas?negocio=' + negocioActual)).json();
   _gaData = d;
+  const selCat = document.getElementById('ga-cat');
+  selCat.style.display = _modoCategoria() ? '' : 'none';
+  document.getElementById('ga-titulo').textContent = _modoCategoria() ? 'Categorías de la semana (análisis con IA por tienda y categoría)' : 'Góndolas de la semana (análisis con IA por tienda)';
+  if (_modoCategoria()) {
+    const elegida = selCat.value || '*';
+    selCat.innerHTML = '';
+    selCat.add(new Option('Todas las categorías', '*'));
+    [...new Set(d.tiendas.map(t => t.categoria))].sort().forEach(c => selCat.add(new Option(c || 'Toda la tienda', c)));
+    selCat.value = [...selCat.options].some(o => o.value === elegida) ? elegida : '*';
+    if (selCat.value !== '*') d.tiendas = d.tiendas.filter(t => t.categoria === selCat.value);
+  }
   const sel = document.getElementById('ga-modelo');
   sel.innerHTML = '';
   Object.entries(d.modelos).forEach(([k, v]) => { const o = new Option(v, k); o.selected = k === d.modelo; sel.add(o); });
@@ -2278,8 +2353,9 @@ async function cargarGondolaAdmin() {
       <div class="ga-cnt">${t.estado === 'LISTO' ? `✅ ${t.presente} &nbsp;⚠️ ${t.dudoso} &nbsp;❌ ${t.ausente}` : ''}</div>
       <button class="btn btn-gris" style="width:auto;padding:6px 12px;font-size:12px;">Revisar</button>`;
     f.querySelector('.g-nom').textContent = t.tienda;
+    if (t.categoria) { const b = document.createElement('span'); b.className = 'ga-cat'; b.textContent = t.categoria; f.querySelector('.g-nom').appendChild(b); }
     f.querySelector('.g-nota').textContent = `${t.fotos} foto(s) · ${t.usuario || '—'}` + (t.modelo ? ` · ${t.modelo.replace('claude-', '')} · US$${t.costo_usd}` : '') + (t.error ? ' · ' + t.error : '');
-    f.querySelector('button').onclick = () => abrirGondolaTienda(t.tienda);
+    f.querySelector('button').onclick = () => abrirGondolaTienda(t.tienda, t.categoria);
     lista.appendChild(f);
   });
   clearTimeout(_gaTimer);
@@ -2291,17 +2367,18 @@ async function gaCambiarModelo(sel) {
   const d = await r.json().catch(() => ({}));
   toast(d.ok ? 'Modelo de IA para góndolas: ' + sel.options[sel.selectedIndex].text : (d.error || 'Error'), d.ok ? 'ok' : 'err');
 }
-async function gaProcesar(forzar, tienda) {
+async function gaProcesar(forzar, tienda, categoria) {
   if (forzar && !tienda && !confirm('¿Volver a analizar TODAS las tiendas de la semana? Se respetan las correcciones manuales.')) return;
   const r = await fetch(API + '/api/gondola/procesar', { method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({negocio: negocioActual, rol: usuario.rol, forzar: !!forzar, tienda: tienda || ''}) });
+    body: JSON.stringify({negocio: negocioActual, rol: usuario.rol, forzar: !!forzar, tienda: tienda || '', categoria: categoria || ''}) });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) { toast(d.error || 'Error', 'err'); return; }
-  toast(d.encolados ? d.encolados + ' tienda(s) en cola' : 'No hay tiendas pendientes', 'ok');
+  toast(d.encolados ? d.encolados + (_modoCategoria() ? ' análisis en cola' : ' tienda(s) en cola') : 'No hay nada pendiente', 'ok');
   cargarGondolaAdmin();
 }
-async function abrirGondolaTienda(tienda) {
-  const d = await (await fetch(API + '/api/gondola/detalle?negocio=' + negocioActual + '&tienda=' + encodeURIComponent(tienda))).json();
+async function abrirGondolaTienda(tienda, categoria) {
+  categoria = categoria || '';
+  const d = await (await fetch(API + '/api/gondola/detalle?negocio=' + negocioActual + '&tienda=' + encodeURIComponent(tienda) + '&categoria=' + encodeURIComponent(categoria))).json();
   if (!d.ok) { toast(d.error || 'Error', 'err'); return; }
   document.getElementById('ga-modal')?.remove();
   const fondo = document.createElement('div'); fondo.id = 'ga-modal';
@@ -2318,8 +2395,8 @@ async function abrirGondolaTienda(tienda) {
   const cerrar = () => { fondo.remove(); cargarGondolaAdmin(); };
   caja.querySelector('#gam-x').onclick = cerrar;
   fondo.onclick = e => { if (e.target === fondo) cerrar(); };
-  caja.querySelector('#gam-re').onclick = () => { gaProcesar(true, tienda); cerrar(); };
-  caja.querySelector('#gam-tit').textContent = tienda;
+  caja.querySelector('#gam-re').onclick = () => { gaProcesar(true, tienda, categoria); cerrar(); };
+  caja.querySelector('#gam-tit').textContent = tienda + (categoria ? ' · ' + categoria : '');
   caja.querySelector('#gam-sub').textContent = `${d.fotos.length} foto(s) · ${d.usuario || '—'}` + (d.modelo ? ` · ${d.modelo.replace('claude-', '')} · US$${d.costo_usd}` : '') + (d.observaciones ? ' · ' + d.observaciones : '') + (d.error ? ' · ' + d.error : '');
   const cache = {};
   const verFoto = async n => {
@@ -2350,10 +2427,10 @@ async function abrirGondolaTienda(tienda) {
       b.onclick = async ev => {
         ev.stopPropagation();
         const r = await fetch(API + '/api/gondola/corregir', { method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({negocio: negocioActual, tienda, producto: p.producto, estado: b.dataset.e, rol: usuario.rol}) });
+          body: JSON.stringify({negocio: negocioActual, tienda, categoria, producto: p.producto, estado: b.dataset.e, rol: usuario.rol}) });
         const x = await r.json().catch(() => ({}));
         if (!x.ok) { toast(x.error || 'Error', 'err'); return; }
-        abrirGondolaTienda(tienda);
+        abrirGondolaTienda(tienda, categoria);
       };
     });
     if (p.foto) f.style.cursor = 'pointer', f.onclick = () => verFoto(p.foto);
@@ -4660,6 +4737,7 @@ async function cargarProductosNeg() {
     _productosNeg = await r.json();
   } catch (e) { _productosNeg = []; }
   renderProductosNeg();
+  cargarCategorias();
 }
 function renderProductosNeg() {
   const cont = document.getElementById('prod-lista');
@@ -4692,6 +4770,127 @@ function renderProductosNeg() {
     };
     cont.appendChild(fila);
   });
+}
+
+// ── Categorías (modo por categoría): arrastrar o marcar productos y moverlos a su categoría ─────────
+const SIN_CAT = 'Sin categoría';
+let _cats = {categorias: [], productos: {}}, _catSel = new Set();
+async function cargarCategorias() {
+  const box = document.getElementById('cat-editor');
+  if (!box) return;
+  box.style.display = _modoCategoria() ? '' : 'none';
+  if (!_modoCategoria()) return;
+  try { _cats = await (await fetch(API + '/api/categorias?negocio=' + encodeURIComponent(negocioActual))).json(); }
+  catch (e) { _cats = {categorias: [], productos: {}}; }
+  _catSel.clear();
+  renderCategorias();
+}
+function _catDe(p) { const c = _cats.productos[p]; return _cats.categorias.includes(c) ? c : SIN_CAT; }
+async function guardarCategorias() {
+  const r = await fetch(API + '/api/categorias', { method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({negocio: negocioActual, rol: usuario.rol, categorias: _cats.categorias, productos: _cats.productos}) });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) { toast(d.error || 'No se pudo guardar', 'err'); await cargarCategorias(); return false; }
+  return true;
+}
+function renderCategorias() {
+  const cont = document.getElementById('cat-cajas');
+  if (!cont) return;
+  const q = (document.getElementById('cat-buscar').value || '').trim().toLowerCase();
+  const grupos = {};
+  [SIN_CAT, ..._cats.categorias].forEach(c => grupos[c] = []);
+  _productosNeg.filter(p => p.activo).forEach(p => grupos[_catDe(p.producto)].push(p));
+  document.getElementById('cat-resumen').textContent = `${_cats.categorias.length} categorías · ${grupos[SIN_CAT].length} productos sin categoría`;
+  const dest = document.getElementById('cat-destino'), prev = dest.value;
+  dest.innerHTML = '';
+  _cats.categorias.forEach(c => dest.add(new Option('Mover a: ' + c, c)));
+  dest.add(new Option('Quitar categoría', SIN_CAT));
+  if ([...dest.options].some(o => o.value === prev)) dest.value = prev;
+  _catContarSel();
+  cont.innerHTML = '';
+  Object.entries(grupos).forEach(([cat, lista]) => {
+    const visibles = lista.filter(p => !q || p.producto.toLowerCase().includes(q) || String(p.item_nbr).includes(q));
+    const caja = document.createElement('div'); caja.className = 'cat-caja';
+    caja.innerHTML = `<div class="cat-cab"><input type="checkbox" title="Marcar todos"><span class="cn" style="flex:1;min-width:0;"></span><small></small></div><div class="cat-items"></div>`;
+    caja.querySelector('.cn').textContent = cat;
+    caja.querySelector('small').textContent = lista.length;
+    if (cat !== SIN_CAT) {
+      const cab = caja.querySelector('.cat-cab');
+      [['✎', 'Cambiar nombre', () => catRenombrar(cat)], ['✕', 'Eliminar categoría', () => catEliminar(cat)]].forEach(([t, title, fn]) => {
+        const b = document.createElement('button'); b.textContent = t; b.title = title; b.onclick = fn; cab.appendChild(b);
+      });
+    }
+    const todos = caja.querySelector('.cat-cab input');
+    todos.checked = visibles.length > 0 && visibles.every(p => _catSel.has(p.producto));
+    todos.onchange = () => {
+      visibles.forEach(p => todos.checked ? _catSel.add(p.producto) : _catSel.delete(p.producto));
+      caja.querySelectorAll('.cat-item input').forEach(c => c.checked = todos.checked);
+      _catContarSel();
+    };
+    const items = caja.querySelector('.cat-items');
+    if (!lista.length) items.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:8px;">${cat === SIN_CAT ? 'Todos los productos tienen categoría' : 'Arrastrá productos aquí'}</div>`;
+    visibles.forEach(p => {
+      const it = document.createElement('label'); it.className = 'cat-item'; it.draggable = true;
+      it.innerHTML = '<input type="checkbox"><span style="flex:1;min-width:0;"><small></small> <span class="n"></span></span>';
+      if (p.item_nbr) it.querySelector('small').textContent = '#' + p.item_nbr;
+      it.querySelector('.n').textContent = p.producto;
+      const chk = it.querySelector('input');
+      chk.checked = _catSel.has(p.producto);
+      chk.onchange = () => {   // sin redibujar, así la lista no vuelve arriba
+        chk.checked ? _catSel.add(p.producto) : _catSel.delete(p.producto);
+        todos.checked = visibles.every(x => _catSel.has(x.producto));
+        _catContarSel();
+      };
+      it.ondragstart = e => e.dataTransfer.setData('text/plain', p.producto);
+      items.appendChild(it);
+    });
+    caja.ondragover = e => { e.preventDefault(); caja.classList.add('sobre'); };
+    caja.ondragleave = e => { if (!caja.contains(e.relatedTarget)) caja.classList.remove('sobre'); };
+    caja.ondrop = e => {
+      e.preventDefault(); caja.classList.remove('sobre');
+      const prod = e.dataTransfer.getData('text/plain');
+      if (prod) catMover(_catSel.has(prod) ? [..._catSel] : [prod], cat);
+    };
+    cont.appendChild(caja);
+  });
+}
+function _catContarSel() { document.getElementById('cat-sel').textContent = _catSel.size ? _catSel.size + ' marcado(s)' : ''; }
+async function catMover(prods, cat) {
+  prods.forEach(p => { if (cat === SIN_CAT) delete _cats.productos[p]; else _cats.productos[p] = cat; });
+  _catSel.clear();
+  renderCategorias();
+  if (await guardarCategorias()) toast(prods.length + ' producto(s) → ' + cat, 'ok');
+}
+function catMoverSel() {
+  if (!_catSel.size) { toast('Marcá primero los productos', 'err'); return; }
+  const dest = document.getElementById('cat-destino').value;
+  if (!dest) { toast('Primero creá una categoría', 'err'); return; }
+  catMover([..._catSel], dest);
+}
+function _catExiste(n) { return n === SIN_CAT || _cats.categorias.some(c => c.toLowerCase() === n.toLowerCase()); }
+async function catAgregar() {
+  const inp = document.getElementById('cat-nueva'), n = inp.value.trim();
+  if (!n) return;
+  if (_catExiste(n)) { toast('Esa categoría ya existe', 'err'); return; }
+  _cats.categorias.push(n); inp.value = '';
+  renderCategorias();
+  if (await guardarCategorias()) toast('Categoría ' + n + ' creada', 'ok');
+}
+async function catRenombrar(cat) {
+  const n = (prompt('Nuevo nombre de la categoría', cat) || '').trim();
+  if (!n || n === cat) return;
+  if (_catExiste(n) && n.toLowerCase() !== cat.toLowerCase()) { toast('Esa categoría ya existe', 'err'); return; }
+  _cats.categorias = _cats.categorias.map(c => c === cat ? n : c);
+  Object.keys(_cats.productos).forEach(p => { if (_cats.productos[p] === cat) _cats.productos[p] = n; });
+  renderCategorias();
+  await guardarCategorias();
+}
+async function catEliminar(cat) {
+  if (!confirm(`¿Eliminar la categoría "${cat}"? Sus productos quedan sin categoría.`)) return;
+  _cats.categorias = _cats.categorias.filter(c => c !== cat);
+  Object.keys(_cats.productos).forEach(p => { if (_cats.productos[p] === cat) delete _cats.productos[p]; });
+  renderCategorias();
+  await guardarCategorias();
 }
 
 // ── Inventario dos zonas ─────────────────────────────────────────────────────
