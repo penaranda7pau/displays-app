@@ -513,6 +513,13 @@
   .np-cod { border: 1px solid var(--borde); background: var(--korax-surface); border-radius: 999px; padding: 3px 9px; font-size: 11px; cursor: pointer; font-family: inherit; color: var(--text); }
   .np-cod.on { background: var(--korax-mid); color: #fff; border-color: var(--korax-mid); font-weight: 700; }
   .np-uno { font-size: 11px; color: var(--muted); }
+  .xe-cols { display: flex; flex-direction: column; gap: 4px; }
+  .xe-col { display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
+  .xe-col input[type=checkbox], .xe-hoja-chk { width: 16px; height: 16px; accent-color: var(--korax-mid); flex: none; }
+  .xe-col .ug-in { flex: 1; padding: 6px 10px; font-size: 12px; }
+  .xe-col small { color: var(--muted); font-size: 11px; min-width: 120px; }
+  .xe-mv { border: 1px solid var(--borde); background: var(--korax-surface); color: var(--text); border-radius: 8px; width: 26px; height: 26px; cursor: pointer; font-family: inherit; flex: none; }
+  .xe-mv:disabled { opacity: .3; cursor: default; }
   .nc-cat { border: 1px solid var(--borde); border-radius: 12px; margin-bottom: 8px; background: var(--korax-surface); }
   .nc-cab { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; font-weight: 700; font-size: 13px; }
   .nc-cab .fl { color: var(--muted); width: 12px; }
@@ -1182,6 +1189,28 @@
     <button class="tab activo" id="sg-tab-negocios" onclick="abrirSistemaGlobal('negocios')">Negocios</button>
     <button class="tab" id="sg-tab-usuarios" onclick="abrirSistemaGlobal('usuarios')">Usuarios</button>
     <button class="tab" id="sg-tab-fotos" onclick="abrirSistemaGlobal('fotos')">Fotos con problema</button>
+    <button class="tab" id="sg-tab-excel" onclick="abrirSistemaGlobal('excel')">Editor de Excel</button>
+  </div>
+  <div id="sg-excel" style="display:none;">
+    <div class="sg-card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+        <div class="cons-h" style="margin:0;">EXCEL DEL CIERRE DE SEMANA</div>
+        <select id="xe-neg" class="ug-in" style="width:auto;margin-left:auto;" onchange="xeCargar()"></select>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Elegí qué hojas y columnas lleva el Excel del cierre de cada negocio, en qué orden y con qué título. Los datos y cálculos del cierre no cambian; solo lo que se muestra. Usá <b>Vista previa</b> para ver cómo queda con la semana actual sin cerrarla.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;"><input type="checkbox" id="xe-separar" class="xe-hoja-chk" onchange="_xe.fmt.separar_por_cadena = this.checked; xeCambio()"> Separar las hojas por cadena (Walmart / Auto Mercado)</label>
+        <button class="btn btn-gris" style="width:auto;padding:7px 12px;font-size:12px;margin-left:auto;" onclick="xeVistaPrevia()">⬇ Vista previa del Excel</button>
+        <select id="xe-copiar" class="ug-in" style="width:auto;padding:7px 10px;font-size:12px;"></select>
+        <button class="btn btn-gris" style="width:auto;padding:7px 12px;font-size:12px;" onclick="xeCopiar()">Copiar formato</button>
+        <button class="btn btn-gris" style="width:auto;padding:7px 12px;font-size:12px;" onclick="xeRestaurar()">↺ Restaurar original</button>
+      </div>
+      <div id="xe-hojas"></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:12px;">
+        <button class="btn btn-verde" style="width:auto;padding:9px 18px;" onclick="xeGuardar()">Guardar formato</button>
+        <span id="xe-estado" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+    </div>
   </div>
   <div id="sg-fotos" style="display:none;">
     <div class="sg-card">
@@ -3499,11 +3528,121 @@ function abrirSistemaGlobal(seccion) {
   seccion = seccion || 'negocios';
   document.getElementById('sidebar').classList.remove('visible');
   if (!document.getElementById('sistema-global').classList.contains('active')) mostrar('sistema-global');
-  ['consumo', 'negocios', 'usuarios', 'fotos'].forEach(x => {
+  ['consumo', 'negocios', 'usuarios', 'fotos', 'excel'].forEach(x => {
     document.getElementById('sg-' + x).style.display = x === seccion ? '' : 'none';
     document.getElementById('sg-tab-' + x).classList.toggle('activo', x === seccion);
   });
-  if (seccion === 'consumo') cargarConsumo(); else if (seccion === 'usuarios') ugCargar(); else if (seccion === 'fotos') cargarLogFotos(); else cargarNegociosAdmin();
+  if (seccion === 'consumo') cargarConsumo(); else if (seccion === 'usuarios') ugCargar(); else if (seccion === 'fotos') cargarLogFotos(); else if (seccion === 'excel') xeIniciar(); else cargarNegociosAdmin();
+}
+
+// ─── Editor del Excel del cierre (superadmin) ───
+let _xe = {neg: '', fmt: null, orig: {}, abierta: '', cambio: false};
+function xeIniciar() {
+  const sel = document.getElementById('xe-neg'), prev = sel.value || negocioActual;
+  sel.innerHTML = '';
+  Object.values(NEGOCIOS).forEach(n => sel.add(new Option(n.nombre, n.slug)));
+  sel.value = [...sel.options].some(o => o.value === prev) ? prev : (sel.options[0] || {}).value;
+  xeCargar();
+}
+async function xeCargar() {
+  if (_xe.cambio && _xe.neg && _xe.neg !== document.getElementById('xe-neg').value && !confirm('Hay cambios sin guardar en el formato de ' + ((NEGOCIOS[_xe.neg] || {}).nombre || _xe.neg) + '. ¿Descartarlos?')) {
+    document.getElementById('xe-neg').value = _xe.neg; return;
+  }
+  const neg = document.getElementById('xe-neg').value;
+  const cop = document.getElementById('xe-copiar');
+  cop.innerHTML = '';
+  cop.add(new Option('Copiar de…', ''));
+  Object.values(NEGOCIOS).filter(n => n.slug !== neg).forEach(n => cop.add(new Option(n.nombre, n.slug)));
+  const d = await (await fetch(API + '/api/excel-formato?negocio=' + encodeURIComponent(neg) + '&rol=' + usuario.rol)).json().catch(() => ({}));
+  if (!d.ok) { toast(d.error || 'No se pudo cargar el formato', 'err'); return; }
+  _xe = {neg, fmt: d.formato, orig: d.originales, abierta: _xe.neg === neg ? _xe.abierta : '', cambio: false};
+  xePintar();
+}
+function xeCambio() { _xe.cambio = true; document.getElementById('xe-estado').textContent = 'Cambios sin guardar'; }
+function _xeMover(lista, i, delta) { const j = i + delta; [lista[i], lista[j]] = [lista[j], lista[i]]; xeCambio(); xePintar(); }
+function xePintar() {
+  const cont = document.getElementById('xe-hojas');
+  document.getElementById('xe-separar').checked = !!_xe.fmt.separar_por_cadena;
+  document.getElementById('xe-estado').textContent = _xe.cambio ? 'Cambios sin guardar' : '';
+  cont.innerHTML = '';
+  const hojas = _xe.fmt.hojas;
+  hojas.forEach((h, i) => {
+    const orig = _xe.orig[h.id] || {nombre: h.id, columnas: {}};
+    const abierta = _xe.abierta === h.id;
+    const box = document.createElement('div'); box.className = 'nc-cat'; box.style.opacity = h.activa ? '' : '.6';
+    box.innerHTML = `<div class="nc-cab" style="cursor:default;">
+        <input type="checkbox" class="xe-hoja-chk" title="Incluir esta hoja">
+        <input class="ug-in xe-nombre" style="flex:1;min-width:120px;padding:6px 10px;font-weight:700;" maxlength="25">
+        <small class="xe-n"></small>
+        <button class="xe-mv" title="Subir">↑</button><button class="xe-mv" title="Bajar">↓</button>
+        <button class="btn btn-gris xe-abrir" style="width:auto;padding:5px 10px;font-size:12px;">${abierta ? 'Cerrar' : 'Columnas'}</button></div>`;
+    const chk = box.querySelector('.xe-hoja-chk'), nom = box.querySelector('.xe-nombre');
+    chk.checked = h.activa;
+    chk.onchange = () => { h.activa = chk.checked; xeCambio(); xePintar(); };
+    nom.value = h.nombre; nom.placeholder = orig.nombre;
+    nom.oninput = () => { h.nombre = nom.value; xeCambio(); };
+    box.querySelector('.xe-n').textContent = h.columnas.filter(c => c.activa).length + ' columna(s)' + (h.nombre !== orig.nombre ? ' · antes: ' + orig.nombre : '');
+    const [up, down] = box.querySelectorAll('.xe-mv');
+    up.disabled = i === 0; down.disabled = i === hojas.length - 1;
+    up.onclick = () => _xeMover(hojas, i, -1); down.onclick = () => _xeMover(hojas, i, 1);
+    box.querySelector('.xe-abrir').onclick = () => { _xe.abierta = abierta ? '' : h.id; xePintar(); };
+    if (abierta) {
+      const cuerpo = document.createElement('div'); cuerpo.className = 'nc-cuerpo';
+      cuerpo.innerHTML = `<div class="neg-hint" style="margin:0 0 6px;">Marcá las columnas que salen, cambiales el título si querés y ordenalas con ↑ ↓.${h.id === 'historial' ? ' Las columnas de cada semana y el Total se agregan solas.' : ''}</div><div class="xe-cols"></div>`;
+      const lista = cuerpo.querySelector('.xe-cols');
+      h.columnas.forEach((c, j) => {
+        const f = document.createElement('div'); f.className = 'xe-col';
+        f.innerHTML = '<input type="checkbox"><input class="ug-in" maxlength="60"><small></small><button class="xe-mv">↑</button><button class="xe-mv">↓</button>';
+        const [ck, tit] = f.querySelectorAll('input');
+        ck.checked = c.activa;
+        ck.onchange = () => { c.activa = ck.checked; xeCambio(); xePintar(); };
+        tit.value = c.titulo; tit.placeholder = orig.columnas[c.id] || c.id;
+        tit.oninput = () => { c.titulo = tit.value; xeCambio(); };
+        if (!c.activa) tit.style.opacity = '.55';
+        f.querySelector('small').textContent = (orig.columnas[c.id] && orig.columnas[c.id] !== c.titulo) ? 'dato: ' + orig.columnas[c.id] : '';
+        const [u, dn] = f.querySelectorAll('.xe-mv');
+        u.disabled = j === 0; dn.disabled = j === h.columnas.length - 1;
+        u.onclick = () => _xeMover(h.columnas, j, -1); dn.onclick = () => _xeMover(h.columnas, j, 1);
+        lista.appendChild(f);
+      });
+      box.appendChild(cuerpo);
+    }
+    cont.appendChild(box);
+  });
+}
+async function _xePost(extra) {
+  const r = await fetch(API + '/api/excel-formato', { method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({negocio: _xe.neg, rol: usuario.rol, ...extra}) });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) { toast(d.error || 'No se pudo guardar', 'err'); return false; }
+  _xe.fmt = d.formato; _xe.cambio = false; xePintar();
+  return true;
+}
+async function xeGuardar() { if (await _xePost({formato: _xe.fmt})) toast('Formato del Excel guardado', 'ok'); }
+async function xeRestaurar() {
+  if (!confirm('¿Volver al formato original del Excel para este negocio?')) return;
+  if (await _xePost({restaurar: true})) toast('Formato original restaurado', 'ok');
+}
+async function xeCopiar() {
+  const de = document.getElementById('xe-copiar').value;
+  if (!de) { toast('Elegí de qué negocio copiar', 'err'); return; }
+  if (!confirm(`¿Copiar el formato de ${(NEGOCIOS[de] || {}).nombre || de}? Se reemplaza el de este negocio.`)) return;
+  if (await _xePost({copiar_de: de})) toast('Formato copiado', 'ok');
+}
+async function xeVistaPrevia() {
+  if (_xe.cambio && !(await _xePost({formato: _xe.fmt}))) return;   // la vista previa usa el formato guardado
+  const st = document.getElementById('xe-estado');
+  st.textContent = 'Armando la vista previa...';
+  try {
+    const r = await fetch(API + '/api/cierre/vista-previa?negocio=' + encodeURIComponent(_xe.neg) + '&rol=' + usuario.rol);
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || ('Error ' + r.status));
+    const nombre = (r.headers.get('Content-Disposition') || '').match(/filename="?([^";]+)/);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = nombre ? nombre[1] : 'Vista_previa.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    st.textContent = '✓ Vista previa descargada (la semana no se cerró)';
+  } catch (e) { st.textContent = '⚠ ' + e.message; }
 }
 
 // ─── Memoria y consumo (superadmin) ───
@@ -4110,13 +4249,18 @@ function ncPintar() {
     box.querySelector('.nc-cab').onclick = () => { _nc.abierta = abierta ? '' : cat; ncPintar(); };
     if (abierta) {
       const cuerpo = document.createElement('div'); cuerpo.className = 'nc-cuerpo';
-      cuerpo.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      cuerpo.innerHTML = `<div class="neg-hint" style="margin:0 0 4px;">Guía para la IA de esta categoría (opcional): cómo se ven sus productos, marcas, colores, sabores parecidos, nombre en Walmart y en Auto Mercado. Si la dejás vacía, la IA usa el prompt del negocio.</div>
+        <textarea class="neg-prompt nc-guia" spellcheck="false" style="min-height:70px;height:110px;margin-bottom:10px;"></textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <input class="ug-in nc-buscar" style="flex:1;min-width:160px;padding:7px 10px;" placeholder="Buscar producto o código...">
           <label class="nc-op" style="cursor:pointer;"><input type="checkbox" class="nc-solo" style="width:16px;height:16px;accent-color:var(--korax-mid);"> Ocultar los de otras categorías</label>
           <button class="btn btn-gris nc-todos" style="width:auto;padding:6px 10px;font-size:12px;">Marcar los visibles sin categoría</button>
           <button class="btn btn-gris nc-ninguno" style="width:auto;padding:6px 10px;font-size:12px;">Desmarcar todos</button>
         </div><div class="nc-lista"></div>`;
       const lista = cuerpo.querySelector('.nc-lista'), buscar = cuerpo.querySelector('.nc-buscar'), solo = cuerpo.querySelector('.nc-solo');
+      const guia = cuerpo.querySelector('.nc-guia');
+      guia.value = (_nc.cats.guias || {})[cat] || '';
+      guia.oninput = () => { _nc.cats.guias = _nc.cats.guias || {}; _nc.cats.guias[cat] = guia.value; _nc.cambio = true; };
       buscar.value = _nc.buscar || ''; solo.checked = !!_nc.solo;
       const visibles = () => {
         const q = buscar.value.trim().toLowerCase();
@@ -4180,6 +4324,7 @@ function ncRenombrar(cat) {
   if (_ncExiste(n) && n.toLowerCase() !== cat.toLowerCase()) { toast('Esa categoría ya existe', 'err'); return; }
   _nc.cats.categorias = _nc.cats.categorias.map(c => c === cat ? n : c);
   Object.keys(_nc.cats.productos).forEach(p => { if (_nc.cats.productos[p] === cat) _nc.cats.productos[p] = n; });
+  const g = _nc.cats.guias || {}; if (g[cat] !== undefined) { g[n] = g[cat]; delete g[cat]; }
   if (_nc.abierta === cat) _nc.abierta = n;
   _nc.cambio = true; ncPintar();
 }
@@ -4187,6 +4332,7 @@ function ncEliminar(cat) {
   if (!confirm(`¿Eliminar la categoría "${cat}"? Sus productos quedan sin categoría.`)) return;
   _nc.cats.categorias = _nc.cats.categorias.filter(c => c !== cat);
   Object.keys(_nc.cats.productos).forEach(p => { if (_nc.cats.productos[p] === cat) delete _nc.cats.productos[p]; });
+  delete (_nc.cats.guias || {})[cat];
   _nc.cambio = true; ncPintar();
 }
 
@@ -4398,7 +4544,7 @@ async function guardarNegocio() {
   if (!d.ok) { err.textContent = d.error || ('Error ' + r.status); return; }
   if (Object.values(body.modos).includes('categoria') && _nc.cambio) {
     const rc = await fetch(API + '/api/categorias', { method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({negocio: d.negocio.slug, rol: usuario.rol, categorias: _nc.cats.categorias, productos: _nc.cats.productos}) });
+      body: JSON.stringify({negocio: d.negocio.slug, rol: usuario.rol, categorias: _nc.cats.categorias, productos: _nc.cats.productos, guias: _nc.cats.guias || {}}) });
     const dc = await rc.json().catch(() => ({}));
     if (!dc.ok) { err.textContent = 'El negocio se guardó, pero las categorías no: ' + (dc.error || rc.status); return; }
     _nc.cambio = false;
@@ -5057,7 +5203,7 @@ async function cargarCategorias() {
 function _catDe(p) { const c = _cats.productos[p]; return _cats.categorias.includes(c) ? c : SIN_CAT; }
 async function guardarCategorias() {
   const r = await fetch(API + '/api/categorias', { method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({negocio: negocioActual, rol: usuario.rol, categorias: _cats.categorias, productos: _cats.productos}) });
+    body: JSON.stringify({negocio: negocioActual, rol: usuario.rol, categorias: _cats.categorias, productos: _cats.productos, guias: _cats.guias || {}}) });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) { toast(d.error || 'No se pudo guardar', 'err'); await cargarCategorias(); return false; }
   return true;
@@ -5151,6 +5297,7 @@ async function catRenombrar(cat) {
   if (_catExiste(n) && n.toLowerCase() !== cat.toLowerCase()) { toast('Esa categoría ya existe', 'err'); return; }
   _cats.categorias = _cats.categorias.map(c => c === cat ? n : c);
   Object.keys(_cats.productos).forEach(p => { if (_cats.productos[p] === cat) _cats.productos[p] = n; });
+  const g = _cats.guias || {}; if (g[cat] !== undefined) { g[n] = g[cat]; delete g[cat]; }
   renderCategorias();
   await guardarCategorias();
 }

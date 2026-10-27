@@ -1497,7 +1497,7 @@ def categorias_de(negocio):
         d = json.loads(cfg.valor) if cfg and cfg.valor else {}
     except Exception:
         d = {}
-    return {"categorias": d.get("categorias") or [], "productos": d.get("productos") or {}}
+    return {"categorias": d.get("categorias") or [], "productos": d.get("productos") or {}, "guias": d.get("guias") or {}}
 
 def categoria_de(cats, producto):
     c = cats["productos"].get(producto)
@@ -1522,9 +1522,11 @@ def guardar_categorias():
             return jsonify({"ok": False, "error": f"Nombre de categoría inválido o repetido: {c or '(vacío)'}"}), 400
         vistas.add(c.lower()); cats.append(c)
     prods = {str(p): c for p, c in (d.get("productos") or {}).items() if c in cats}
+    guias = d["guias"] if isinstance(d.get("guias"), dict) else categorias_de(negocio)["guias"]   # si no vienen, se conservan
+    guias = {c: str(t).strip()[:20000] for c, t in guias.items() if c in cats and str(t).strip()}
     clave = f"{negocio}:categorias"
     cfg = db.session.get(Config, clave) or Config(clave=clave)
-    cfg.valor = json.dumps({"categorias": cats, "productos": prods}, ensure_ascii=False)
+    cfg.valor = json.dumps({"categorias": cats, "productos": prods, "guias": guias}, ensure_ascii=False)
     db.session.add(cfg); db.session.commit()
     return jsonify({"ok": True})
 
@@ -1633,70 +1635,13 @@ def _grupo_excel(codigo):
         return "AM"
     return codigo
 
-def _dividir_excel_por_cadena(wb, negocio):
-    """Cada hoja con columna 'Tienda' se separa en una hoja por cadena del negocio ('WM …', 'AM …', …).
-    Filas de cadenas desactivadas se quitan. Hojas sin columna Tienda quedan igual, al final."""
-    from copy import copy
-    n = Negocio.query.get(negocio)
-    activas = parse_cadenas(n.cadenas) if n else []
-    extra = [c for c in activas if c not in {x["codigo"] for x in CADENAS_CATALOGO}]
-    grupos = list(dict.fromkeys(_grupo_excel(c) for c in activas)) or ["WM", "AM"]
-
-    def grupo_de(tienda):
-        cod = cadena_de_tienda(tienda, extra)
-        return _grupo_excel(cod) if cod else grupos[0]   # tienda sin prefijo reconocido: primera cadena
-
-    nuevas = {g: [] for g in grupos}
-    sin_tienda = []
-    for ws in list(wb.worksheets):
-        hdr = [c.value for c in ws[1]]
-        it = next((i for i, h in enumerate(hdr) if h and str(h).strip().lower() == "tienda"), None)
-        if it is None:
-            sin_tienda.append(ws)
-            continue
-        anchos = {k: v.width for k, v in ws.column_dimensions.items()}
-        for g in grupos:
-            dest = wb.create_sheet(f"{g} {ws.title}"[:31])
-            for k, w in anchos.items():
-                dest.column_dimensions[k].width = w
-            dest.freeze_panes = ws.freeze_panes
-            fila_dest = 0
-            for fila in ws.iter_rows():
-                if fila[0].row > 1:
-                    tienda = fila[it].value
-                    if not tienda or grupo_de(tienda) != g:
-                        continue
-                fila_dest += 1
-                for c in fila:
-                    d = dest.cell(row=fila_dest, column=c.column, value=c.value)
-                    if c.has_style:
-                        d.font, d.fill, d.border = copy(c.font), copy(c.fill), copy(c.border)
-                        d.alignment, d.number_format = copy(c.alignment), c.number_format
-            nuevas[g].append(dest)
-        wb.remove(ws)
-    wb._sheets = [h for g in grupos for h in nuevas[g]] + sin_tienda
-
-@app.route("/api/cerrar-semana", methods=["POST"])
-def cerrar_semana():
-    data    = request.json or {}
-    if data.get("rol") not in ROLES_ADMIN:
-        return jsonify({"ok": False, "error": "Solo un administrador puede cerrar la semana"}), 403
-    negocio = (data.get("negocio") or "mundo_vegano").strip()
-    semana  = semana_actual(negocio)
-    if semana >= semana_captura(negocio):
-        return jsonify({"ok": False, "error": "Esa semana todavía no termina: se puede cerrar desde el lunes. "
-                                              "Los displays siguen mandando reportes a esa semana."}), 409
+def _calcular_cierre(negocio, semana):
+    """Todo lo que necesita el cierre SIN escribir en la base: reportes, diferencias de la semana (en memoria)
+    y los datos del Excel. Lo usan el cierre real y la vista previa del Excel."""
     habilitada = filtro_tiendas(negocio)   # cadenas desactivadas / tiendas quitadas no entran al cierre
     # Las fotos (foto_b64) NO se cargan aquí: se leen de a una al armar el ZIP (ahorra memoria)
     reportes = [r for r in Reporte.query.options(db.defer(Reporte.foto_b64))
                 .filter_by(semana=semana, negocio=negocio).all() if habilitada(r.tienda)]
-
-    # Seguridad: si la semana ya se cerró y no tiene reportes, cerrarla de nuevo borraría el
-    # historial correcto y lo reemplazaría por "sin foto" en todo.
-    if not reportes and Diferencia.query.filter_by(semana=semana, negocio=negocio).first():
-        return jsonify({"ok": False, "error": f"La semana {semana} ya fue cerrada y no tiene reportes. "
-                        "No se vuelve a cerrar para no perder el historial. "
-                        "Si el ZIP no se descargó, usá 'Descargar último cierre'."}), 409
 
     # Construir mapa de reportes: {(tienda, producto): reporte}
     mapa = {}
@@ -1706,7 +1651,8 @@ def cerrar_semana():
             mapa[key] = r
 
     # Semana anterior para detectar reincidentes
-    semana_ant = Diferencia.query.filter(Diferencia.semana < semana, Diferencia.negocio == negocio).order_by(Diferencia.semana.desc()).with_entities(Diferencia.semana).first()
+    semana_ant = (Diferencia.query.filter(Diferencia.semana < semana, Diferencia.negocio == negocio)
+                  .order_by(Diferencia.semana.desc()).with_entities(Diferencia.semana).first())
     semana_anterior = semana_ant[0] if semana_ant else None
     difs_anteriores = set()
     if semana_anterior:
@@ -1714,18 +1660,15 @@ def cerrar_semana():
             if d.estado != "OK":
                 difs_anteriores.add((d.tienda, d.producto))
 
-    # Mapa de validaciones IA/supervisor para esta semana
-    validaciones = {}
+    # Validaciones IA/supervisor de esta semana
+    validaciones, motivos = {}, {}
     for v in ValidacionIA.query.filter_by(semana=semana, negocio=negocio).all():
-        rep = mapa.get((v.tienda, v.producto))
-        if rep:
+        if mapa.get((v.tienda, v.producto)):
             validaciones[(v.tienda, v.producto)] = v.estado  # APROBADO / RECHAZADO / REVISAR / etc.
+            motivos[(v.tienda, v.producto)] = v.motivo or ""
 
     rurales_negocio = rurales_de(negocio)
-
-    # Tiendas rurales que reportaron esta semana
     tiendas_rurales_esta_semana = {r.tienda for r in reportes if r.tienda in rurales_negocio}
-
     # Tiendas rurales que visitaron en las últimas 3 semanas (historial Diferencia)
     semanas_hist = sorted({
         d.semana for d in Diferencia.query
@@ -1742,11 +1685,11 @@ def cerrar_semana():
             if d.tienda in rurales_negocio:
                 tiendas_rurales_visitaron_mes.add(d.tienda)
 
-    # Calcular diferencias (solo tiendas de cadenas activas del negocio)
+    # Diferencias de la semana (solo tiendas de cadenas activas del negocio)
     inactivos = productos_inactivos(negocio)   # productos desactivados no cuentan como diferencia
     inventario = [i for i in Inventario.query.filter_by(negocio=negocio).all()
                   if habilitada(i.tienda) and i.producto not in inactivos]
-    Diferencia.query.filter_by(semana=semana, negocio=negocio).delete()
+    difs = []
     for inv in inventario:
         if inv.cantidad <= 0:
             continue
@@ -1760,336 +1703,415 @@ def cerrar_semana():
                 continue  # visitó este mes, no contar como diferencia
 
         if rep and rep.foto and val_estado == "RECHAZADO":
-            estado = "RECHAZADO"
-            comentario = rep.comentario or ""
+            estado, comentario = "RECHAZADO", rep.comentario or ""
         elif rep and rep.foto and val_estado == "REVISAR":
-            estado = "REVISAR"
-            comentario = rep.comentario or ""
+            estado, comentario = "REVISAR", rep.comentario or ""
         elif rep and rep.foto and val_estado == "APROBADO":
-            estado = "OK"
-            comentario = rep.comentario or ""
+            estado, comentario = "OK", rep.comentario or ""
         elif rep and rep.comentario:
-            estado = "CON_JUSTIFICACION"
-            comentario = rep.comentario
+            estado, comentario = "CON_JUSTIFICACION", rep.comentario
         else:
-            estado = "SIN_FOTO"
-            comentario = ""
-        db.session.add(Diferencia(negocio=negocio, semana=semana, tienda=inv.tienda, producto=inv.producto,
-                                   cantidad=inv.cantidad, estado=estado, comentario=comentario))
-    db.session.commit()
+            estado, comentario = "SIN_FOTO", ""
+        difs.append({"tienda": inv.tienda, "producto": inv.producto, "cantidad": inv.cantidad,
+                     "estado": estado, "comentario": comentario})
 
-    # Generar Excel
-    wb = openpyxl.Workbook()
+    return {"semana": semana, "reportes": reportes, "mapa": mapa, "difs": difs, "difs_anteriores": difs_anteriores,
+            "validaciones": validaciones, "motivos": motivos, "rurales": rurales_negocio, "semanas_hist": semanas_hist,
+            "rurales_semana": tiendas_rurales_esta_semana, "rurales_mes": tiendas_rurales_visitaron_mes,
+            "inventario": inventario, "inactivos": inactivos}
 
-    # Estilos
-    fill_rojo     = PatternFill("solid", fgColor="FFD7D7")
-    fill_amarillo = PatternFill("solid", fgColor="FFF3CD")
-    fill_verde    = PatternFill("solid", fgColor="D4EDDA")
-    fill_header   = PatternFill("solid", fgColor="1E2230")
-    fill_reinc    = PatternFill("solid", fgColor="FFB3B3")
-    font_header   = Font(bold=True, color="00BF8F", size=11)
-    font_reinc    = Font(bold=True, color="C0392B")
-    thin          = Side(style="thin", color="CCCCCC")
-    border        = Border(left=thin, right=thin, top=thin, bottom=thin)
-    center        = Alignment(horizontal="center", vertical="center")
 
-    def estilo_header(ws, cols):
-        for cell in ws[1]:
-            cell.fill   = fill_header
-            cell.font   = font_header
-            cell.alignment = center
-            cell.border = border
-        for i, w in enumerate(cols, 1):
-            ws.column_dimensions[get_column_letter(i)].width = w
+# ── Formato del Excel del cierre (editable por negocio en Sistema → Editor de Excel) ──
+CAMPOS_EXCEL = {   # id: (título por defecto, ancho)
+    "tienda": ("Tienda", 34), "producto": ("Producto", 42), "codigo": ("Código", 14), "categoria": ("Categoría", 18),
+    "cadena": ("Cadena", 14), "stock": ("Stock sistema", 13), "estado": ("Estado", 18), "comentario": ("Comentario", 42),
+    "reincidente": ("Reincidente", 12), "display": ("Display", 20), "fecha": ("Fecha de visita", 17),
+    "ia": ("Resultado IA", 14), "nota_ia": ("Nota de la IA", 42), "rural": ("Rural", 8),
+    "productos": ("Productos en sistema", 20), "observacion": ("Observación", 44),
+    "total": ("Total productos", 15), "con_foto": ("Con foto", 11), "sin_foto": ("Sin foto", 11),
+    "cumplimiento": ("% Cumplimiento", 15), "tiendas": ("Tiendas visitadas", 17), "reportados": ("Productos reportados", 20),
+    "ultima": ("Última actividad", 17), "visito_mes": ("Visitó este mes", 15), "visito_semana": ("Visitó esta semana", 17),
+    "ultima_semana": ("Última semana registrada", 24),
+}
+_FILA_PRODUCTO = ["tienda", "producto", "codigo", "categoria", "cadena", "stock", "estado", "comentario", "reincidente",
+                  "display", "fecha", "ia", "nota_ia", "rural"]
+HOJAS_EXCEL = [   # (id, nombre, campos disponibles, campos por defecto = el Excel de siempre, títulos propios)
+    ("diferencias", "Diferencias", _FILA_PRODUCTO, ["tienda", "producto", "stock", "estado", "comentario", "reincidente"], {}),
+    ("reincidentes", "Reincidentes", _FILA_PRODUCTO, ["tienda", "producto", "stock", "estado", "comentario"], {}),
+    ("exhibidos", "Exhibidos OK", [c for c in _FILA_PRODUCTO if c not in ("estado", "reincidente")],
+     ["tienda", "producto", "stock", "comentario"], {}),
+    ("historial", "Historial diferencias", ["tienda", "producto", "codigo", "categoria", "cadena", "stock", "comentario"],
+     ["tienda", "producto", "stock", "comentario"], {"stock": "Stock", "comentario": "Comentario semana actual"}),
+    ("sin_visita", "Tiendas sin visita", ["tienda", "cadena", "productos", "observacion"], ["tienda", "productos", "observacion"], {}),
+    ("resumen_tienda", "Resumen por tienda", ["tienda", "cadena", "total", "con_foto", "sin_foto", "cumplimiento"],
+     ["tienda", "total", "con_foto", "sin_foto", "cumplimiento"], {}),
+    ("resumen_display", "Resumen por display", ["display", "tiendas", "reportados", "con_foto", "ultima"],
+     ["display", "tiendas", "reportados", "con_foto", "ultima"], {}),
+    ("rurales", "Visitas Rurales", ["tienda", "cadena", "visito_mes", "visito_semana", "ultima_semana"],
+     ["tienda", "visito_mes", "visito_semana", "ultima_semana"], {}),
+]
 
-    rango_archivo, rango_legible = rango_de_codigo(semana)
+def _formato_por_defecto():
+    hojas = []
+    for hid, nombre, disp, defecto, titulos in HOJAS_EXCEL:
+        orden = defecto + [c for c in disp if c not in defecto]
+        hojas.append({"id": hid, "nombre": nombre, "activa": True,
+                      "columnas": [{"id": c, "titulo": titulos.get(c, CAMPOS_EXCEL[c][0]), "activa": c in defecto} for c in orden]})
+    return {"separar_por_cadena": True, "hojas": hojas}
 
-    # Hoja 1 — Diferencias actuales
-    ws1 = wb.active
-    ws1.title = f"Diferencias {rango_legible}"
-    ws1.append(["Tienda", "Producto", "Stock sistema", "Estado", "Comentario", "Reincidente"])
-    estilo_header(ws1, [35, 40, 14, 18, 40, 12])
+def formato_excel(negocio):
+    """Formato guardado del negocio, completado con hojas/columnas nuevas (apagadas) y sin las que ya no existen."""
+    base = _formato_por_defecto()
+    cfg = db.session.get(Config, f"{negocio}:excel_formato")
+    try:
+        guardado = json.loads(cfg.valor) if cfg and cfg.valor else None
+    except Exception:
+        guardado = None
+    if not guardado:
+        return base
+    por_id = {h["id"]: h for h in base["hojas"]}
+    hojas = []
+    for h in guardado.get("hojas") or []:
+        b = por_id.pop(h.get("id"), None)
+        if not b:
+            continue
+        cols_b = {c["id"]: c for c in b["columnas"]}
+        cols = []
+        for c in h.get("columnas") or []:
+            if c.get("id") in cols_b:
+                d = cols_b.pop(c["id"])
+                cols.append({"id": d["id"], "titulo": (str(c.get("titulo") or "").strip() or d["titulo"])[:60],
+                             "activa": bool(c.get("activa"))})
+        cols += [dict(c, activa=False) for c in cols_b.values()]
+        hojas.append({"id": b["id"], "nombre": (str(h.get("nombre") or "").strip() or b["nombre"])[:25],
+                      "activa": bool(h.get("activa", True)), "columnas": cols})
+    hojas += [dict(h, activa=False) for h in por_id.values()]
+    return {"separar_por_cadena": bool(guardado.get("separar_por_cadena", True)), "hojas": hojas}
 
-    difs = Diferencia.query.filter_by(semana=semana, negocio=negocio).filter(Diferencia.estado != "OK").order_by(Diferencia.tienda, Diferencia.producto).all()
-    for d in difs:
-        reinc = "SI" if (d.tienda, d.producto) in difs_anteriores else "No"
-        if d.estado == "SIN_FOTO":
-            estado_txt = "Sin foto"
-        elif d.estado == "RECHAZADO":
-            estado_txt = "Foto rechazada"
-        else:
-            estado_txt = "Con justificación"
-        row = [d.tienda, d.producto, d.cantidad, estado_txt, d.comentario or "", reinc]
-        ws1.append(row)
-        r = ws1.max_row
-        if d.estado == "RECHAZADO":
-            fill = PatternFill("solid", fgColor="FFB3B3")  # rojo más oscuro
-        elif d.estado == "SIN_FOTO":
-            fill = fill_rojo
-        else:
-            fill = fill_amarillo
-        for c in range(1, 7):
-            ws1.cell(r, c).fill   = fill_reinc if reinc == "SI" else fill
-            ws1.cell(r, c).border = border
-            ws1.cell(r, c).alignment = Alignment(vertical="center", wrap_text=True)
-        if reinc == "SI":
-            ws1.cell(r, 6).font = font_reinc
+# Colores del Excel: los de la app (azul CPFR #084C8D y turquesa #00999E)
+_XL = {
+    "banda": "084C8D", "sub": "E6F0FA", "acento": "00999E", "cab": "1F6FB2", "cebra": "F3F8FD", "borde": "D6E4F0",
+    "texto": "1F2A37", "rojo": ("FDE2E2", "9B1C1C"), "rojo2": ("F8C9C9", "7F1D1D"), "ambar": ("FFF1D6", "8A5A00"),
+    "verde": ("DCF3EE", "0B6B57"), "gris": "EEF2F6",
+}
 
-    # Hoja 2 — Solo reincidentes
-    ws2 = wb.create_sheet("Reincidentes")
-    ws2.append(["Tienda", "Producto", "Stock sistema", "Estado", "Comentario"])
-    estilo_header(ws2, [35, 40, 14, 18, 40])
-    for d in difs:
-        if (d.tienda, d.producto) in difs_anteriores:
-            if d.estado == "SIN_FOTO":
-                estado_txt = "Sin foto"
-            elif d.estado == "RECHAZADO":
-                estado_txt = "Foto rechazada"
-            else:
-                estado_txt = "Con justificación"
-            ws2.append([d.tienda, d.producto, d.cantidad, estado_txt, d.comentario or ""])
-            r = ws2.max_row
-            for c in range(1, 6):
-                ws2.cell(r, c).fill   = fill_reinc
-                ws2.cell(r, c).font   = font_reinc
-                ws2.cell(r, c).border = border
+def _estilo_valor(campo, valor):
+    """(fondo, color de letra, negrita) para celdas que muestran un estado."""
+    v = str(valor or "")
+    if campo == "estado":
+        return {"Sin foto": _XL["rojo"] + (True,), "Foto rechazada": _XL["rojo2"] + (True,),
+                "Con justificación": _XL["ambar"] + (False,), "Revisar": _XL["ambar"] + (False,)}.get(v)
+    if campo == "reincidente" and v == "SI":
+        return _XL["rojo"] + (True,)
+    if campo == "ia":
+        return {"Aprobada": _XL["verde"] + (False,), "Rechazada": _XL["rojo"] + (True,), "Revisar": _XL["ambar"] + (False,)}.get(v)
+    if campo == "cumplimiento" and isinstance(valor, (int, float)):
+        return (_XL["verde"] if valor >= .8 else _XL["ambar"] if valor >= .5 else _XL["rojo"]) + (True,)
+    if campo in ("visito_mes", "visito_semana"):
+        return (_XL["verde"] + (False,)) if v == "Sí" else (_XL["rojo"] + (True,))
+    return None
 
-    # Hoja 3 — Todo OK
-    ws3 = wb.create_sheet("Exhibidos OK")
-    ws3.append(["Tienda", "Producto", "Stock sistema", "Comentario"])
-    estilo_header(ws3, [35, 40, 14, 40])
-    for d in Diferencia.query.filter_by(semana=semana, negocio=negocio, estado="OK").order_by(Diferencia.tienda).all():
-        ws3.append([d.tienda, d.producto, d.cantidad, d.comentario or ""])
-        r = ws3.max_row
-        for c in range(1, 5):
-            ws3.cell(r, c).fill   = fill_verde
-            ws3.cell(r, c).border = border
+def _hoja_xl(wb, nombre, titulo, subtitulo, cols, filas, anchos_extra=None):
+    """Hoja con banda de título, encabezado azul, filas en cebra, filtros y encabezado fijo.
+    cols = [(id, título)], filas = [dict id→valor]."""
+    ws = wb.create_sheet(nombre[:31])
+    n = max(len(cols), 1)
+    borde = Side(style="thin", color=_XL["borde"])
+    caja = Border(left=borde, right=borde, top=borde, bottom=borde)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(n, 2))
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(n, 2))
+    ws.cell(1, 1, titulo).font = Font(bold=True, size=14, color="FFFFFF")
+    ws.cell(2, 1, subtitulo).font = Font(size=10, color=_XL["banda"])
+    for c in range(1, max(n, 2) + 1):
+        ws.cell(1, c).fill = PatternFill("solid", fgColor=_XL["banda"])
+        ws.cell(2, c).fill = PatternFill("solid", fgColor=_XL["sub"])
+        ws.cell(3, c).fill = PatternFill("solid", fgColor=_XL["acento"])
+    ws.cell(1, 1).alignment = Alignment(vertical="center", indent=1)
+    ws.cell(2, 1).alignment = Alignment(vertical="center", indent=1)
+    ws.row_dimensions[1].height, ws.row_dimensions[2].height, ws.row_dimensions[3].height = 28, 18, 4
+    for i, (cid, tit) in enumerate(cols, 1):
+        c = ws.cell(4, i, tit)
+        c.fill = PatternFill("solid", fgColor=_XL["cab"])
+        c.font = Font(bold=True, color="FFFFFF", size=10)
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border = caja
+        ancho = (anchos_extra or {}).get(cid) or CAMPOS_EXCEL.get(cid, ("", 14))[1]
+        ws.column_dimensions[get_column_letter(i)].width = ancho
+    ws.row_dimensions[4].height = 30
+    for r, fila in enumerate(filas, 5):
+        cebra = PatternFill("solid", fgColor=_XL["cebra"] if r % 2 == 0 else "FFFFFF")
+        for i, (cid, _) in enumerate(cols, 1):
+            v = fila.get(cid, "")
+            c = ws.cell(r, i, v)
+            c.border = caja
+            c.font = Font(size=10, color=_XL["texto"])
+            c.fill = cebra
+            c.alignment = Alignment(vertical="center", wrap_text=cid in ("comentario", "nota_ia", "observacion", "producto"))
+            if cid == "cumplimiento" and isinstance(v, (int, float)):
+                c.number_format = "0%"
+            if isinstance(v, (int, float)) and cid != "codigo":
+                c.alignment = Alignment(horizontal="center", vertical="center")
+            st = _estilo_valor(cid, v)
+            if st:
+                c.fill = PatternFill("solid", fgColor=st[0])
+                c.font = Font(size=10, color=st[1], bold=st[2])
+    ws.freeze_panes = "A5"
+    if cols:
+        ws.auto_filter.ref = f"A4:{get_column_letter(len(cols))}{max(4, 4 + len(filas))}"
+    ws.sheet_view.showGridLines = False
+    return ws
 
-    # Hoja 4 — Historial matricial: todas las tiendas, ordenado por total de diferencias
-    inventario_actual = {(inv.tienda, inv.producto): inv.cantidad for inv in Inventario.query.filter_by(negocio=negocio).all()
-                         if inv.producto not in inactivos}
+def _fecha_txt(f):
+    f = f or ""
+    return f"{f[6:8]}/{f[4:6]}/{f[:4]} {f[9:11]}:{f[11:13]}" if len(f) >= 13 else (f"{f[6:8]}/{f[4:6]}/{f[:4]}" if len(f) >= 8 else f)
 
-    semanas_arch = sorted(set(
-        d.semana for d in Diferencia.query.filter_by(negocio=negocio).with_entities(Diferencia.semana).distinct().all()
-    ))
+def _excel_cierre(negocio, c, vista_previa=False):
+    """Arma el Excel del cierre con el formato del negocio. c = _calcular_cierre(...)."""
+    semana, difs, mapa = c["semana"], c["difs"], c["mapa"]
+    fmt = formato_excel(negocio)
+    n = Negocio.query.get(negocio)
+    nombre_neg = n.nombre if n else negocio
+    activas = parse_cadenas(n.cadenas) if n else []
+    extra = [x for x in activas if x not in {k["codigo"] for k in CADENAS_CATALOGO}]
+    grupos = list(dict.fromkeys(_grupo_excel(x) for x in activas)) or ["WM", "AM"]
+    nombre_grupo = {"WM": "Walmart", "AM": "Auto Mercado"}
 
-    # {(tienda, producto): {semana: 1/0}}
-    matriz = {}
-    for d in Diferencia.query.filter_by(negocio=negocio).order_by(Diferencia.semana).all():
-        key = (d.tienda, d.producto)
-        if key not in matriz:
-            matriz[key] = {}
-        if d.estado != "OK":
-            matriz[key][d.semana] = 1
-        elif d.semana not in matriz[key]:
-            matriz[key][d.semana] = 0
+    def grupo_de(tienda):
+        cod = cadena_de_tienda(tienda, extra)
+        return _grupo_excel(cod) if cod else grupos[0]   # tienda sin prefijo reconocido: primera cadena
 
-    fill_uno        = PatternFill("solid", fgColor="C62828")
-    fill_cero       = PatternFill("solid", fgColor="1B5E20")
-    fill_vacio      = PatternFill("solid", fgColor="2a2a2a")
-    font_blanco     = Font(bold=True, color="FFFFFF", size=10)
-    font_header_col = Font(bold=True, color="FFFFFF", size=9)
-    fill_header_col = PatternFill("solid", fgColor="1e4060")
-    fill_total_alto = PatternFill("solid", fgColor="5C0000")
+    _, rango_legible = rango_de_codigo(semana)
+    elegidos, cats = codigos_elegidos(negocio), categorias_de(negocio)
+    cod_inv = {(i.tienda, i.producto): i.item_nbr or "" for i in c["inventario"]}
+    ESTADO_TXT = {"SIN_FOTO": "Sin foto", "RECHAZADO": "Foto rechazada", "REVISAR": "Revisar",
+                  "CON_JUSTIFICACION": "Con justificación", "OK": "OK"}
+    IA_TXT = {"APROBADO": "Aprobada", "RECHAZADO": "Rechazada", "REVISAR": "Revisar"}
 
-    ws4 = wb.create_sheet("Historial diferencias")
+    def fila_producto(d):
+        k = (d["tienda"], d["producto"])
+        rep = mapa.get(k)
+        return {"tienda": d["tienda"], "producto": d["producto"],
+                "codigo": elegidos.get(d["producto"]) or cod_inv.get(k, ""),
+                "categoria": categoria_de(cats, d["producto"]) if cats["categorias"] else "",
+                "cadena": nombre_cadena(cadena_de_tienda(d["tienda"], extra)) if cadena_de_tienda(d["tienda"], extra) else "",
+                "stock": d["cantidad"], "estado": ESTADO_TXT.get(d["estado"], d["estado"]), "comentario": d["comentario"] or "",
+                "reincidente": "SI" if k in c["difs_anteriores"] else "No",
+                "display": (rep.usuario or "") if rep else "", "fecha": _fecha_txt(rep.fecha) if rep else "",
+                "ia": IA_TXT.get(c["validaciones"].get(k), ""), "nota_ia": c["motivos"].get(k, ""),
+                "rural": "Sí" if d["tienda"] in c["rurales"] else "No"}
 
-    cabeceras = ["Tienda", "Producto", "Stock"]
-    for sem in semanas_arch:
-        _, leg = rango_de_codigo(sem)
-        cabeceras.append(leg)
-    cabeceras.append("Total")
-    cabeceras.append("Comentario semana actual")
-    ws4.append(cabeceras)
-
-    anchos = [32, 40, 8] + [16] * len(semanas_arch) + [8, 45]
-    for i, ancho in enumerate(anchos, 1):
-        ws4.column_dimensions[ws4.cell(1, i).column_letter].width = ancho
-        ws4.cell(1, i).fill = fill_header_col
-        ws4.cell(1, i).font = font_header_col
-        ws4.cell(1, i).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    ws4.row_dimensions[1].height = 40
-
-    # Comentarios de la semana que se está cerrando — directo del mapa de reportes
-    comentarios_semana = {
-        key: (rep.comentario or "")
-        for key, rep in mapa.items()
-        if rep.comentario
+    no_ok = sorted((d for d in difs if d["estado"] != "OK"), key=lambda d: (d["tienda"], d["producto"]))
+    datos = {
+        "diferencias": [fila_producto(d) for d in no_ok],
+        "reincidentes": [fila_producto(d) for d in no_ok if (d["tienda"], d["producto"]) in c["difs_anteriores"]],
+        "exhibidos": [fila_producto(d) for d in sorted((d for d in difs if d["estado"] == "OK"), key=lambda d: d["tienda"])],
     }
 
-    # Calcular total por fila y ordenar de mayor a menor
-    filas_mat = []
-    for (tienda, producto), sem_map in matriz.items():
-        stock = inventario_actual.get((tienda, producto), "")
-        vals = [sem_map.get(s, None) for s in semanas_arch]
-        total = sum(1 for v in vals if v == 1)
-        comentario = comentarios_semana.get((tienda, producto), "")
-        filas_mat.append((tienda, producto, stock, vals, total, comentario))
-    filas_mat.sort(key=lambda x: x[4], reverse=True)
+    # Tiendas sin visita
+    inv = c["inventario"]
+    con_reporte = {r.tienda for r in c["reportes"]}
+    prods_tienda = {}
+    for i in inv:
+        prods_tienda[i.tienda] = prods_tienda.get(i.tienda, 0) + 1
+    cad_txt = lambda t: nombre_cadena(cadena_de_tienda(t, extra)) if cadena_de_tienda(t, extra) else ""
+    datos["sin_visita"] = [{"tienda": t, "cadena": cad_txt(t), "productos": prods_tienda[t],
+                            "observacion": "Ningún display reportó esta tienda en la semana"}
+                           for t in sorted(set(prods_tienda) - con_reporte)]
 
-    for tienda, producto, stock, vals, total, comentario in filas_mat:
-        fila = [tienda, producto, stock] + [""] * len(semanas_arch) + [total, comentario]
-        ws4.append(fila)
-        r = ws4.max_row
-        # Tienda / Producto / Stock
-        for c in range(1, 4):
-            ws4.cell(r, c).border = border
-            ws4.cell(r, c).alignment = Alignment(vertical="center")
-        # Celdas de semana
-        for i, v in enumerate(vals):
-            c = 4 + i
-            ws4.cell(r, c).border = border
-            ws4.cell(r, c).alignment = Alignment(horizontal="center", vertical="center")
-            if v == 1:
-                ws4.cell(r, c).fill = fill_uno
-                ws4.cell(r, c).font = font_blanco
-                ws4.cell(r, c).value = "1"
-            elif v == 0:
-                ws4.cell(r, c).fill = fill_cero
-                ws4.cell(r, c).font = font_blanco
-                ws4.cell(r, c).value = "0"
-            else:
-                ws4.cell(r, c).fill = fill_vacio
-        # Total
-        c_total = 4 + len(semanas_arch)
-        ws4.cell(r, c_total).border = border
-        ws4.cell(r, c_total).alignment = Alignment(horizontal="center", vertical="center")
-        if total >= 3:
-            ws4.cell(r, c_total).fill = fill_total_alto
-            ws4.cell(r, c_total).font = Font(bold=True, color="FFFFFF")
-        # Comentario
-        c_com = c_total + 1
-        ws4.cell(r, c_com).border = border
-        ws4.cell(r, c_com).alignment = Alignment(vertical="center", wrap_text=True)
+    # Resumen por tienda (% de cumplimiento, menor primero)
+    res = {}
+    for i in inv:
+        if i.cantidad > 0:
+            res.setdefault(i.tienda, {"total": 0, "ok": 0})["total"] += 1
+    for d in difs:
+        if d["estado"] == "OK" and d["tienda"] in res:
+            res[d["tienda"]]["ok"] += 1
+    filas = []
+    for t, x in res.items():
+        pct = round(x["ok"] / x["total"] * 100) if x["total"] else 0
+        filas.append({"tienda": t, "cadena": cad_txt(t), "total": x["total"], "con_foto": x["ok"],
+                      "sin_foto": x["total"] - x["ok"], "cumplimiento": pct / 100})
+    datos["resumen_tienda"] = sorted(filas, key=lambda f: f["cumplimiento"])
 
-    # Hoja 5 — Tiendas sin visita
-    todas_tiendas = set(inv.tienda for inv in inventario)
-    tiendas_con_reporte = set(r.tienda for r in reportes)
-    tiendas_sin_visita = sorted(todas_tiendas - tiendas_con_reporte)
+    # Resumen por display
+    rd = {}
+    for r in c["reportes"]:
+        u = r.usuario or "Desconocido"
+        x = rd.setdefault(u, {"tiendas": set(), "total": 0, "fotos": 0, "ultima": ""})
+        x["tiendas"].add(r.tienda); x["total"] += 1
+        x["fotos"] += 1 if r.foto else 0
+        x["ultima"] = max(x["ultima"], r.fecha or "")
+    datos["resumen_display"] = [{"display": u, "tiendas": len(x["tiendas"]), "reportados": x["total"], "con_foto": x["fotos"],
+                                 "ultima": _fecha_txt(x["ultima"][:8])} for u, x in sorted(rd.items())]
 
-    fill_naranja = PatternFill("solid", fgColor="FFE0B2")
-    font_naranja = Font(bold=True, color="BF360C")
-
-    ws5 = wb.create_sheet("Tiendas sin visita")
-    ws5.append(["Tienda", "Productos en sistema", "Observación"])
-    estilo_header(ws5, [40, 20, 40])
-    for t in tiendas_sin_visita:
-        prods = sum(1 for i in Inventario.query.filter_by(tienda=t, negocio=negocio).all() if i.producto not in inactivos)
-        ws5.append([t, prods, "Ningún display reportó esta tienda en la semana"])
-        r = ws5.max_row
-        for c in range(1, 4):
-            ws5.cell(r, c).fill   = fill_naranja
-            ws5.cell(r, c).font   = font_naranja
-            ws5.cell(r, c).border = border
-
-    # Hoja 6 — Resumen por tienda con % cumplimiento
-    ws6 = wb.create_sheet("Resumen por tienda")
-    ws6.append(["Tienda", "Total productos", "Con foto", "Sin foto", "% Cumplimiento"])
-    estilo_header(ws6, [40, 16, 12, 12, 16])
-
-    resumen_tiendas = {}
-    for inv in inventario:
-        if inv.cantidad <= 0:
-            continue
-        t = inv.tienda
-        if t not in resumen_tiendas:
-            resumen_tiendas[t] = {"total": 0, "ok": 0}
-        resumen_tiendas[t]["total"] += 1
-
-    for d in Diferencia.query.filter_by(semana=semana, negocio=negocio, estado="OK").all():
-        if d.tienda in resumen_tiendas:
-            resumen_tiendas[d.tienda]["ok"] += 1
-
-    filas_resumen = []
-    for t, datos in resumen_tiendas.items():
-        pct = round(datos["ok"] / datos["total"] * 100) if datos["total"] else 0
-        filas_resumen.append((t, datos["total"], datos["ok"], datos["total"] - datos["ok"], pct))
-    filas_resumen.sort(key=lambda x: x[4])  # menor % primero
-
-    for t, total, ok, sin_foto, pct in filas_resumen:
-        ws6.append([t, total, ok, sin_foto, f"{pct}%"])
-        r = ws6.max_row
-        fill = fill_verde if pct >= 80 else (fill_amarillo if pct >= 50 else fill_rojo)
-        for c in range(1, 6):
-            ws6.cell(r, c).fill   = fill
-            ws6.cell(r, c).border = border
-            ws6.cell(r, c).alignment = Alignment(vertical="center")
-
-    # Hoja 7 — Resumen por display
-    ws7 = wb.create_sheet("Resumen por display")
-    ws7.append(["Display", "Tiendas visitadas", "Productos reportados", "Con foto", "Última actividad"])
-    estilo_header(ws7, [25, 18, 20, 12, 20])
-
-    resumen_display = {}
-    for rep in reportes:
-        u = rep.usuario or "Desconocido"
-        if u not in resumen_display:
-            resumen_display[u] = {"tiendas": set(), "total": 0, "fotos": 0, "ultima": ""}
-        resumen_display[u]["tiendas"].add(rep.tienda)
-        resumen_display[u]["total"] += 1
-        if rep.foto:
-            resumen_display[u]["fotos"] += 1
-        if rep.fecha > resumen_display[u]["ultima"]:
-            resumen_display[u]["ultima"] = rep.fecha
-
-    for disp, datos in sorted(resumen_display.items()):
-        fecha_fmt = datos["ultima"][:8]
-        if len(fecha_fmt) == 8:
-            fecha_fmt = f"{fecha_fmt[6:8]}/{fecha_fmt[4:6]}/{fecha_fmt[:4]}"
-        ws7.append([disp, len(datos["tiendas"]), datos["total"], datos["fotos"], fecha_fmt])
-        r = ws7.max_row
-        for c in range(1, 6):
-            ws7.cell(r, c).fill   = fill_verde
-            ws7.cell(r, c).border = border
-            ws7.cell(r, c).alignment = Alignment(vertical="center")
-
-    # Hoja 8 — Visitas Rurales (frecuencia mensual)
-    ws8 = wb.create_sheet("Visitas Rurales")
-    ws8.append(["Tienda", "Visitó este mes", "Visitó esta semana", "Última semana registrada"])
-    estilo_header(ws8, [40, 16, 18, 25])
-
-    fill_rural_ok  = PatternFill("solid", fgColor="D4EDDA")
-    fill_rural_mal = PatternFill("solid", fgColor="FFD7D7")
-    font_rural_mal = Font(bold=True, color="C0392B")
-
-    todas_rurales_inventario = sorted({inv.tienda for inv in inventario if inv.tienda in rurales_negocio})
-    for tienda_r in todas_rurales_inventario:
-        visito_mes    = "Sí" if tienda_r in tiendas_rurales_visitaron_mes else "No"
-        visito_semana = "Sí" if tienda_r in tiendas_rurales_esta_semana   else "No"
+    # Visitas rurales
+    filas = []
+    for t in sorted({i.tienda for i in inv if i.tienda in c["rurales"]}):
         ultima = "—"
-        if semanas_hist:
-            for sh in semanas_hist:
-                tiene = Diferencia.query.filter_by(semana=sh, tienda=tienda_r, negocio=negocio).filter(Diferencia.estado != "SIN_FOTO").first()
-                if tiene:
-                    _, leg = rango_de_codigo(sh)
-                    ultima = leg
-                    break
-        if tienda_r in tiendas_rurales_esta_semana:
-            _, leg = rango_de_codigo(semana)
-            ultima = leg
-        ws8.append([tienda_r, visito_mes, visito_semana, ultima])
-        r = ws8.max_row
-        fill_r = fill_rural_ok if visito_mes == "Sí" else fill_rural_mal
-        for c in range(1, 5):
-            ws8.cell(r, c).fill      = fill_r
-            ws8.cell(r, c).border    = border
-            ws8.cell(r, c).alignment = Alignment(vertical="center")
-        if visito_mes == "No":
-            for c in range(1, 5):
-                ws8.cell(r, c).font = font_rural_mal
+        for sh in c["semanas_hist"]:
+            if Diferencia.query.filter_by(semana=sh, tienda=t, negocio=negocio).filter(Diferencia.estado != "SIN_FOTO").first():
+                ultima = rango_de_codigo(sh)[1]
+                break
+        if t in c["rurales_semana"]:
+            ultima = rango_legible
+        filas.append({"tienda": t, "cadena": cad_txt(t), "visito_mes": "Sí" if t in c["rurales_mes"] else "No",
+                      "visito_semana": "Sí" if t in c["rurales_semana"] else "No", "ultima_semana": ultima})
+    datos["rurales"] = filas
 
-    # Hojas separadas por cadena del negocio (Walmart / Auto Mercado / otras)
-    _dividir_excel_por_cadena(wb, negocio)
+    # Historial: semanas anteriores (de la base) + la que se cierra (en memoria)
+    matriz = {}
+    for d in Diferencia.query.filter(Diferencia.negocio == negocio, Diferencia.semana != semana).order_by(Diferencia.semana).all():
+        m = matriz.setdefault((d.tienda, d.producto), {})
+        if d.estado != "OK": m[d.semana] = 1
+        elif d.semana not in m: m[d.semana] = 0
+    for d in difs:
+        m = matriz.setdefault((d["tienda"], d["producto"]), {})
+        m[semana] = 1 if d["estado"] != "OK" else m.get(semana, 0)
+    semanas_arch = sorted({s for m in matriz.values() for s in m if re.match(r"^\d{4}-S\d{2}$", s or "")})   # sin códigos inválidos
+    stock_act = {(i.tienda, i.producto): i.cantidad for i in Inventario.query.filter_by(negocio=negocio).all()
+                 if i.producto not in c["inactivos"]}
+    coment = {k: r.comentario for k, r in mapa.items() if r.comentario}
+    hist = []
+    for (t, p), m in matriz.items():
+        vals = [m.get(s) for s in semanas_arch]
+        hist.append({"tienda": t, "producto": p, "codigo": elegidos.get(p) or cod_inv.get((t, p), ""),
+                     "categoria": categoria_de(cats, p) if cats["categorias"] else "", "cadena": cad_txt(t),
+                     "stock": stock_act.get((t, p), ""), "comentario": coment.get((t, p), ""),
+                     "_vals": vals, "_total": sum(1 for v in vals if v == 1)})
+    hist.sort(key=lambda f: f["_total"], reverse=True)
+    datos["historial"] = hist
 
+    ahora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    def subtitulo(g, filas):
+        pre = "VISTA PREVIA · semana sin cerrar · " if vista_previa else ""
+        donde = f" · {nombre_grupo.get(g, nombre_cadena(g))}" if g else ""
+        return f"{pre}Semana {rango_legible}{donde} · {len(filas)} fila(s) · generado {ahora}"
+
+    def escribir(hoja, g, filas):
+        cols = [(x["id"], x["titulo"]) for x in hoja["columnas"] if x["activa"]]
+        nombre = f"{g} {hoja['nombre']}" if g else hoja["nombre"]
+        titulo = f"{nombre_neg} · {hoja['nombre']}"
+        if hoja["id"] != "historial":
+            _hoja_xl(wb, nombre, titulo, subtitulo(g, filas), cols, filas)
+            return
+        # historial: columnas fijas elegidas + una por semana + total (+ comentario al final)
+        lead = [x for x in cols if x[0] != "comentario"]
+        fin = [x for x in cols if x[0] == "comentario"]
+        sem_cols = [(f"_s{i}", rango_de_codigo(s)[1]) for i, s in enumerate(semanas_arch)]
+        todas = lead + sem_cols + [("_total", "Total")] + fin
+        filas_x = [dict(f, **{f"_s{i}": ("1" if v == 1 else "0" if v == 0 else "") for i, v in enumerate(f["_vals"])},
+                        _total=f["_total"]) for f in filas]
+        ws = _hoja_xl(wb, nombre, titulo, subtitulo(g, filas), todas, filas_x,
+                      anchos_extra={**{k: 13 for k, _ in sem_cols}, "_total": 8})
+        uno, cero, vacio = PatternFill("solid", fgColor=_XL["rojo"][0]), PatternFill("solid", fgColor=_XL["verde"][0]), PatternFill("solid", fgColor=_XL["gris"])
+        for r, f in enumerate(filas_x, 5):
+            for i, v in enumerate(f["_vals"]):
+                cel = ws.cell(r, len(lead) + 1 + i)
+                cel.alignment = Alignment(horizontal="center", vertical="center")
+                if v == 1: cel.fill, cel.font = uno, Font(bold=True, size=10, color=_XL["rojo"][1])
+                elif v == 0: cel.fill, cel.font = cero, Font(bold=True, size=10, color=_XL["verde"][1])
+                else: cel.fill = vacio
+            ct = ws.cell(r, len(lead) + len(sem_cols) + 1)
+            ct.alignment = Alignment(horizontal="center", vertical="center")
+            ct.font = Font(bold=True, size=10, color="FFFFFF" if f["_total"] >= 3 else _XL["texto"])
+            if f["_total"] >= 3:
+                ct.fill = PatternFill("solid", fgColor="B91C1C")
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    hojas = [h for h in fmt["hojas"] if h["activa"]]
+    con_tienda = [h for h in hojas if any(x["id"] == "tienda" for x in h["columnas"])]
+    sin_tienda = [h for h in hojas if h not in con_tienda]
+    if fmt["separar_por_cadena"]:
+        for g in grupos:
+            for h in con_tienda:
+                escribir(h, g, [f for f in datos[h["id"]] if grupo_de(f["tienda"]) == g])
+        for h in sin_tienda:
+            escribir(h, "", datos[h["id"]])
+    else:
+        for h in hojas:
+            escribir(h, "", datos[h["id"]])
+    if not wb.worksheets:
+        _hoja_xl(wb, "Cierre", f"{nombre_neg} · Cierre", subtitulo("", []), [], [])
     buf = io.BytesIO()
     wb.save(buf)
-    buf.seek(0)
+    return buf.getvalue()
+
+@app.route("/api/excel-formato")
+def ver_excel_formato():
+    if request.args.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    negocio = request.args.get("negocio", "")
+    base = {h["id"]: h for h in _formato_por_defecto()["hojas"]}
+    return jsonify({"ok": True, "formato": formato_excel(negocio),
+                    "originales": {k: {"nombre": v["nombre"], "columnas": {c["id"]: c["titulo"] for c in v["columnas"]}} for k, v in base.items()}})
+
+@app.route("/api/excel-formato", methods=["POST"])
+def guardar_excel_formato():
+    d = request.get_json(silent=True) or {}
+    if d.get("rol") != "superadmin":
+        return jsonify({"ok": False, "error": "Solo el superadmin edita el formato del Excel"}), 403
+    negocio = d.get("negocio")
+    if negocio not in slugs_negocios():
+        return jsonify({"ok": False, "error": "Negocio inválido"}), 400
+    clave = f"{negocio}:excel_formato"
+    cfg = db.session.get(Config, clave) or Config(clave=clave)
+    if d.get("restaurar"):
+        cfg.valor = ""
+    elif d.get("copiar_de"):
+        if d["copiar_de"] not in slugs_negocios():
+            return jsonify({"ok": False, "error": "Negocio de origen inválido"}), 400
+        cfg.valor = json.dumps(formato_excel(d["copiar_de"]), ensure_ascii=False)
+    else:
+        cfg.valor = json.dumps(d.get("formato") or {}, ensure_ascii=False)
+    db.session.add(cfg); db.session.commit()
+    return jsonify({"ok": True, "formato": formato_excel(negocio)})
+
+@app.route("/api/cierre/vista-previa")
+def vista_previa_cierre():
+    """El Excel del cierre de la semana del panel, SIN cerrar ni borrar nada."""
+    if request.args.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    negocio = request.args.get("negocio", "")
+    if negocio not in slugs_negocios():
+        return jsonify({"ok": False, "error": "Negocio inválido"}), 400
+    semana = semana_actual(negocio)
+    datos = _excel_cierre(negocio, _calcular_cierre(negocio, semana), vista_previa=True)
+    rango_archivo, _ = rango_de_codigo(semana)
+    return send_file(io.BytesIO(datos), as_attachment=True, download_name=f"Vista_previa_{negocio}_{rango_archivo}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+@app.route("/api/cerrar-semana", methods=["POST"])
+def cerrar_semana():
+    data    = request.json or {}
+    if data.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "Solo un administrador puede cerrar la semana"}), 403
+    negocio = (data.get("negocio") or "mundo_vegano").strip()
+    semana  = semana_actual(negocio)
+    if semana >= semana_captura(negocio):
+        return jsonify({"ok": False, "error": "Esa semana todavía no termina: se puede cerrar desde el lunes. "
+                                              "Los displays siguen mandando reportes a esa semana."}), 409
+    c = _calcular_cierre(negocio, semana)
+    reportes, mapa = c["reportes"], c["mapa"]
+
+    # Seguridad: si la semana ya se cerró y no tiene reportes, cerrarla de nuevo borraría el
+    # historial correcto y lo reemplazaría por "sin foto" en todo.
+    if not reportes and Diferencia.query.filter_by(semana=semana, negocio=negocio).first():
+        return jsonify({"ok": False, "error": f"La semana {semana} ya fue cerrada y no tiene reportes. "
+                        "No se vuelve a cerrar para no perder el historial. "
+                        "Si el ZIP no se descargó, usá 'Descargar último cierre'."}), 409
+
+    Diferencia.query.filter_by(semana=semana, negocio=negocio).delete()
+    for d in c["difs"]:
+        db.session.add(Diferencia(negocio=negocio, semana=semana, **d))
+    db.session.commit()
+
+    # Excel con el formato del negocio
+    buf = io.BytesIO(_excel_cierre(negocio, c))
+    rango_archivo, rango_legible = rango_de_codigo(semana)
 
     # Mapa de estado por producto para separar carpetas en el ZIP
-    estado_cierre = {
-        (d.tienda, d.producto): d.estado
-        for d in Diferencia.query.filter_by(semana=semana, negocio=negocio).all()
-    }
+    estado_cierre = {(d["tienda"], d["producto"]): d["estado"] for d in c["difs"]}
 
     # ── 1) ARMAR EL ZIP COMPLETO EN DISCO, ANTES DE BORRAR NADA ──────────────
     os.makedirs(CIERRES_DIR, exist_ok=True)
@@ -2678,7 +2700,7 @@ def modelo_gondola(negocio):
     m = (cfg.valor if cfg else "") or os.environ.get("MODELO_GONDOLA", "claude-haiku-5-5")
     return m if m in MODELOS_GONDOLA else "claude-haiku-5-5"
 
-def _sistema_gondola(nombre_negocio, guia):
+def _sistema_gondola(nombre_negocio, guia, categoria=""):
     return (
         f"Sos auditor de exhibición en supermercados de Costa Rica para la marca/distribuidor {nombre_negocio}. "
         "Recibís varias fotos numeradas (Foto 1, Foto 2, ...) tomadas en UNA tienda (góndolas, refrigeradores, exhibidores) "
@@ -2691,7 +2713,8 @@ def _sistema_gondola(nombre_negocio, guia):
         "Distinguí con cuidado sabores y presentaciones parecidas; ante la duda usá 'dudoso', no 'presente'. "
         "Devolvé TODOS los productos de la lista, con el nombre escrito exactamente como en la lista. "
         "En observaciones anotá en una o dos frases lo relevante de la tienda (desorden, precios faltantes, competencia ocupando el espacio).\n\n"
-        "Guía visual de los productos de la marca (escrita para revisar fotos individuales; usala para reconocer los empaques):\n"
+        + (f"Guía de la categoría {categoria} (usala para reconocer los empaques):\n" if categoria else
+           "Guía visual de los productos de la marca (escrita para revisar fotos individuales; usala para reconocer los empaques):\n")
         + guia.replace("{producto}", "cada producto de la lista")
     )
 
@@ -2750,6 +2773,11 @@ def _aplicar_gondola(gt):
                 db.session.delete(val)
     db.session.commit()
 
+def _guia_gondola(gt):
+    """(guía, categoría): la guía propia de la categoría si tiene; si no, el prompt del negocio."""
+    guia = categorias_de(gt.negocio)["guias"].get(gt.categoria) if gt.categoria else ""
+    return (guia, gt.categoria) if guia else (prompt_de(gt.negocio), "")
+
 def _analizar_gondola(gt_id):
     import anthropic as _anth
     gt = db.session.get(GondolaTienda, gt_id)
@@ -2773,7 +2801,7 @@ def _analizar_gondola(gt_id):
         extra["fallbacks"] = "default"; betas = ["server-side-fallback-2026-07-01"]
     client = _anth.Anthropic(api_key=ANTHROPIC_API_KEY)
     resp = client.beta.messages.create(model=modelo, max_tokens=16000, betas=betas,
-                                       system=_sistema_gondola(neg.nombre if neg else gt.negocio, prompt_de(gt.negocio)),
+                                       system=_sistema_gondola(neg.nombre if neg else gt.negocio, *_guia_gondola(gt)),
                                        messages=[{"role": "user", "content": contenido}], extra_body=extra)
     if resp.stop_reason == "refusal":
         raise RuntimeError("La IA no pudo analizar estas fotos")
