@@ -1342,7 +1342,7 @@
           <div class="quitadas" id="neg-quitadas"></div>
 
           <div class="neg-paso"><span class="num">4</span>Productos validados <span class="neg-hint" style="margin:0;font-weight:500;" id="np-resumen"></span></div>
-          <div class="neg-hint" style="margin:0 0 6px;">Revisá nombres y códigos. Si un producto viene con dos códigos (viejo y nuevo), tocá el que se va a usar: ese es el que ven los displays y el panel. Podés cambiarlo cuando cambie el código.</div>
+          <div class="neg-hint" style="margin:0 0 6px;">Revisá nombres y códigos. <b>Desmarcá</b> los productos que no van (ya no se exhiben o vienen mal): no se les piden a los displays y no cuentan en el cierre; siguen desactivados aunque vuelvas a cargar el inventario. Si un producto viene con dos códigos (viejo y nuevo), tocá el que se va a usar: ese es el que ven los displays y el panel.</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
             <input id="np-buscar" class="ug-in" style="flex:1;min-width:180px;padding:7px 10px;" placeholder="Buscar producto o código..." oninput="npPintar()">
             <label class="nc-op" style="cursor:pointer;"><input type="checkbox" id="np-dobles" onchange="npPintar()" style="width:16px;height:16px;accent-color:var(--korax-mid);"> Solo los que tienen dos códigos</label>
@@ -1363,7 +1363,7 @@
           <div id="nc-lista"></div>
         </div>
         <div class="neg-paso"><span class="num" id="neg-paso-prompt-num">6</span>Prompt de la IA <span class="neg-hint" style="margin:0;font-weight:500;" id="neg-prompt-info"></span></div>
-        <div class="neg-hint" style="margin:0 0 6px;">Lo que lee la IA para validar cada foto de este negocio. <b>{producto}</b> se reemplaza por el producto a revisar. No cambies las 3 líneas finales (ESTADO / CONFIANZA / MOTIVO).</div>
+        <div class="neg-hint" style="margin:0 0 6px;">Prompt general del negocio. Se usa en <b>una foto por producto</b> y en <b>góndola completa</b>, y en las categorías que <b>no</b> tienen guía propia. Una categoría con guía usa solo su guía (no se mandan los dos, así no se gastan tokens de más). <b>{producto}</b> se reemplaza por el producto a revisar. No cambies las 3 líneas finales (ESTADO / CONFIANZA / MOTIVO).</div>
         <textarea id="neg-prompt" class="neg-prompt" spellcheck="false" oninput="infoPrompt()"></textarea>
         <button class="btn btn-gris" style="width:auto;padding:6px 12px;font-size:12px;margin-top:6px;" onclick="restaurarPrompt()">↺ Restaurar el prompt original</button>
         <div class="error" id="neg-error" style="text-align:left;margin-top:8px;"></div>
@@ -4152,17 +4152,17 @@ async function analizarInventarioNegocio() {
 }
 
 // ── Categorías dentro del formulario del negocio: cada producto puede estar en UNA sola categoría ──
-let _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false, cod: {}, codCambio: false};
+let _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false, cod: {}, codCambio: false, activos: {}};
 async function ncCargar(slug) {
-  _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false, cod: {}, codCambio: false};
+  _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false, cod: {}, codCambio: false, activos: {}};
   ncMostrar(); npPintar();
   if (!slug) return;
   try {
     const [rc, rp] = await Promise.all([fetch(API + '/api/categorias?negocio=' + encodeURIComponent(slug)),
                                         fetch(API + '/api/productos-negocio?negocio=' + encodeURIComponent(slug))]);
     _nc.cats = await rc.json();
-    const prods = (await rp.json()).filter(p => p.activo);
-    _nc.prods = prods.map(p => ({producto: p.producto, codigos: p.codigos || []})).sort((a, b) => a.producto.localeCompare(b.producto));
+    const prods = await rp.json();
+    _nc.prods = prods.map(p => ({producto: p.producto, codigos: p.codigos || [], activo: p.activo})).sort((a, b) => a.producto.localeCompare(b.producto));
     prods.forEach(p => { if (p.elegido) _nc.cod[p.producto] = p.elegido; });
   } catch (e) {}
   ncPintar(); npPintar();
@@ -4172,10 +4172,12 @@ function ncCodigo(p) { return _nc.cod[p.producto] || ((p.codigos || [])[0] || {}
 function npPintar() {
   const cont = document.getElementById('np-lista');
   if (!cont) return;
-  const dobles = _nc.prods.filter(p => (p.codigos || []).length > 1);
+  const dobles = _nc.prods.filter(p => p.activo !== false && (p.codigos || []).length > 1);
   const pend = dobles.filter(p => !_nc.cod[p.producto]).length;
+  const desact = _nc.prods.filter(p => p.activo === false).length;
   document.getElementById('np-resumen').textContent = _nc.prods.length
-    ? `· ${_nc.prods.length} productos` + (dobles.length ? ` · ${dobles.length} con dos códigos` + (pend ? ` (${pend} sin elegir)` : ' ✓') : '') : '';
+    ? `· ${_nc.prods.length} productos` + (desact ? ` · ${desact} desactivados` : '')
+      + (dobles.length ? ` · ${dobles.length} con dos códigos` + (pend ? ` (${pend} sin elegir)` : ' ✓') : '') : '';
   const q = (document.getElementById('np-buscar').value || '').trim().toLowerCase();
   const solo = document.getElementById('np-dobles').checked;
   const lista = _nc.prods.filter(p => (!solo || (p.codigos || []).length > 1)
@@ -4185,11 +4187,18 @@ function npPintar() {
   lista.forEach(p => {
     const cods = p.codigos || [];
     const f = document.createElement('div');
-    f.className = 'np-fila' + (cods.length > 1 ? (_nc.cod[p.producto] ? ' ok' : ' doble') : '');
-    f.innerHTML = '<span class="nm"></span><div class="np-cods"></div>';
+    const activo = p.activo !== false;
+    f.className = 'np-fila' + (activo && cods.length > 1 ? (_nc.cod[p.producto] ? ' ok' : ' doble') : '');
+    if (!activo) f.style.opacity = '.5';
+    f.innerHTML = '<input type="checkbox" title="Activo: se pide a los displays y entra al cierre" style="width:16px;height:16px;accent-color:var(--korax-mid);flex:none;cursor:pointer;"><span class="nm"></span><div class="np-cods"></div>';
     f.querySelector('.nm').textContent = p.producto;
+    const chk = f.querySelector('input');
+    chk.checked = activo;
+    chk.onchange = () => { p.activo = chk.checked; _nc.activos[p.producto] = chk.checked; npPintar(); ncPintar(); };
     const box = f.querySelector('.np-cods');
-    if (cods.length > 1) {
+    if (!activo) {
+      box.innerHTML = '<span class="np-uno">desactivado · no se pide ni entra al cierre</span>';
+    } else if (cods.length > 1) {
       cods.forEach(c => {
         const b = document.createElement('button'); b.type = 'button';
         b.className = 'np-cod' + (_nc.cod[p.producto] === c.codigo ? ' on' : '');
@@ -4239,17 +4248,18 @@ function _negPintarModos() {
   ncMostrar();
 }
 function ncPintar() {
+  const _ncAct = _nc.prods.filter(p => p.activo !== false);   // los desactivados no se categorizan
   const cont = document.getElementById('nc-lista');
   if (!cont || document.getElementById('neg-cats').style.display === 'none') return;
   const {categorias, productos} = _nc.cats;
-  const sinCat = _nc.prods.filter(p => !categorias.includes(productos[p.producto])).length;
-  document.getElementById('nc-resumen').textContent = !_nc.prods.length
+  const sinCat = _ncAct.filter(p => !categorias.includes(productos[p.producto])).length;
+  document.getElementById('nc-resumen').textContent = !_ncAct.length
     ? 'Escribí las categorías. Para meterles productos primero subí el inventario y presioná "Leer inventario".'
-    : `${categorias.length} categoría(s) · ${_nc.prods.length} productos · ${sinCat} sin categoría. Abrí una categoría y marcá sus productos; un producto solo puede estar en una categoría.`;
+    : `${categorias.length} categoría(s) · ${_ncAct.length} productos · ${sinCat} sin categoría. Abrí una categoría y marcá sus productos; un producto solo puede estar en una categoría.`;
   const scroll = cont.querySelector('.nc-lista')?.scrollTop || 0;
   cont.innerHTML = '';
   categorias.forEach(cat => {
-    const n = _nc.prods.filter(p => productos[p.producto] === cat).length;
+    const n = _ncAct.filter(p => productos[p.producto] === cat).length;
     const abierta = _nc.abierta === cat;
     const box = document.createElement('div'); box.className = 'nc-cat';
     box.innerHTML = `<div class="nc-cab"><span class="fl">${abierta ? '▾' : '▸'}</span><span class="nm" style="flex:1;min-width:0;"></span><small></small>
@@ -4277,7 +4287,7 @@ function ncPintar() {
       buscar.value = _nc.buscar || ''; solo.checked = !!_nc.solo;
       const visibles = () => {
         const q = buscar.value.trim().toLowerCase();
-        return _nc.prods.filter(p => (!q || p.producto.toLowerCase().includes(q) || ncCodigo(p).includes(q))
+        return _ncAct.filter(p => (!q || p.producto.toLowerCase().includes(q) || ncCodigo(p).includes(q))
           && !(solo.checked && categorias.includes(productos[p.producto]) && productos[p.producto] !== cat));
       };
       const llenar = () => {
@@ -4294,8 +4304,8 @@ function ncPintar() {
           chk.onchange = () => {
             if (chk.checked) productos[p.producto] = cat; else delete productos[p.producto];
             _nc.cambio = true;
-            box.querySelector('small').textContent = _nc.prods.filter(x => productos[x.producto] === cat).length + ' producto(s)';
-            const sc = _nc.prods.filter(x => !categorias.includes(productos[x.producto])).length;
+            box.querySelector('small').textContent = _ncAct.filter(x => productos[x.producto] === cat).length + ' producto(s)';
+            const sc = _ncAct.filter(x => !categorias.includes(productos[x.producto])).length;
             document.getElementById('nc-resumen').textContent = document.getElementById('nc-resumen').textContent.replace(/\d+ sin categoría/, sc + ' sin categoría');
           };
           lista.appendChild(f);
@@ -4563,6 +4573,13 @@ async function guardarNegocio() {
     const dc = await rc.json().catch(() => ({}));
     if (!dc.ok) { err.textContent = 'El negocio se guardó, pero las categorías no: ' + (dc.error || rc.status); return; }
     _nc.cambio = false;
+  }
+  if (Object.keys(_nc.activos).length) {
+    const ra = await fetch(API + '/api/productos-negocio', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({negocio: d.negocio.slug, rol: usuario.rol, cambios: _nc.activos}) });
+    const da = await ra.json().catch(() => ({}));
+    if (!da.ok) { err.textContent = 'El negocio se guardó, pero los productos activos/desactivados no: ' + (da.error || ra.status); return; }
+    _nc.activos = {};
   }
   if (_nc.codCambio) {
     const rk = await fetch(API + '/api/codigos', { method: 'POST', headers: {'Content-Type': 'application/json'},

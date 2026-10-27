@@ -1471,14 +1471,17 @@ def activar_producto():
     if data.get("rol") not in ROLES_ADMIN:
         return jsonify({"ok": False, "error": "No autorizado"}), 403
     negocio = data.get("negocio")
-    producto = (data.get("producto") or "").strip()
-    if negocio not in slugs_negocios() or not producto:
+    # uno ({producto, activo}) o varios a la vez ({cambios: {producto: activo}}, desde la ficha del negocio)
+    cambios = data.get("cambios") if isinstance(data.get("cambios"), dict) else {(data.get("producto") or "").strip(): data.get("activo")}
+    cambios = {str(p).strip(): bool(a) for p, a in cambios.items() if str(p).strip()}
+    if negocio not in slugs_negocios() or not cambios:
         return jsonify({"ok": False, "error": "Datos inválidos"}), 400
     inactivos = productos_inactivos(negocio)
-    if data.get("activo"):
-        inactivos.discard(producto)
-    else:
-        inactivos.add(producto)
+    for producto, activo in cambios.items():
+        if activo:
+            inactivos.discard(producto)
+        else:
+            inactivos.add(producto)
     clave = f"{negocio}:productos_inactivos"
     cfg = db.session.get(Config, clave)
     if not cfg:
