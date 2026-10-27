@@ -776,13 +776,32 @@ def set_semana():
 def _es_superadmin(data):
     return (data or {}).get("solicitante_rol", "") == "superadmin"
 
+MODOS_CAPTURA = ("producto", "gondola", "categoria")
+
+def modos_cadena(slug):
+    """{cadena: modo} cuando el negocio usa un modo distinto por cadena; las que no están usan Negocio.modo_captura."""
+    cfg = db.session.get(Config, f"{slug}:modos")
+    try:
+        return json.loads(cfg.valor) if cfg and cfg.valor else {}
+    except Exception:
+        return {}
+
+def _guardar_modos(slug, data):
+    if data.get("modo_captura") in MODOS_CAPTURA:
+        db.session.get(Negocio, slug).modo_captura = data["modo_captura"]
+    if isinstance(data.get("modos"), dict):
+        modos = {parse_cadenas([c])[0]: m for c, m in data["modos"].items() if m in MODOS_CAPTURA and parse_cadenas([c])}
+        cfg = db.session.get(Config, f"{slug}:modos") or Config(clave=f"{slug}:modos")
+        cfg.valor = json.dumps(modos)
+        db.session.add(cfg)
+
 def _negocio_json(n, admin=False):
     cods = parse_cadenas(n.cadenas)
     d = {"slug": n.slug, "nombre": n.nombre, "cadenas": cods,
          "cadenas_txt": " · ".join(cods),
          "logo": f"/api/negocios/{n.slug}/logo" if n.logo_b64 else "",
          "activo": bool(n.activo), "orden": n.orden or 0,
-         "modo_captura": getattr(n, "modo_captura", None) or "producto"}
+         "modo_captura": getattr(n, "modo_captura", None) or "producto", "modos": modos_cadena(n.slug)}
     if admin:
         d["rurales"] = n.rurales or ""
         d["excluidas"] = n.excluidas or ""
@@ -975,6 +994,8 @@ def crear_negocio():
                 logo_b64=logo, prompt=prompt, activo=True,
                 orden=orden, creado_en=datetime.now().strftime("%Y-%m-%d %H:%M"))
     db.session.add(n)
+    db.session.flush()
+    _guardar_modos(slug, data)
     db.session.commit()
     return jsonify({"ok": True, "negocio": _negocio_json(n, admin=True)})
 
@@ -1006,8 +1027,7 @@ def editar_negocio(slug):
         n.prompt = None if p and p == _prompt_por_defecto(n.slug, n.nombre).strip() else p
     if "activo" in data:
         n.activo = bool(data.get("activo"))
-    if data.get("modo_captura") in ("producto", "gondola", "categoria"):
-        n.modo_captura = data["modo_captura"]
+    _guardar_modos(slug, data)
     if data.get("logo"):
         try:
             n.logo_b64 = _validar_logo(data.get("logo"))

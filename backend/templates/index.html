@@ -502,6 +502,9 @@
   .cat-item:hover { background: var(--korax-gray-1); }
   .cat-item small { color: var(--muted); }
   .cat-cab input, .cat-item input { width: 16px; height: 16px; accent-color: var(--korax-mid); flex: none; }
+  .nm-fila { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--borde); }
+  .nm-fila .cad { width: 150px; font-size: 13px; font-weight: 700; flex: none; }
+  .nm-fila select { flex: 1; min-width: 0; }
   .np-lista { max-height: 320px; overflow: auto; border: 1px solid var(--borde); border-radius: 12px; background: var(--korax-surface); }
   .np-fila { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--borde); font-size: 12px; }
   .np-fila.doble { background: rgba(232,168,56,.10); } .np-fila.ok { background: rgba(34,197,94,.07); }
@@ -1312,11 +1315,8 @@
         </div>
 
         <div class="neg-paso"><span class="num">5</span>Modo de captura de los displays</div>
-        <select id="neg-modo" class="ug-in" style="width:100%;margin-bottom:6px;" onchange="ncMostrar()">
-          <option value="producto">Una foto por producto (como hasta ahora)</option>
-          <option value="gondola">Fotos de la góndola completa: la IA detecta los productos</option>
-          <option value="categoria">Fotos por categoría (para negocios grandes): la IA revisa cada categoría</option>
-        </select>
+        <div class="neg-hint" style="margin:0 0 6px;">Elegí cómo trabaja el display en cada cadena; puede ser distinto por cadena (ej. Walmart una foto por producto y Auto Mercado por categoría).</div>
+        <div id="neg-modos" style="margin-bottom:6px;"></div>
         <div class="neg-hint" style="margin:0 0 12px;">En modo góndola el display toma hasta 20 fotos de la tienda y la IA marca cada producto como presente, ausente o dudoso. Por categoría es igual, pero el display entra a cada categoría (ej. Juguetes, Alimentos) y toma hasta 10 fotos de esa categoría.</div>
         <div id="neg-cats" style="display:none;margin:0 0 14px;">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
@@ -2138,9 +2138,10 @@ function irPanel() {
 async function irProductos(tienda) {
   tiendaActual = tienda;
   const _th = document.querySelector('#productos .tabla-header');
-  if (_th) _th.style.display = _modoGondola() ? 'none' : '';
-  document.getElementById('btn-enviar').style.display = _modoGondola() ? 'none' : '';
-  if (_modoGondola()) { _modoCategoria() ? irCategorias(tienda) : irGondola(tienda); return; }
+  const modo = modoTienda(tienda);
+  if (_th) _th.style.display = modo !== 'producto' ? 'none' : '';
+  document.getElementById('btn-enviar').style.display = modo !== 'producto' ? 'none' : '';
+  if (modo !== 'producto') { modo === 'categoria' ? irCategorias(tienda) : irGondola(tienda); return; }
   document.getElementById('titulo-tienda').textContent = tienda;
   document.getElementById('status-productos').textContent = 'Cargando...';
   document.getElementById('status-envio').textContent = '';
@@ -2207,8 +2208,20 @@ async function irProductos(tienda) {
 }
 
 // --- MODO GÓNDOLA: el display sube hasta 20 fotos de la tienda; el administrador las analiza con IA ---
-function _modoGondola() { return ['gondola', 'categoria'].includes((NEGOCIOS[negocioActual] || {}).modo_captura); }
-function _modoCategoria() { return ((NEGOCIOS[negocioActual] || {}).modo_captura) === 'categoria'; }
+// modo de captura de una tienda: el de su cadena, o el general del negocio
+function modoTienda(t) {
+  const n = NEGOCIOS[negocioActual] || {};
+  return (n.modos || {})[cadenaDeTienda(t, n.cadenas)] || n.modo_captura || 'producto';
+}
+function _usaModo(...ms) {
+  const n = NEGOCIOS[negocioActual] || {};
+  const usados = new Set([...(n.cadenas || []).map(c => (n.modos || {})[c] || n.modo_captura || 'producto')]);
+  if (!usados.size) usados.add(n.modo_captura || 'producto');
+  return ms.some(m => usados.has(m));
+}
+// el negocio usa góndola o categorías en alguna cadena (paneles del administrador)
+function _modoGondola() { return _usaModo('gondola', 'categoria'); }
+function _modoCategoria() { return _usaModo('categoria'); }
 let _gFotos = [], _gProds = [], _gMax = 20, _gYa = 0, _gCat = '';
 async function irCategorias(tienda) {
   _gCat = ''; _gFotos = [];
@@ -3871,6 +3884,7 @@ async function cargarNegociosAdmin() {
 let _negEstado = { sem: new Set(), rur: new Set(), quit: new Set(), cadenas: new Set(), detectadas: [] };
 
 function _negPintar() {
+  setTimeout(_negPintarModos, 0);
   const extra = [..._negEstado.cadenas].filter(c => !CADENAS_CAT.some(x => x.codigo === c));
   const visible = t => { const c = cadenaDeTienda(t, extra); return !c || _negEstado.cadenas.has(c); };
   // chips de cadenas: catálogo + detectadas + personalizadas
@@ -4044,8 +4058,33 @@ function npPintar() {
   cont.scrollTop = scroll;
 }
 function ncMostrar() {
-  document.getElementById('neg-cats').style.display = document.getElementById('neg-modo').value === 'categoria' ? '' : 'none';
+  document.getElementById('neg-cats').style.display = Object.values(_negModosActivos()).includes('categoria') ? '' : 'none';
   ncPintar();
+}
+// ── Modo de captura por cadena ──
+const MODOS_TXT = {producto: 'Una foto por producto', gondola: 'Fotos de la góndola completa (IA detecta los productos)', categoria: 'Fotos por categoría (IA revisa cada categoría)'};
+let _negModoBase = 'producto', _negModos = {};
+function _negModosActivos() {
+  const out = {};
+  [..._negEstado.cadenas].forEach(c => out[c] = _negModos[c] || _negModoBase);
+  return out;
+}
+function _negPintarModos() {
+  const cont = document.getElementById('neg-modos');
+  if (!cont) return;
+  const cads = [..._negEstado.cadenas];
+  cont.innerHTML = cads.length ? '' : '<div class="neg-hint" style="margin:0;">Leé el inventario y activá las cadenas (paso 2) para elegir el modo de cada una.</div>';
+  cads.forEach(cod => {
+    const f = document.createElement('div'); f.className = 'nm-fila';
+    f.innerHTML = '<span class="cad"></span><select class="ug-in"></select>';
+    f.querySelector('.cad').textContent = (CADENAS_CAT.find(x => x.codigo === cod) || {}).nombre || cod;
+    const sel = f.querySelector('select');
+    Object.entries(MODOS_TXT).forEach(([k, v]) => sel.add(new Option(v, k)));
+    sel.value = _negModos[cod] || _negModoBase;
+    sel.onchange = () => { _negModos[cod] = sel.value; ncMostrar(); };
+    cont.appendChild(f);
+  });
+  ncMostrar();
 }
 function ncPintar() {
   const cont = document.getElementById('nc-lista');
@@ -4165,7 +4204,8 @@ function restaurarPrompt() {
 
 async function abrirFormNegocio(n) {
   _negLogoNuevo = null;
-  document.getElementById('neg-modo').value = (n && n.modo_captura) || 'producto';
+  _negModoBase = (n && n.modo_captura) || 'producto';
+  _negModos = {...((n && n.modos) || {})};
   ncCargar(n ? n.slug : '');
   if (n) {
     _promptOriginal = n.prompt_original || '';
@@ -4336,8 +4376,11 @@ async function guardarNegocio() {
     rurales:   [..._negEstado.rur],
     excluidas: [..._negEstado.quit],
     prompt:    document.getElementById('neg-prompt').value,
-    modo_captura: document.getElementById('neg-modo').value,
+    modos:     _negModosActivos(),
   };
+  // modo general = el más usado (para cadenas que se agreguen después)
+  const usados = Object.values(body.modos);
+  body.modo_captura = usados.length ? usados.sort((a, b) => usados.filter(x => x === b).length - usados.filter(x => x === a).length)[0] : _negModoBase;
   if (_negLogoNuevo) body.logo = _negLogoNuevo;
   const err = document.getElementById('neg-error');
   const { wm, am } = _negArchivos;
@@ -4353,7 +4396,7 @@ async function guardarNegocio() {
   });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) { err.textContent = d.error || ('Error ' + r.status); return; }
-  if (body.modo_captura === 'categoria' && _nc.cambio) {
+  if (Object.values(body.modos).includes('categoria') && _nc.cambio) {
     const rc = await fetch(API + '/api/categorias', { method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({negocio: d.negocio.slug, rol: usuario.rol, categorias: _nc.cats.categorias, productos: _nc.cats.productos}) });
     const dc = await rc.json().catch(() => ({}));
