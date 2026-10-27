@@ -849,11 +849,12 @@ def analizar_inventario_negocio():
     if not archivo_wm and not archivo_am:
         return jsonify({"error": "Subí al menos un Excel de inventario"}), 400
     try:
+        slug = request.form.get("negocio") or ""
         registros = []
         if archivo_wm:
-            registros += _leer_excel_walmart(archivo_wm)
+            registros += _leer_excel_walmart(archivo_wm, _mapa_inv("wm", slug))
         if archivo_am:
-            registros += _leer_excel_automercado(archivo_am)
+            registros += _leer_excel_automercado(archivo_am, _mapa_inv("am", slug))
     except Exception as e:
         return jsonify({"error": f"No se pudo leer el Excel: {e}"}), 400
     tiendas = {r["tienda"].strip().upper() for r in registros if r.get("tienda")}
@@ -2338,26 +2339,73 @@ def _buscar_encabezados(wb, requeridas, max_filas=40):
                 return ws, idx, vals
     return None, None, None
 
-def _leer_excel_walmart(archivo):
-    """Lee INV MV de Walmart. Devuelve lista de {tienda, producto, cantidad}."""
-    wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), data_only=True)
-    # Fila de headers (tiene 'Store Name' y 'Signing Desc'), en cualquier hoja
-    ws, header_row_idx, headers = _buscar_encabezados(wb, ("Store Name", "Signing Desc"))
-    if not headers:
-        raise ValueError("No se encontró la fila de encabezados (Store Name / Signing Desc)")
+CAMPOS_INV = ("tienda", "producto", "codigo", "unidades")
+_REQ_INV = {"wm": ("Store Name", "Signing Desc"), "am": ("NombrePDX", "NombreProducto")}
 
-    idx_tienda   = headers.index("Store Name")
-    idx_producto = headers.index("Signing Desc")
-    idx_status   = headers.index("Item Status") if "Item Status" in headers else None
-    headers_lower = [h.lower().replace(" ", "") for h in headers]
-    idx_item_nbr = next((i for i, h in enumerate(headers_lower) if h in ("itemnbr", "itemnumber", "itemno")), None)
-    # Usar la ÚLTIMA columna 'Curr Str On Hand Qty' (semana más reciente)
-    idx_qty = next((i for i, h in reversed(list(enumerate(headers))) if "Curr Str On Hand Qty" in h), None)
+def _indices_auto(slot, headers):
+    """Columnas que la app reconoce sola en los formatos conocidos (Retail Link de Walmart y Auto Mercado)."""
+    if slot == "wm":
+        low = [h.lower().replace(" ", "") for h in headers]
+        return {"tienda": headers.index("Store Name"), "producto": headers.index("Signing Desc"),
+                "codigo": next((i for i, h in enumerate(low) if h in ("itemnbr", "itemnumber", "itemno")), None),
+                # la ÚLTIMA columna 'Curr Str On Hand Qty' (semana más reciente)
+                "unidades": next((i for i, h in reversed(list(enumerate(headers))) if "Curr Str On Hand Qty" in h), None)}
+    col = lambda n: headers.index(n) if n in headers else None
+    cod = col("CodigoProducto")
+    return {"tienda": col("NombrePDX"), "producto": col("NombreProducto"), "codigo": cod if cod is not None else col("CodigoBarras"),
+            "unidades": col("Contenido")}
+
+def _ultima_col(headers, nombre):
+    """Índice de la columna con ese encabezado; si se repite, la última (en Retail Link es la semana más reciente)."""
+    if not nombre:
+        return None
+    return next((i for i, h in reversed(list(enumerate(headers))) if h == nombre), None)
+
+def columnas_inventario(negocio):
+    """{"wm": {campo: encabezado}, "am": {...}} elegido por el administrador para leer el inventario del negocio."""
+    cfg = db.session.get(Config, f"{negocio}:columnas_inv")
+    try:
+        return json.loads(cfg.valor) if cfg and cfg.valor else {}
+    except Exception:
+        return {}
+
+def _mapa_inv(slot, negocio=None):
+    """Columnas a usar: las que manda la pantalla (mapa_wm / mapa_am), o las guardadas del negocio, o None (automático)."""
+    try:
+        m = json.loads(request.form.get(f"mapa_{slot}") or "null")
+    except Exception:
+        m = None
+    if isinstance(m, dict) and m.get("tienda") and m.get("producto"):
+        return {c: str(m.get(c) or "") for c in CAMPOS_INV}
+    return columnas_inventario(negocio).get(slot) if negocio else None
+
+def _leer_inventario(archivo, slot, mapa=None):
+    """Lee un Excel de inventario. slot 'wm' (Walmart y formatos) o 'am' (Auto Mercado). Con mapa usa esas
+    columnas (por nombre de encabezado); sin mapa, las del formato conocido. Devuelve [{tienda, producto, cantidad, item_nbr}]."""
+    wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), data_only=True)
+    if mapa and mapa.get("tienda") and mapa.get("producto"):
+        ws, header_row_idx, headers = _buscar_encabezados(wb, (mapa["tienda"], mapa["producto"]))
+        if not headers:
+            raise ValueError(f"No se encontraron las columnas «{mapa['tienda']}» y «{mapa['producto']}» en el Excel. "
+                             "Revisá las columnas elegidas para este inventario.")
+        idx = {c: _ultima_col(headers, mapa.get(c)) for c in CAMPOS_INV}
+        idx["tienda"], idx["producto"] = headers.index(mapa["tienda"]), headers.index(mapa["producto"])
+    else:
+        ws, header_row_idx, headers = _buscar_encabezados(wb, _REQ_INV[slot])
+        if not headers:
+            if slot == "wm":
+                raise ValueError("No se encontró la fila de encabezados (Store Name / Signing Desc)")
+            hojas = ", ".join(w.title for w in wb.worksheets)
+            raise ValueError(f"No se encontraron las columnas NombrePDX y NombreProducto en ninguna hoja ({hojas})")
+        idx = _indices_auto(slot, headers)
+    # Walmart: solo productos activos
+    idx_status = headers.index("Item Status") if slot == "wm" and "Item Status" in headers else None
+    it, ip, iq, ic = idx["tienda"], idx["producto"], idx["unidades"], idx["codigo"]
 
     resultados = []
     for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
-        tienda   = str(row[idx_tienda]).strip()   if len(row) > idx_tienda   and row[idx_tienda]   else ""
-        producto = str(row[idx_producto]).strip()  if len(row) > idx_producto and row[idx_producto]  else ""
+        tienda   = str(row[it]).strip() if len(row) > it and row[it] else ""
+        producto = str(row[ip]).strip() if len(row) > ip and row[ip] else ""
         if not tienda or not producto or tienda == "None" or producto == "None":
             continue
         if idx_status is not None and len(row) > idx_status:
@@ -2365,58 +2413,76 @@ def _leer_excel_walmart(archivo):
             if status and status not in ("A", "ACTIVO", "ACTIVE", "1"):
                 continue
         cantidad = 0
-        if idx_qty is not None and len(row) > idx_qty and row[idx_qty] is not None:
+        if iq is not None and len(row) > iq and row[iq] is not None:
             try:
-                cantidad = int(float(row[idx_qty]))
+                cantidad = int(float(row[iq]))
             except (ValueError, TypeError):
                 cantidad = 0
         item_nbr = ""
-        if idx_item_nbr is not None and len(row) > idx_item_nbr and row[idx_item_nbr]:
-            item_nbr = str(row[idx_item_nbr]).strip().split(".")[0]
+        if ic is not None and len(row) > ic and row[ic] not in (None, ""):
+            item_nbr = str(row[ic]).strip().split(".")[0]
         resultados.append({"tienda": tienda, "producto": producto, "cantidad": cantidad, "item_nbr": item_nbr})
     return resultados
 
+def _leer_excel_walmart(archivo, mapa=None):
+    return _leer_inventario(archivo, "wm", mapa)
 
-def _leer_excel_automercado(archivo):
-    """Lee Excel de Automercado. Tienda=NombrePDX, Producto=NombreProducto, Cantidad=Contenido,
-    Código=CodigoProducto (o CodigoBarras). Los encabezados pueden estar en cualquier hoja y fila."""
-    wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), data_only=True)
-    ws, header_row_idx, headers = _buscar_encabezados(wb, ("NombrePDX", "NombreProducto"))
+def _leer_excel_automercado(archivo, mapa=None):
+    return _leer_inventario(archivo, "am", mapa)
+
+@app.route("/api/inventario/columnas", methods=["POST"])
+def columnas_excel_inventario():
+    """Encabezados del Excel (con un ejemplo de cada uno) y qué columna se usaría para tienda/producto/código/unidades."""
+    if request.form.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    archivo, slot = request.files.get("archivo"), request.form.get("slot")
+    negocio = request.form.get("negocio") or ""
+    if not archivo or slot not in _REQ_INV:
+        return jsonify({"ok": False, "error": "Faltan datos"}), 400
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), read_only=True, data_only=True)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"No se pudo abrir el Excel: {e}"}), 400
+    guardado = columnas_inventario(negocio).get(slot) if negocio in slugs_negocios() else None
+    ws = fila = headers = None
+    origen = ""
+    if guardado and guardado.get("tienda") and guardado.get("producto"):
+        ws, fila, headers = _buscar_encabezados(wb, (guardado["tienda"], guardado["producto"]))
+        origen = "guardado" if headers else ""
     if not headers:
-        hojas = ", ".join(w.title for w in wb.worksheets)
-        raise ValueError(f"No se encontraron las columnas NombrePDX y NombreProducto en ninguna hoja ({hojas})")
-
-    def col_idx(nombre):
-        try:
-            return headers.index(nombre)
-        except ValueError:
-            return None
-
-    idx_tienda   = col_idx("NombrePDX")
-    idx_producto = col_idx("NombreProducto")
-    idx_cantidad = col_idx("Contenido")
-    idx_codigo   = col_idx("CodigoProducto")
-    if idx_codigo is None:
-        idx_codigo = col_idx("CodigoBarras")
-
-    resultados = []
-    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
-        tienda   = str(row[idx_tienda]).strip()   if len(row) > idx_tienda   and row[idx_tienda]   else ""
-        producto = str(row[idx_producto]).strip()  if len(row) > idx_producto and row[idx_producto]  else ""
-        if not tienda or not producto or tienda == "None" or producto == "None":
-            continue
-        cantidad = 0
-        if idx_cantidad is not None and len(row) > idx_cantidad and row[idx_cantidad] is not None:
-            try:
-                cantidad = int(float(row[idx_cantidad]))
-            except (ValueError, TypeError):
-                cantidad = 0
-        item_nbr = ""
-        if idx_codigo is not None and len(row) > idx_codigo and row[idx_codigo] is not None:
-            item_nbr = str(row[idx_codigo]).strip().split(".")[0]
-        resultados.append({"tienda": tienda, "producto": producto, "cantidad": cantidad, "item_nbr": item_nbr})
-    return resultados
-
+        ws, fila, headers = _buscar_encabezados(wb, _REQ_INV[slot])
+        origen = "auto" if headers else ""
+    if not headers:   # formato desconocido: la primera fila con 3 o más títulos
+        for w in [wb.active] + [x for x in wb.worksheets if x is not wb.active]:
+            for i, row in enumerate(w.iter_rows(min_row=1, max_row=40, values_only=True), 1):
+                vals = [str(v).strip() if v is not None else "" for v in row]
+                if sum(1 for v in vals if v and not v.replace(".", "").isdigit()) >= 3:
+                    ws, fila, headers = w, i, vals
+                    break
+            if headers:
+                break
+    if not headers:
+        return jsonify({"ok": False, "error": "No encontré una fila de encabezados en el Excel"}), 400
+    ejemplos = [""] * len(headers)
+    for row in ws.iter_rows(min_row=fila + 1, max_row=fila + 30, values_only=True):
+        for i, v in enumerate(row[:len(headers)]):
+            if not ejemplos[i] and v not in (None, ""):
+                ejemplos[i] = str(v).strip()[:40]
+    columnas, vistas = [], set()
+    for i in reversed(range(len(headers))):   # nombre repetido: vale la última columna (y su ejemplo)
+        h = headers[i]
+        if h and h not in vistas:
+            vistas.add(h); columnas.append({"nombre": h, "ejemplo": ejemplos[i]})
+    columnas.reverse()
+    if origen == "guardado":
+        mapa = {c: (guardado.get(c) if guardado.get(c) in vistas else "") for c in CAMPOS_INV}
+    elif origen == "auto":
+        idx = _indices_auto(slot, headers)
+        mapa = {c: (headers[idx[c]] if idx[c] is not None else "") for c in CAMPOS_INV}
+    else:
+        mapa = {c: "" for c in CAMPOS_INV}
+    return jsonify({"ok": True, "hoja": ws.title, "fila": fila, "columnas": columnas, "mapa": mapa, "origen": origen,
+                    "faltan": [c for c in ("tienda", "producto", "unidades") if not mapa[c]]})
 
 @app.route("/api/actualizar-inventario", methods=["POST"])
 def actualizar_inventario():
@@ -2431,10 +2497,20 @@ def actualizar_inventario():
 
     try:
         registros = []
+        mapas = {}
         if archivo_wm:
-            registros += _leer_excel_walmart(archivo_wm)
+            mapas["wm"] = _mapa_inv("wm", negocio)
+            registros += _leer_excel_walmart(archivo_wm, mapas["wm"])
         if archivo_am:
-            registros += _leer_excel_automercado(archivo_am)
+            mapas["am"] = _mapa_inv("am", negocio)
+            registros += _leer_excel_automercado(archivo_am, mapas["am"])
+        # las columnas usadas quedan guardadas para la próxima carga de este negocio
+        if any(mapas.values()):
+            cols = columnas_inventario(negocio)
+            cols.update({k: v for k, v in mapas.items() if v})
+            cfg_cols = db.session.get(Config, f"{negocio}:columnas_inv") or Config(clave=f"{negocio}:columnas_inv")
+            cfg_cols.valor = json.dumps(cols, ensure_ascii=False)
+            db.session.add(cfg_cols)
 
         # Cargar inventario del negocio en memoria (evita N+1 queries)
         mapa_inv = {(inv.tienda, inv.producto): inv for inv in Inventario.query.filter_by(negocio=negocio).all()}

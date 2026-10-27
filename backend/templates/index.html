@@ -513,6 +513,12 @@
   .np-cod { border: 1px solid var(--borde); background: var(--korax-surface); border-radius: 999px; padding: 3px 9px; font-size: 11px; cursor: pointer; font-family: inherit; color: var(--text); }
   .np-cod.on { background: var(--korax-mid); color: #fff; border-color: var(--korax-mid); font-weight: 700; }
   .np-uno { font-size: 11px; color: var(--muted); }
+  .ci-caja { border: 1px solid var(--borde); border-radius: 12px; padding: 10px 12px; margin-top: 8px; background: var(--korax-surface); font-size: 12px; text-align: left; }
+  .ci-caja.falta { border-color: var(--rojo); background: rgba(224,92,92,.05); }
+  .ci-res { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ci-res b { color: var(--korax-deep); }
+  .ci-fila { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; margin-top: 6px; }
+  .ci-fila select { padding: 7px 10px; font-size: 12px; width: 100%; }
   .xe-cols { display: flex; flex-direction: column; gap: 4px; }
   .xe-col { display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
   .xe-col input[type=checkbox], .xe-hoja-chk { width: 16px; height: 16px; accent-color: var(--korax-mid); flex: none; }
@@ -1311,6 +1317,7 @@
             <input type="file" id="neg-inv-am" accept=".xlsx,.xls">
           </div>
         </div>
+        <div id="neg-col-wm"></div><div id="neg-col-am"></div>
         <button class="btn" style="width:auto;padding:8px 16px;margin-top:8px;" onclick="analizarInventarioNegocio()">Volver a leer inventario</button>
         <div class="neg-hint" id="neg-inv-estado">Subí el inventario y la app detecta tiendas, cadenas y cuáles son rurales.</div>
 
@@ -1663,6 +1670,7 @@
           <input type="file" id="inv-file-wm" accept=".xlsx,.xls" style="display:none;" onchange="invSeleccionarArchivo('wm', this.files[0])">
         </div>
         <div id="inv-badge-wm" style="display:none;margin-top:8px;font-size:12px;color:var(--claro);text-align:center;font-weight:600;"></div>
+        <div id="inv-col-wm"></div>
       </div>
 
       <!-- Zona Automercado -->
@@ -1676,6 +1684,7 @@
           <input type="file" id="inv-file-am" accept=".xlsx,.xls" style="display:none;" onchange="invSeleccionarArchivo('am', this.files[0])">
         </div>
         <div id="inv-badge-am" style="display:none;margin-top:8px;font-size:12px;color:var(--claro);text-align:center;font-weight:600;"></div>
+        <div id="inv-col-am"></div>
       </div>
 
     </div>
@@ -4114,9 +4123,13 @@ async function analizarInventarioNegocio() {
   const { wm, am } = _negArchivos;
   const est = document.getElementById('neg-inv-estado');
   if (!wm && !am) { est.textContent = 'Elegí al menos un Excel.'; return; }
+  const falta = colInvFalta('neg');
+  if (falta) { est.textContent = '⚠ ' + falta; return; }
   const fd = new FormData();
   if (wm) fd.append('archivo_wm', wm);
   if (am) fd.append('archivo_am', am);
+  colInvAgregar('neg', fd);
+  fd.append('negocio', document.getElementById('neg-slug').value);
   fd.append('solicitante_rol', usuario.rol);
   est.textContent = 'Leyendo inventario...';
   const r = await fetch(API + '/api/negocios/analizar-inventario', { method: 'POST', body: fd });
@@ -4399,15 +4412,17 @@ let _negArchivos = { wm: null, am: null };
 
 function _kb(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB'; }
 
-function ponerArchivoNeg(tipo, f, auto) {
+async function ponerArchivoNeg(tipo, f, auto) {
   _negArchivos[tipo] = f;
   const dz = document.getElementById('dz-' + tipo);
   dz.classList.toggle('listo', !!f);
   document.getElementById('dz-' + tipo + '-txt').textContent = f ? `✓ ${f.name} · ${_kb(f.size)}` : 'Arrastrá el Excel o tocá para elegir';
+  await colInvCargar('neg', tipo, f, document.getElementById('neg-slug').value, analizarInventarioNegocio);
   if (f && !auto) analizarInventarioNegocio();
 }
 function quitarArchivoNeg(tipo, silencioso) {
   _negArchivos[tipo] = null;
+  colInvCargar('neg', tipo, null);
   document.getElementById('neg-inv-' + tipo).value = '';
   document.getElementById('dz-' + tipo).classList.remove('listo');
   document.getElementById('dz-' + tipo + '-txt').textContent = 'Arrastrá el Excel o tocá para elegir';
@@ -4455,8 +4470,8 @@ async function asignarExcels(archivos) {
     else ignorados.push(f.name);
   });
   if (!wm && !am) { est.textContent = 'Ninguno de los Excel tiene el formato de inventario de Walmart o Auto Mercado.'; toast('No reconocí ningún inventario en esos archivos', 'err'); return; }
-  if (wm) ponerArchivoNeg('wm', wm, true);
-  if (am) ponerArchivoNeg('am', am, true);
+  if (wm) await ponerArchivoNeg('wm', wm, true);
+  if (am) await ponerArchivoNeg('am', am, true);
   toast(`Reconocí ${[wm && 'Walmart', am && 'Auto Mercado'].filter(Boolean).join(' y ')}` +
         (ignorados.length ? `\nIgnorados: ${ignorados.join(', ')}` : ''), 'ok');
   analizarInventarioNegocio();
@@ -4564,6 +4579,7 @@ async function guardarNegocio() {
     if (am) fd.append('archivo_am', am);
     fd.append('negocio', d.negocio.slug);
     fd.append('rol', usuario.rol);
+    colInvAgregar('neg', fd);
     const ri = await fetch(API + '/api/actualizar-inventario', { method: 'POST', body: fd });
     if (!ri.ok) {
       const di = await ri.json().catch(() => ({}));
@@ -5309,6 +5325,69 @@ async function catEliminar(cat) {
   await guardarCategorias();
 }
 
+// ── Columnas del inventario: qué columna del Excel es tienda, producto, código y unidades ──
+const CAMPOS_INV = [['tienda', 'Tienda'], ['producto', 'Producto'], ['codigo', 'Código'], ['unidades', 'Unidades']];
+const _colInv = {};   // 'neg:wm' → {columnas, mapa, origen, abierto, alCambiar}
+async function colInvCargar(ctx, slot, file, negocio, alCambiar) {
+  const key = ctx + ':' + slot, cont = document.getElementById(ctx + '-col-' + slot);
+  delete _colInv[key];
+  if (!cont) return;
+  if (!file) { cont.innerHTML = ''; return; }
+  cont.innerHTML = '<div class="ci-caja">Leyendo las columnas del Excel...</div>';
+  const fd = new FormData();
+  fd.append('archivo', file); fd.append('slot', slot); fd.append('negocio', negocio || ''); fd.append('rol', usuario.rol);
+  const d = await (await fetch(API + '/api/inventario/columnas', { method: 'POST', body: fd })).json().catch(() => ({}));
+  if (!d.ok) { cont.innerHTML = '<div class="ci-caja falta"></div>'; cont.firstChild.textContent = '⚠ ' + (d.error || 'No se pudieron leer las columnas'); return; }
+  _colInv[key] = {columnas: d.columnas, mapa: d.mapa, origen: d.origen, hoja: d.hoja, fila: d.fila, abierto: d.faltan.length > 0, alCambiar};
+  colInvPintar(key);
+}
+function _colInvFaltan(e) { return ['tienda', 'producto', 'unidades'].filter(c => !e.mapa[c]); }
+function colInvPintar(key) {
+  const e = _colInv[key];
+  const cont = document.getElementById(key.replace(':', '-col-'));
+  if (!e || !cont) return;
+  const faltan = _colInvFaltan(e);
+  const nombre = {tienda: 'Tienda', producto: 'Producto', codigo: 'Código', unidades: 'Unidades'};
+  cont.innerHTML = `<div class="ci-caja${faltan.length ? ' falta' : ''}"><div class="ci-res"><span class="txt" style="flex:1;min-width:0;"></span>
+    <button class="btn btn-gris" style="width:auto;padding:5px 10px;font-size:12px;">${e.abierto ? 'Listo' : 'Cambiar columnas'}</button></div><div class="ci-sel"></div></div>`;
+  const txt = cont.querySelector('.txt');
+  if (faltan.length) txt.innerHTML = `<b style="color:var(--rojo);">Elegí qué columna es: ${faltan.map(c => nombre[c]).join(', ')}</b>`;
+  else {
+    const org = e.origen === 'guardado' ? 'columnas guardadas de este negocio' : e.origen === 'auto' ? 'reconocidas solas' : 'elegidas';
+    txt.innerHTML = '<b>Columnas:</b> ';
+    CAMPOS_INV.forEach(([c, t], i) => {
+      txt.append((i ? ' · ' : '') + t + ' = ');
+      const b = document.createElement('b'); b.textContent = e.mapa[c] || '—'; txt.append(b);
+    });
+    const sp = document.createElement('span'); sp.style.color = 'var(--muted)'; sp.textContent = ` (${org})`; txt.append(sp);
+  }
+  cont.querySelector('button').onclick = () => { e.abierto = !e.abierto; colInvPintar(key); if (!e.abierto && e.alCambiar && e.cambio) { e.cambio = false; e.alCambiar(); } };
+  if (!e.abierto) return;
+  const sel = cont.querySelector('.ci-sel');
+  sel.innerHTML = '<div style="color:var(--muted);margin-top:6px;"></div>';
+  sel.firstChild.textContent = `Hoja «${e.hoja}», encabezados en la fila ${e.fila}. Elegí la columna de cada dato (entre paréntesis, un ejemplo del Excel):`;
+  CAMPOS_INV.forEach(([c, t]) => {
+    const f = document.createElement('div'); f.className = 'ci-fila';
+    f.innerHTML = '<span style="font-weight:700;"></span><select class="ug-in"></select>';
+    f.querySelector('span').textContent = t + (c === 'codigo' ? ' (opcional)' : '');
+    const s = f.querySelector('select');
+    s.add(new Option(c === 'codigo' ? '— sin código —' : '— elegir —', ''));
+    e.columnas.forEach(col => s.add(new Option(col.nombre + (col.ejemplo ? '   (' + col.ejemplo + ')' : ''), col.nombre)));
+    s.value = e.mapa[c] || '';
+    s.onchange = () => { e.mapa[c] = s.value; e.origen = 'elegido'; e.cambio = true; colInvPintar(key); };
+    sel.appendChild(f);
+  });
+}
+function colInvFalta(ctx) {
+  for (const [key, e] of Object.entries(_colInv)) {
+    if (key.startsWith(ctx + ':') && _colInvFaltan(e).length) return 'Elegí las columnas del inventario de ' + (key.endsWith('wm') ? 'Walmart' : 'Auto Mercado') + ' antes de seguir';
+  }
+  return '';
+}
+function colInvAgregar(ctx, fd) {
+  ['wm', 'am'].forEach(slot => { const e = _colInv[ctx + ':' + slot]; if (e) fd.append('mapa_' + slot, JSON.stringify(e.mapa)); });
+}
+
 // ── Inventario dos zonas ─────────────────────────────────────────────────────
 const _invArchivos = { wm: null, am: null };
 
@@ -5324,6 +5403,7 @@ function invSeleccionarArchivo(zona, file) {
   zone.style.background  = 'var(--card)';
   badge.style.display = 'block';
   badge.textContent = file.name;
+  colInvCargar('inv', zona, file, negocioActual);
   // Habilitar botón si hay al menos un archivo
   invActualizarBoton();
 }
@@ -5360,6 +5440,8 @@ function invInitDropZone(zona) {
 
 async function actualizarInventario() {
   if (!_invArchivos.wm && !_invArchivos.am) return;
+  const faltaCol = colInvFalta('inv');
+  if (faltaCol) { toast(faltaCol, 'err'); return; }
   const resultado = document.getElementById('inv-resultado');
   resultado.style.display = 'block';
   resultado.innerHTML = '<span style="color:var(--muted);">Actualizando inventario...</span>';
@@ -5369,6 +5451,7 @@ async function actualizarInventario() {
   if (_invArchivos.am) fd.append('archivo_am', _invArchivos.am);
   fd.append('negocio', negocioActual);
   fd.append('rol', usuario.rol);
+  colInvAgregar('inv', fd);
 
   try {
     const res  = await fetch('/api/actualizar-inventario', { method: 'POST', body: fd });
