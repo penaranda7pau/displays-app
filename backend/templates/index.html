@@ -4075,6 +4075,7 @@ function ncPintar() {
           <input class="ug-in nc-buscar" style="flex:1;min-width:160px;padding:7px 10px;" placeholder="Buscar producto o código...">
           <label class="nc-op" style="cursor:pointer;"><input type="checkbox" class="nc-solo" style="width:16px;height:16px;accent-color:var(--korax-mid);"> Ocultar los de otras categorías</label>
           <button class="btn btn-gris nc-todos" style="width:auto;padding:6px 10px;font-size:12px;">Marcar los visibles sin categoría</button>
+          <button class="btn btn-gris nc-ninguno" style="width:auto;padding:6px 10px;font-size:12px;">Desmarcar todos</button>
         </div><div class="nc-lista"></div>`;
       const lista = cuerpo.querySelector('.nc-lista'), buscar = cuerpo.querySelector('.nc-buscar'), solo = cuerpo.querySelector('.nc-solo');
       buscar.value = _nc.buscar || ''; solo.checked = !!_nc.solo;
@@ -4109,6 +4110,13 @@ function ncPintar() {
       solo.onchange = () => { _nc.solo = solo.checked; llenar(); };
       cuerpo.querySelector('.nc-todos').onclick = () => {
         visibles().forEach(p => { if (!categorias.includes(productos[p.producto])) productos[p.producto] = cat; });
+        _nc.cambio = true; ncPintar();
+      };
+      cuerpo.querySelector('.nc-ninguno').onclick = () => {   // respeta la búsqueda: si hay texto, solo desmarca lo que se ve
+        const quitar = visibles().filter(p => productos[p.producto] === cat);
+        if (!quitar.length) return;
+        if (!confirm(`¿Quitar ${quitar.length} producto(s) de "${cat}"? Quedan sin categoría.`)) return;
+        quitar.forEach(p => delete productos[p.producto]);
         _nc.cambio = true; ncPintar();
       };
       llenar();
