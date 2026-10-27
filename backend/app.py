@@ -2433,20 +2433,9 @@ def _leer_excel_walmart(archivo, mapa=None):
 def _leer_excel_automercado(archivo, mapa=None):
     return _leer_inventario(archivo, "am", mapa)
 
-@app.route("/api/inventario/columnas", methods=["POST"])
-def columnas_excel_inventario():
-    """Encabezados del Excel (con un ejemplo de cada uno) y qué columna se usaría para tienda/producto/código/unidades."""
-    if request.form.get("rol") not in ROLES_ADMIN:
-        return jsonify({"ok": False, "error": "No autorizado"}), 403
-    archivo, slot = request.files.get("archivo"), request.form.get("slot")
-    negocio = request.form.get("negocio") or ""
-    if not archivo or slot not in _REQ_INV:
-        return jsonify({"ok": False, "error": "Faltan datos"}), 400
-    try:
-        wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), read_only=True, data_only=True)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"No se pudo abrir el Excel: {e}"}), 400
-    guardado = columnas_inventario(negocio).get(slot) if negocio in slugs_negocios() else None
+def _columnas_excel(wb, slot, guardado=None):
+    """Encabezados del Excel con un ejemplo de cada uno, y qué columna se usaría para cada dato
+    (las guardadas del negocio, las del formato conocido o ninguna). None si no hay fila de encabezados."""
     ws = fila = headers = None
     origen = ""
     if guardado and guardado.get("tienda") and guardado.get("producto"):
@@ -2465,7 +2454,7 @@ def columnas_excel_inventario():
             if headers:
                 break
     if not headers:
-        return jsonify({"ok": False, "error": "No encontré una fila de encabezados en el Excel"}), 400
+        return None
     ejemplos = [""] * len(headers)
     for row in ws.iter_rows(min_row=fila + 1, max_row=fila + 30, values_only=True):
         for i, v in enumerate(row[:len(headers)]):
@@ -2484,8 +2473,77 @@ def columnas_excel_inventario():
         mapa = {c: (headers[idx[c]] if idx[c] is not None else "") for c in CAMPOS_INV}
     else:
         mapa = {c: "" for c in CAMPOS_INV}
-    return jsonify({"ok": True, "hoja": ws.title, "fila": fila, "columnas": columnas, "mapa": mapa, "origen": origen,
-                    "faltan": [c for c in ("tienda", "producto", "unidades") if not mapa[c]]})
+    return {"hoja": ws.title, "fila": fila, "columnas": columnas, "mapa": mapa, "origen": origen,
+                    "faltan": [c for c in ("tienda", "producto", "unidades") if not mapa[c]]}
+
+def _guardar_columnas_inv(negocio, slot, mapa=None, columnas=None):
+    if mapa is not None:
+        cols = columnas_inventario(negocio)
+        cols[slot] = {c: str(mapa.get(c) or "") for c in CAMPOS_INV}
+        cfg = db.session.get(Config, f"{negocio}:columnas_inv") or Config(clave=f"{negocio}:columnas_inv")
+        cfg.valor = json.dumps(cols, ensure_ascii=False)
+        db.session.add(cfg)
+    if columnas is not None:
+        cfg = db.session.get(Config, f"{negocio}:columnas_inv_excel") or Config(clave=f"{negocio}:columnas_inv_excel")
+        try:
+            todas = json.loads(cfg.valor) if cfg.valor else {}
+        except Exception:
+            todas = {}
+        todas[slot] = columnas[:200]
+        cfg.valor = json.dumps(todas, ensure_ascii=False)
+        db.session.add(cfg)
+
+@app.route("/api/inventario/columnas-guardadas")
+def columnas_inv_guardadas():
+    """Columnas con que se lee el inventario del negocio (para verlas y cambiarlas sin volver a subir el Excel)."""
+    if request.args.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    negocio = request.args.get("negocio", "")
+    guardadas = columnas_inventario(negocio)
+    cfg = db.session.get(Config, f"{negocio}:columnas_inv_excel")
+    try:
+        excel = json.loads(cfg.valor) if cfg and cfg.valor else {}
+    except Exception:
+        excel = {}
+    grupos = {_grupo_excel(cadena_de_tienda(t)) for (t,) in db.session.query(Inventario.tienda).filter_by(negocio=negocio).distinct()}
+    out = {}
+    for slot, defecto in (("wm", {"tienda": "Store Name", "producto": "Signing Desc", "codigo": "Item Nbr", "unidades": "Curr Str On Hand Qty"}),
+                          ("am", {"tienda": "NombrePDX", "producto": "NombreProducto", "codigo": "CodigoProducto", "unidades": "Contenido"})):
+        if slot in guardadas or slot in excel or slot.upper() in grupos:
+            out[slot] = {"mapa": guardadas.get(slot) or defecto, "origen": "guardado" if slot in guardadas else "auto",
+                         "columnas": excel.get(slot) or []}
+    return jsonify({"ok": True, "slots": out})
+
+@app.route("/api/inventario/columnas-guardar", methods=["POST"])
+def columnas_inv_guardar():
+    d = request.get_json(silent=True) or {}
+    if d.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    m = d.get("mapa") or {}
+    if d.get("negocio") not in slugs_negocios() or d.get("slot") not in _REQ_INV or not (m.get("tienda") and m.get("producto")):
+        return jsonify({"ok": False, "error": "Datos inválidos"}), 400
+    _guardar_columnas_inv(d["negocio"], d["slot"], mapa=m)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+@app.route("/api/inventario/columnas", methods=["POST"])
+def columnas_excel_inventario():
+    """Encabezados del Excel (con un ejemplo de cada uno) y qué columna se usaría para tienda/producto/código/unidades."""
+    if request.form.get("rol") not in ROLES_ADMIN:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    archivo, slot = request.files.get("archivo"), request.form.get("slot")
+    negocio = request.form.get("negocio") or ""
+    if not archivo or slot not in _REQ_INV:
+        return jsonify({"ok": False, "error": "Faltan datos"}), 400
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), read_only=True, data_only=True)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"No se pudo abrir el Excel: {e}"}), 400
+    guardado = columnas_inventario(negocio).get(slot) if negocio in slugs_negocios() else None
+    d = _columnas_excel(wb, slot, guardado)
+    if not d:
+        return jsonify({"ok": False, "error": "No encontré una fila de encabezados en el Excel"}), 400
+    return jsonify({"ok": True, **d})
 
 @app.route("/api/actualizar-inventario", methods=["POST"])
 def actualizar_inventario():
@@ -2507,13 +2565,17 @@ def actualizar_inventario():
         if archivo_am:
             mapas["am"] = _mapa_inv("am", negocio)
             registros += _leer_excel_automercado(archivo_am, mapas["am"])
-        # las columnas usadas quedan guardadas para la próxima carga de este negocio
-        if any(mapas.values()):
-            cols = columnas_inventario(negocio)
-            cols.update({k: v for k, v in mapas.items() if v})
-            cfg_cols = db.session.get(Config, f"{negocio}:columnas_inv") or Config(clave=f"{negocio}:columnas_inv")
-            cfg_cols.valor = json.dumps(cols, ensure_ascii=False)
-            db.session.add(cfg_cols)
+        # las columnas usadas (y la lista de columnas del Excel) quedan guardadas: se ven y cambian en la ficha del negocio
+        for slot, arch in (("wm", archivo_wm), ("am", archivo_am)):
+            if not arch:
+                continue
+            try:
+                arch.seek(0)
+                info = _columnas_excel(openpyxl.load_workbook(io.BytesIO(arch.read()), read_only=True, data_only=True), slot, mapas.get(slot))
+            except Exception:
+                info = None
+            if info:
+                _guardar_columnas_inv(negocio, slot, mapa=mapas.get(slot) or info["mapa"], columnas=info["columnas"])
 
         # Cargar inventario del negocio en memoria (evita N+1 queries)
         mapa_inv = {(inv.tienda, inv.producto): inv for inv in Inventario.query.filter_by(negocio=negocio).all()}

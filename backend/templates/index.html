@@ -4392,6 +4392,7 @@ async function abrirFormNegocio(n) {
   _negEditando = n || null;
   document.getElementById('neg-nombre').value = n ? n.nombre : '';
   quitarArchivoNeg('wm', true); quitarArchivoNeg('am', true);
+  if (n) colInvGuardadas(n.slug);   // columnas con que se lee su inventario, sin volver a subir el Excel
   document.getElementById('neg-paso1-txt').textContent = n ? 'Inventario (opcional: subí uno nuevo para actualizarlo)' : 'Inventario (Excel)';
   document.getElementById('neg-inv-estado').textContent = n ? 'Cargando tiendas del inventario actual...' : 'Subí el inventario y la app detecta tiendas, cadenas y cuáles son rurales.';
   document.getElementById('neg-config').style.display = 'none';
@@ -4573,6 +4574,16 @@ async function guardarNegocio() {
     const dc = await rc.json().catch(() => ({}));
     if (!dc.ok) { err.textContent = 'El negocio se guardó, pero las categorías no: ' + (dc.error || rc.status); return; }
     _nc.cambio = false;
+  }
+  for (const slot of ['wm', 'am']) {
+    const e = _colInv['neg:' + slot];
+    if (!e || !e.sinArchivo || !e.cambio || _negArchivos[slot]) continue;
+    if (_colInvFaltan(e).length) { err.textContent = 'Elegí las columnas del inventario (Tienda, Producto y Unidades) antes de guardar'; return; }
+    const rc = await fetch(API + '/api/inventario/columnas-guardar', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({negocio: d.negocio.slug, rol: usuario.rol, slot, mapa: e.mapa}) });
+    const dc = await rc.json().catch(() => ({}));
+    if (!dc.ok) { err.textContent = 'El negocio se guardó, pero las columnas del inventario no: ' + (dc.error || rc.status); return; }
+    e.cambio = false;
   }
   if (Object.keys(_nc.activos).length) {
     const ra = await fetch(API + '/api/productos-negocio', { method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -5358,6 +5369,16 @@ async function colInvCargar(ctx, slot, file, negocio, alCambiar) {
   _colInv[key] = {columnas: d.columnas, mapa: d.mapa, origen: d.origen, hoja: d.hoja, fila: d.fila, abierto: d.faltan.length > 0, alCambiar};
   colInvPintar(key);
 }
+async function colInvGuardadas(slug) {
+  const d = await (await fetch(API + '/api/inventario/columnas-guardadas?negocio=' + encodeURIComponent(slug) + '&rol=' + usuario.rol)).json().catch(() => ({}));
+  if (!d.ok) return;
+  Object.entries(d.slots || {}).forEach(([slot, x]) => {
+    if (_negArchivos[slot]) return;   // ya eligió un archivo nuevo: manda ese
+    _colInv['neg:' + slot] = {columnas: x.columnas || [], mapa: {...x.mapa}, origen: x.origen, sinArchivo: true, abierto: false};
+    colInvPintar('neg:' + slot);
+  });
+}
+const _COLS_CONOCIDAS = {wm: ['Store Name', 'Signing Desc', 'Item Nbr', 'Curr Str On Hand Qty'], am: ['NombrePDX', 'NombreProducto', 'CodigoProducto', 'CodigoBarras', 'Contenido']};
 function _colInvFaltan(e) { return ['tienda', 'producto', 'unidades'].filter(c => !e.mapa[c]); }
 function colInvPintar(key) {
   const e = _colInv[key];
@@ -5371,6 +5392,8 @@ function colInvPintar(key) {
   if (faltan.length) txt.innerHTML = `<b style="color:var(--rojo);">Elegí qué columna es: ${faltan.map(c => nombre[c]).join(', ')}</b>`;
   else {
     const org = e.origen === 'guardado' ? 'columnas guardadas de este negocio' : e.origen === 'auto' ? 'reconocidas solas' : 'elegidas';
+    const cadena = key.endsWith('wm') ? 'Walmart' : 'Auto Mercado';
+    if (e.sinArchivo) { const t = document.createElement('b'); t.textContent = `Inventario de ${cadena} · `; txt.before(t); }
     txt.innerHTML = '<b>Columnas:</b> ';
     CAMPOS_INV.forEach(([c, t], i) => {
       txt.append((i ? ' · ' : '') + t + ' = ');
@@ -5382,7 +5405,25 @@ function colInvPintar(key) {
   if (!e.abierto) return;
   const sel = cont.querySelector('.ci-sel');
   sel.innerHTML = '<div style="color:var(--muted);margin-top:6px;"></div>';
-  sel.firstChild.textContent = `Hoja «${e.hoja}», encabezados en la fila ${e.fila}. Elegí la columna de cada dato (entre paréntesis, un ejemplo del Excel):`;
+  sel.firstChild.textContent = e.sinArchivo
+    ? 'Columnas con que se lee el inventario de este negocio. Podés cambiarlas sin volver a subir el Excel: se guardan con el negocio y se usan en la próxima carga.'
+      + (e.columnas.length ? '' : ' Escribí el nombre exacto del encabezado como viene en el Excel.')
+    : `Hoja «${e.hoja}», encabezados en la fila ${e.fila}. Elegí la columna de cada dato (entre paréntesis, un ejemplo del Excel):`;
+  if (!e.columnas.length) {   // sin la lista de columnas del Excel (inventario cargado antes): se escribe el encabezado
+    const dl = document.createElement('datalist'); dl.id = 'dl-' + key.replace(':', '-');
+    (_COLS_CONOCIDAS[key.split(':')[1]] || []).forEach(n => dl.appendChild(new Option(n)));
+    sel.appendChild(dl);
+    CAMPOS_INV.forEach(([c, t]) => {
+      const f = document.createElement('div'); f.className = 'ci-fila';
+      f.innerHTML = '<span style="font-weight:700;"></span><input class="ug-in" style="padding:7px 10px;font-size:12px;">';
+      f.querySelector('span').textContent = t + (c === 'codigo' ? ' (opcional)' : '');
+      const inp = f.querySelector('input');
+      inp.setAttribute('list', dl.id); inp.value = e.mapa[c] || '';
+      inp.onchange = () => { e.mapa[c] = inp.value.trim(); e.origen = 'elegido'; e.cambio = true; colInvPintar(key); };
+      sel.appendChild(f);
+    });
+    return;
+  }
   CAMPOS_INV.forEach(([c, t]) => {
     const f = document.createElement('div'); f.className = 'ci-fila';
     f.innerHTML = '<span style="font-weight:700;"></span><select class="ug-in"></select>';
