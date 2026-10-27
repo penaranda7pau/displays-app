@@ -502,6 +502,20 @@
   .cat-item:hover { background: var(--korax-gray-1); }
   .cat-item small { color: var(--muted); }
   .cat-cab input, .cat-item input { width: 16px; height: 16px; accent-color: var(--korax-mid); flex: none; }
+  .nc-cat { border: 1px solid var(--borde); border-radius: 12px; margin-bottom: 8px; background: var(--korax-surface); }
+  .nc-cab { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; font-weight: 700; font-size: 13px; }
+  .nc-cab .fl { color: var(--muted); width: 12px; }
+  .nc-cab small { font-weight: 600; color: var(--muted); }
+  .nc-cab button { border: none; background: none; cursor: pointer; color: var(--muted); font-size: 13px; padding: 2px 4px; }
+  .nc-cuerpo { border-top: 1px solid var(--borde); padding: 8px 12px 10px; }
+  .nc-lista { max-height: 300px; overflow: auto; margin-top: 6px; }
+  .neg-form label.nc-prod, .neg-form label.nc-op { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; font-weight: 500; color: var(--text); letter-spacing: normal; text-transform: none; }
+  .nc-prod { display: flex; align-items: center; gap: 8px; padding: 5px 4px; font-size: 12px; border-radius: 8px; cursor: pointer; }
+  .neg-form label.nc-prod { padding: 5px 4px; }
+  .nc-prod:hover { background: var(--korax-gray-1); }
+  .nc-prod.otra { opacity: .45; cursor: not-allowed; }
+  .nc-prod input { width: 16px; height: 16px; accent-color: var(--korax-mid); flex: none; }
+  .nc-prod small { color: var(--muted); }
   .ga-cat { display: inline-block; font-size: 11px; font-weight: 700; color: var(--korax-deep); background: var(--foam-wash-2); border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
   .g-caja { background: var(--korax-surface); border: 1px solid var(--borde); border-radius: 16px; padding: 14px; margin-bottom: 14px; box-shadow: var(--sombra); }
   #g-analizar:disabled, #g-enviar:disabled { opacity: .45; cursor: not-allowed; }
@@ -1282,12 +1296,20 @@
         </div>
 
         <div class="neg-paso">Modo de captura de los displays</div>
-        <select id="neg-modo" class="ug-in" style="width:100%;margin-bottom:6px;">
+        <select id="neg-modo" class="ug-in" style="width:100%;margin-bottom:6px;" onchange="ncMostrar()">
           <option value="producto">Una foto por producto (como hasta ahora)</option>
           <option value="gondola">Fotos de la góndola completa: la IA detecta los productos</option>
           <option value="categoria">Fotos por categoría (para negocios grandes): la IA revisa cada categoría</option>
         </select>
-        <div class="neg-hint" style="margin:0 0 12px;">En modo góndola el display toma hasta 20 fotos de la tienda y la IA marca cada producto como presente, ausente o dudoso. Por categoría es igual, pero el display entra a cada categoría (ej. Juguetes, Alimentos) y toma hasta 10 fotos de esa categoría; las categorías se arman en Inventario.</div>
+        <div class="neg-hint" style="margin:0 0 12px;">En modo góndola el display toma hasta 20 fotos de la tienda y la IA marca cada producto como presente, ausente o dudoso. Por categoría es igual, pero el display entra a cada categoría (ej. Juguetes, Alimentos) y toma hasta 10 fotos de esa categoría.</div>
+        <div id="neg-cats" style="display:none;margin:0 0 14px;">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <input id="nc-nueva" class="ug-in" style="flex:1;" placeholder="Nombre de la categoría (ej. Juguetes)" onkeydown="if (event.key === 'Enter') { event.preventDefault(); ncAgregar(); }">
+            <button class="btn btn-verde" style="width:auto;padding:9px 16px;" onclick="ncAgregar()">+ Categoría</button>
+          </div>
+          <div class="neg-hint" id="nc-resumen" style="margin:0 0 8px;"></div>
+          <div id="nc-lista"></div>
+        </div>
         <div class="neg-paso"><span class="num" id="neg-paso-prompt-num">4</span>Prompt de la IA <span class="neg-hint" style="margin:0;font-weight:500;" id="neg-prompt-info"></span></div>
         <div class="neg-hint" style="margin:0 0 6px;">Lo que lee la IA para validar cada foto de este negocio. <b>{producto}</b> se reemplaza por el producto a revisar. No cambies las 3 líneas finales (ESTADO / CONFIANZA / MOTIVO).</div>
         <textarea id="neg-prompt" class="neg-prompt" spellcheck="false" oninput="infoPrompt()"></textarea>
@@ -3932,12 +3954,130 @@ async function analizarInventarioNegocio() {
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { est.textContent = d.error || ('Error ' + r.status); return; }
   est.textContent = `✓ ${d.tiendas.length} tiendas · ${d.productos} productos · ${d.rurales_sugeridas.length} rurales detectadas`;
+  (d.lista_productos || []).forEach(p => { if (!_nc.prods.some(x => x.producto === p.producto)) _nc.prods.push(p); });
+  _nc.prods.sort((a, b) => a.producto.localeCompare(b.producto));
+  ncPintar();
   // Si se está editando, conservar lo que ya estaba marcado como rural/quitado
   const editando = !!document.getElementById('neg-slug').value;
   _negCargarResumen(d,
     editando ? [...new Set([..._negEstado.rur, ...d.rurales_sugeridas])] : null,
     editando ? [..._negEstado.quit] : null,
     editando && _negEstado.cadenas.size ? [...new Set([..._negEstado.cadenas, ...d.cadenas_detectadas.map(x => x.codigo).filter(c => c !== 'OTRA')])] : null);
+}
+
+// ── Categorías dentro del formulario del negocio: cada producto puede estar en UNA sola categoría ──
+let _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false};
+async function ncCargar(slug) {
+  _nc = {cats: {categorias: [], productos: {}}, prods: [], abierta: '', cambio: false};
+  ncMostrar();
+  if (!slug) return;
+  try {
+    const [rc, rp] = await Promise.all([fetch(API + '/api/categorias?negocio=' + encodeURIComponent(slug)),
+                                        fetch(API + '/api/productos-negocio?negocio=' + encodeURIComponent(slug))]);
+    _nc.cats = await rc.json();
+    _nc.prods = (await rp.json()).filter(p => p.activo).map(p => ({producto: p.producto, item_nbr: p.item_nbr}))
+                                 .sort((a, b) => a.producto.localeCompare(b.producto));
+  } catch (e) {}
+  ncPintar();
+}
+function ncMostrar() {
+  document.getElementById('neg-cats').style.display = document.getElementById('neg-modo').value === 'categoria' ? '' : 'none';
+  ncPintar();
+}
+function ncPintar() {
+  const cont = document.getElementById('nc-lista');
+  if (!cont || document.getElementById('neg-cats').style.display === 'none') return;
+  const {categorias, productos} = _nc.cats;
+  const sinCat = _nc.prods.filter(p => !categorias.includes(productos[p.producto])).length;
+  document.getElementById('nc-resumen').textContent = !_nc.prods.length
+    ? 'Escribí las categorías. Para meterles productos primero subí el inventario y presioná "Leer inventario".'
+    : `${categorias.length} categoría(s) · ${_nc.prods.length} productos · ${sinCat} sin categoría. Abrí una categoría y marcá sus productos; un producto solo puede estar en una categoría.`;
+  const scroll = cont.querySelector('.nc-lista')?.scrollTop || 0;
+  cont.innerHTML = '';
+  categorias.forEach(cat => {
+    const n = _nc.prods.filter(p => productos[p.producto] === cat).length;
+    const abierta = _nc.abierta === cat;
+    const box = document.createElement('div'); box.className = 'nc-cat';
+    box.innerHTML = `<div class="nc-cab"><span class="fl">${abierta ? '▾' : '▸'}</span><span class="nm" style="flex:1;min-width:0;"></span><small></small>
+      <button title="Cambiar nombre">✎</button><button title="Eliminar">✕</button></div>`;
+    box.querySelector('.nm').textContent = cat;
+    box.querySelector('small').textContent = n + ' producto(s)';
+    const [bRen, bDel] = box.querySelectorAll('.nc-cab button');
+    bRen.onclick = e => { e.stopPropagation(); ncRenombrar(cat); };
+    bDel.onclick = e => { e.stopPropagation(); ncEliminar(cat); };
+    box.querySelector('.nc-cab').onclick = () => { _nc.abierta = abierta ? '' : cat; ncPintar(); };
+    if (abierta) {
+      const cuerpo = document.createElement('div'); cuerpo.className = 'nc-cuerpo';
+      cuerpo.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input class="ug-in nc-buscar" style="flex:1;min-width:160px;padding:7px 10px;" placeholder="Buscar producto o código...">
+          <label class="nc-op" style="cursor:pointer;"><input type="checkbox" class="nc-solo" style="width:16px;height:16px;accent-color:var(--korax-mid);"> Ocultar los de otras categorías</label>
+          <button class="btn btn-gris nc-todos" style="width:auto;padding:6px 10px;font-size:12px;">Marcar los visibles sin categoría</button>
+        </div><div class="nc-lista"></div>`;
+      const lista = cuerpo.querySelector('.nc-lista'), buscar = cuerpo.querySelector('.nc-buscar'), solo = cuerpo.querySelector('.nc-solo');
+      buscar.value = _nc.buscar || ''; solo.checked = !!_nc.solo;
+      const visibles = () => {
+        const q = buscar.value.trim().toLowerCase();
+        return _nc.prods.filter(p => (!q || p.producto.toLowerCase().includes(q) || String(p.item_nbr).includes(q))
+          && !(solo.checked && categorias.includes(productos[p.producto]) && productos[p.producto] !== cat));
+      };
+      const llenar = () => {
+        lista.innerHTML = '';
+        visibles().forEach(p => {
+          const otra = categorias.includes(productos[p.producto]) && productos[p.producto] !== cat ? productos[p.producto] : '';
+          const f = document.createElement('label'); f.className = 'nc-prod' + (otra ? ' otra' : '');
+          f.innerHTML = '<input type="checkbox"><span style="flex:1;min-width:0;"><small class="cd"></small> <span class="nm"></span></span><small class="en"></small>';
+          if (p.item_nbr) f.querySelector('.cd').textContent = '#' + p.item_nbr;
+          f.querySelector('.nm').textContent = p.producto;
+          if (otra) f.querySelector('.en').textContent = 'en ' + otra;
+          const chk = f.querySelector('input');
+          chk.checked = productos[p.producto] === cat; chk.disabled = !!otra;
+          chk.onchange = () => {
+            if (chk.checked) productos[p.producto] = cat; else delete productos[p.producto];
+            _nc.cambio = true;
+            box.querySelector('small').textContent = _nc.prods.filter(x => productos[x.producto] === cat).length + ' producto(s)';
+            const sc = _nc.prods.filter(x => !categorias.includes(productos[x.producto])).length;
+            document.getElementById('nc-resumen').textContent = document.getElementById('nc-resumen').textContent.replace(/\d+ sin categoría/, sc + ' sin categoría');
+          };
+          lista.appendChild(f);
+        });
+        if (!lista.children.length) lista.innerHTML = '<div class="neg-hint" style="padding:8px;">Sin productos para mostrar</div>';
+      };
+      buscar.oninput = () => { _nc.buscar = buscar.value; llenar(); };
+      solo.onchange = () => { _nc.solo = solo.checked; llenar(); };
+      cuerpo.querySelector('.nc-todos').onclick = () => {
+        visibles().forEach(p => { if (!categorias.includes(productos[p.producto])) productos[p.producto] = cat; });
+        _nc.cambio = true; ncPintar();
+      };
+      llenar();
+      box.appendChild(cuerpo);
+      lista.scrollTop = scroll;
+    }
+    cont.appendChild(box);
+  });
+}
+function _ncExiste(n) { return n === SIN_CAT || _nc.cats.categorias.some(c => c.toLowerCase() === n.toLowerCase()); }
+function ncAgregar() {
+  const inp = document.getElementById('nc-nueva'), n = inp.value.trim();
+  if (!n) return;
+  if (_ncExiste(n)) { toast('Esa categoría ya existe', 'err'); return; }
+  _nc.cats.categorias.push(n); _nc.abierta = n; _nc.buscar = ''; _nc.cambio = true;
+  inp.value = '';
+  ncPintar();
+}
+function ncRenombrar(cat) {
+  const n = (prompt('Nuevo nombre de la categoría', cat) || '').trim();
+  if (!n || n === cat) return;
+  if (_ncExiste(n) && n.toLowerCase() !== cat.toLowerCase()) { toast('Esa categoría ya existe', 'err'); return; }
+  _nc.cats.categorias = _nc.cats.categorias.map(c => c === cat ? n : c);
+  Object.keys(_nc.cats.productos).forEach(p => { if (_nc.cats.productos[p] === cat) _nc.cats.productos[p] = n; });
+  if (_nc.abierta === cat) _nc.abierta = n;
+  _nc.cambio = true; ncPintar();
+}
+function ncEliminar(cat) {
+  if (!confirm(`¿Eliminar la categoría "${cat}"? Sus productos quedan sin categoría.`)) return;
+  _nc.cats.categorias = _nc.cats.categorias.filter(c => c !== cat);
+  Object.keys(_nc.cats.productos).forEach(p => { if (_nc.cats.productos[p] === cat) delete _nc.cats.productos[p]; });
+  _nc.cambio = true; ncPintar();
 }
 
 let _promptOriginal = '';
@@ -3955,6 +4095,7 @@ function restaurarPrompt() {
 async function abrirFormNegocio(n) {
   _negLogoNuevo = null;
   document.getElementById('neg-modo').value = (n && n.modo_captura) || 'producto';
+  ncCargar(n ? n.slug : '');
   if (n) {
     _promptOriginal = n.prompt_original || '';
     document.getElementById('neg-prompt').value = n.prompt || _promptOriginal;
@@ -4141,6 +4282,13 @@ async function guardarNegocio() {
   });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) { err.textContent = d.error || ('Error ' + r.status); return; }
+  if (body.modo_captura === 'categoria' && _nc.cambio) {
+    const rc = await fetch(API + '/api/categorias', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({negocio: d.negocio.slug, rol: usuario.rol, categorias: _nc.cats.categorias, productos: _nc.cats.productos}) });
+    const dc = await rc.json().catch(() => ({}));
+    if (!dc.ok) { err.textContent = 'El negocio se guardó, pero las categorías no: ' + (dc.error || rc.status); return; }
+    _nc.cambio = false;
+  }
   // Cargar el inventario subido al negocio (mismo proceso que "Actualizar inventario")
   if (wm || am) {
     err.textContent = 'Cargando inventario...';

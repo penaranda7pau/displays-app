@@ -840,6 +840,10 @@ def analizar_inventario_negocio():
     tiendas = {r["tienda"].strip().upper() for r in registros if r.get("tienda")}
     res = _resumen_tiendas(tiendas)
     res["productos"] = len({r["producto"] for r in registros})
+    lista = {}
+    for r in registros:   # para armar las categorías antes de guardar el negocio
+        lista.setdefault(r["producto"], r.get("item_nbr") or "")
+    res["lista_productos"] = [{"producto": p, "item_nbr": i} for p, i in sorted(lista.items())]
     res["registros"] = len(registros)
     return jsonify(res)
 
