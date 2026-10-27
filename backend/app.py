@@ -1421,7 +1421,7 @@ def productos_negocio():
     negocio = request.args.get("negocio", "mundo_vegano")
     inactivos = productos_inactivos(negocio)
     habilitada = filtro_tiendas(negocio)   # sin cadenas desactivadas (ej. Vindi) ni tiendas quitadas
-    elegidos = codigos_elegidos(negocio)
+    elegidos, vistos_carga = codigos_elegidos(negocio), codigos_vistos(negocio)
     cat, vistos = {}, {}
     for t, p, item in (db.session.query(Inventario.tienda, Inventario.producto, Inventario.item_nbr)
                        .filter_by(negocio=negocio).all()):
@@ -1433,7 +1433,10 @@ def productos_negocio():
             c = vistos.setdefault(p, {})
             c[item] = c.get(item, 0) + 1
     for p, x in cat.items():
-        x["codigos"] = _lista_codigos(vistos.get(p, {}))
+        cv = dict(vistos.get(p, {}))
+        for c, n in vistos_carga.get(p, {}).items():
+            cv[c] = max(cv.get(c, 0), n)
+        x["codigos"] = _lista_codigos(cv)
         x["elegido"] = elegidos.get(p, "")
         x["item_nbr"] = x["elegido"] or (x["codigos"][0]["codigo"] if x["codigos"] else "")
     # los desactivados que ya no vienen en el inventario no se muestran, pero siguen desactivados si vuelven
@@ -1464,6 +1467,68 @@ def guardar_codigos():
     cfg.valor = json.dumps(cods, ensure_ascii=False)
     db.session.add(cfg); db.session.commit()
     return jsonify({"ok": True})
+
+def codigos_vistos(negocio):
+    """{producto: {código: tiendas}}: todos los códigos con que vino cada producto en la última carga de inventario."""
+    cfg = db.session.get(Config, f"{negocio}:codigos_vistos")
+    try:
+        return json.loads(cfg.valor) if cfg and cfg.valor else {}
+    except Exception:
+        return {}
+
+def _guardar_codigos_vistos(negocio, vistos, reemplazar=False):
+    actual = {} if reemplazar else codigos_vistos(negocio)
+    for p, cods in vistos.items():
+        if reemplazar or p not in actual:
+            actual[p] = cods
+        else:
+            for c, n in cods.items():
+                actual[p][c] = max(actual[p].get(c, 0), n)
+    cfg = db.session.get(Config, f"{negocio}:codigos_vistos") or Config(clave=f"{negocio}:codigos_vistos")
+    cfg.valor = json.dumps(actual, ensure_ascii=False)
+    db.session.add(cfg)
+
+def _consolidar_registros(negocio, registros):
+    """Un mismo producto puede venir varias veces en una tienda con códigos distintos (variantes o código viejo/nuevo).
+    Se deja UNA fila por tienda+producto: suma las unidades y usa el código elegido, o el que trae más unidades.
+    Devuelve (registros, {producto: {código: tiendas}})."""
+    elegidos = codigos_elegidos(negocio)
+    grupos = {}
+    for r in registros:
+        g = grupos.setdefault((r["tienda"], r["producto"]), {"cantidad": 0, "cods": {}})
+        g["cantidad"] += r.get("cantidad") or 0
+        if r.get("item_nbr"):
+            g["cods"][r["item_nbr"]] = g["cods"].get(r["item_nbr"], 0) + (r.get("cantidad") or 0)
+    out, vistos = [], {}
+    for (t, p), g in grupos.items():
+        cods = g["cods"]
+        for c in cods:
+            vistos.setdefault(p, {})[c] = vistos.get(p, {}).get(c, 0) + 1
+        cod = elegidos.get(p) if elegidos.get(p) in cods else (max(cods, key=lambda c: cods[c]) if cods else "")
+        out.append({"tienda": t, "producto": p, "cantidad": g["cantidad"], "item_nbr": cod})
+    return out, vistos
+
+def _consolidar_inventario_db(negocio):
+    """Junta filas repetidas (misma tienda y producto) que ya estén en la base. Devuelve cuántas filas quitó."""
+    filas = Inventario.query.filter_by(negocio=negocio).order_by(Inventario.id).all()
+    por_clave = {}
+    for i in filas:
+        por_clave.setdefault((i.tienda, i.producto), []).append(i)
+    repetidas = {k: v for k, v in por_clave.items() if len(v) > 1}
+    if not repetidas:
+        return 0
+    regs = [{"tienda": i.tienda, "producto": i.producto, "cantidad": i.cantidad or 0, "item_nbr": i.item_nbr or ""}
+            for v in repetidas.values() for i in v]
+    unidos, vistos = _consolidar_registros(negocio, regs)
+    quitadas = 0
+    for u in unidos:
+        primera, *resto = repetidas[(u["tienda"], u["producto"])]
+        primera.cantidad, primera.item_nbr = u["cantidad"], u["item_nbr"] or None
+        for x in resto:
+            db.session.delete(x); quitadas += 1
+    _guardar_codigos_vistos(negocio, vistos)
+    db.session.commit()
+    return quitadas
 
 @app.route("/api/productos-negocio", methods=["POST"])
 def activar_producto():
@@ -1761,7 +1826,7 @@ def _formato_por_defecto():
         orden = defecto + [c for c in disp if c not in defecto]
         hojas.append({"id": hid, "nombre": nombre, "activa": True,
                       "columnas": [{"id": c, "titulo": titulos.get(c, CAMPOS_EXCEL[c][0]), "activa": c in defecto} for c in orden]})
-    return {"separar_por_cadena": True, "hojas": hojas}
+    return {"separar_por_cadena": True, "semanas_historial": 12, "hojas": hojas}
 
 def formato_excel(negocio):
     """Formato guardado del negocio, completado con hojas/columnas nuevas (apagadas) y sin las que ya no existen."""
@@ -1790,7 +1855,11 @@ def formato_excel(negocio):
         hojas.append({"id": b["id"], "nombre": (str(h.get("nombre") or "").strip() or b["nombre"])[:25],
                       "activa": bool(h.get("activa", True)), "columnas": cols})
     hojas += [dict(h, activa=False) for h in por_id.values()]
-    return {"separar_por_cadena": bool(guardado.get("separar_por_cadena", True)), "hojas": hojas}
+    try:
+        sem_hist = max(0, min(104, int(guardado.get("semanas_historial", 12))))
+    except (TypeError, ValueError):
+        sem_hist = 12
+    return {"separar_por_cadena": bool(guardado.get("separar_por_cadena", True)), "semanas_historial": sem_hist, "hojas": hojas}
 
 # Colores del Excel: los de la app (azul CPFR #084C8D y turquesa #00999E)
 _XL = {
@@ -1981,6 +2050,9 @@ def _excel_cierre(negocio, c, vista_previa=False):
         m = matriz.setdefault((d["tienda"], d["producto"]), {})
         m[semana] = 1 if d["estado"] != "OK" else m.get(semana, 0)
     semanas_arch = sorted({s for m in matriz.values() for s in m if re.match(r"^\d{4}-S\d{2}$", s or "")})   # sin códigos inválidos
+    if fmt.get("semanas_historial"):   # solo las últimas N semanas (0 = todas)
+        semanas_arch = semanas_arch[-fmt["semanas_historial"]:]
+    matriz = {k: m for k, m in matriz.items() if any(s in m for s in semanas_arch)}   # sin filas vacías
     stock_act = {(t, p): q for t, p, q in db.session.query(Inventario.tienda, Inventario.producto, Inventario.cantidad)
                  .filter_by(negocio=negocio) if p not in c["inactivos"]}
     coment = {k: r.comentario for k, r in mapa.items() if r.comentario}
@@ -2594,6 +2666,11 @@ def actualizar_inventario():
                 info = None
             if info:
                 _guardar_columnas_inv(negocio, slot, mapa=mapas.get(slot) or info["mapa"], columnas=info["columnas"])
+
+        # un producto una sola vez por tienda (si vino con varios códigos se suman sus unidades)
+        registros, vistos = _consolidar_registros(negocio, registros)
+        _guardar_codigos_vistos(negocio, vistos, reemplazar=True)
+        _consolidar_inventario_db(negocio)
 
         # Cargar inventario del negocio en memoria (evita N+1 queries)
         mapa_inv = {(inv.tienda, inv.producto): inv for inv in Inventario.query.filter_by(negocio=negocio).all()}
@@ -3694,6 +3771,16 @@ def sistema_stats():
         }
     })
 
+
+with app.app_context():   # inventarios cargados antes: un producto una sola vez por tienda
+    for _slug in slugs_negocios():
+        try:
+            _n = _consolidar_inventario_db(_slug)
+            if _n:
+                print(f"Inventario {_slug}: {_n} filas repetidas unidas", flush=True)
+        except Exception as _e:
+            db.session.rollback()
+            print(f"Inventario {_slug}: no se pudieron unir repetidos: {_e}", flush=True)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
