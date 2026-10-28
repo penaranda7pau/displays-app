@@ -742,6 +742,22 @@
     border-radius: 0 0 var(--radius-card) var(--radius-card);
     position: relative;
   }
+  .avisos { flex: 1 1 280px; max-width: 520px; background: var(--card); border: 1px solid var(--borde);
+    border-left: 4px solid var(--korax-mid); border-radius: 12px; padding: 10px 12px; }
+  .av-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .av-tit { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--korax-deep); }
+  .av-mas { background: var(--korax-mid); color: #fff; border: none; border-radius: 8px; padding: 5px 10px;
+    font-size: 12px; font-weight: 600; cursor: pointer; width: auto; }
+  .av-gris { background: transparent; color: var(--muted); border: 1px solid var(--borde); }
+  .av-msg { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--borde); }
+  .av-msg:first-child { border-top: none; }
+  .av-msg .tx { flex: 1; font-size: 13px; line-height: 1.4; color: var(--texto); white-space: pre-wrap; word-break: break-word; }
+  .av-msg .meta { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .av-msg .x { background: none; border: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; width: auto; }
+  .av-msg .x:hover { color: #C0392B; }
+  #av-texto { width: 100%; box-sizing: border-box; font-size: 13px; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--borde); resize: vertical; font-family: inherit; margin-top: 6px; }
+  .av-vacio { font-size: 12px; color: var(--muted); }
   .tiendas-hero::before, .panel-hero::before {
     content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
     background: linear-gradient(90deg, var(--korax-deep), var(--korax-mid), var(--korax-foam));
@@ -1382,12 +1398,24 @@
 <!-- TIENDAS -->
 <div id="tiendas" class="screen">
   <div class="tiendas-hero">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:12px;">
       <div>
         <div class="hero-title" id="hero-titulo-tiendas">Seleccionar Cadena</div>
         <div class="hero-user" id="hero-nombre-usuario">—</div>
         <span class="cliente-chip" id="hero-cliente"><img id="hero-cliente-logo" src="/static/mv_logo.png" alt=""><span id="hero-cliente-nombre">Mundo Vegano</span></span>
         <div id="display-semana-badge" style="font-size:11px;color:var(--claro);margin-top:4px;opacity:0.8;display:none;">Semana: <span id="display-semana-label">—</span></div>
+      </div>
+      <div id="avisos" class="avisos" style="display:none;">
+        <div class="av-top"><span class="av-tit">📣 Mensajes</span><button class="av-mas" id="av-mas" onclick="avisoNuevo()" style="display:none;">+ Mensaje</button></div>
+        <div id="av-lista"></div>
+        <div id="av-form" style="display:none;">
+          <textarea id="av-texto" maxlength="300" rows="2"></textarea>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+            <button class="av-mas" onclick="avisoPublicar()">Publicar</button>
+            <button class="av-mas av-gris" onclick="avisoCancelar()">Cancelar</button>
+            <span id="av-err" style="font-size:11px;color:#C0392B;"></span>
+          </div>
+        </div>
       </div>
       <button id="btn-panel" class="btn-azul btn" style="width:auto;padding:8px 14px;display:none;border-radius:10px;font-size:13px;" onclick="irPanel()">Panel</button>
     </div>
@@ -2044,6 +2072,7 @@ async function _entrarAlApp() {
   mostrar('tiendas');
   sbMostrar(usuario.nombre || usuario.usuario, usuario.rol);
   cargarTiendas();
+  cargarAvisos();
   fetch(API + '/api/semana-activa?negocio=' + negocioActual).then(r => r.json()).then(ds => {
     const badge = document.getElementById('display-semana-badge');
     const label = document.getElementById('display-semana-label');
@@ -2052,6 +2081,66 @@ async function _entrarAlApp() {
       badge.style.display = 'block';
     }
   }).catch(() => {});
+}
+
+// ── Mensajes para los displays (los ponen y quitan superadmin, admin general, admin y subadmin) ──
+const _puedeAvisos = () => usuario && ['subadmin', 'supervisor', 'admin', 'superadmin'].includes(usuario.rol);
+async function cargarAvisos() {
+  const d = await (await fetch(API + '/api/mensajes?negocio=' + encodeURIComponent(negocioActual))).json().catch(() => ({}));
+  pintarAvisos(d.mensajes || []);
+}
+function pintarAvisos(msgs) {
+  const box = document.getElementById('avisos'), lista = document.getElementById('av-lista');
+  const admin = _puedeAvisos();
+  box.style.display = (msgs.length || admin) ? '' : 'none';   // el display solo lo ve si hay mensajes
+  document.getElementById('av-mas').style.display = admin && msgs.length < 5 ? '' : 'none';
+  lista.innerHTML = '';
+  if (!msgs.length) { lista.innerHTML = '<div class="av-vacio">No hay mensajes. Los displays verán aquí lo que publiques.</div>'; return; }
+  msgs.slice().reverse().forEach(m => {
+    const f = document.createElement('div'); f.className = 'av-msg';
+    f.innerHTML = '<div class="tx"></div>';
+    f.querySelector('.tx').textContent = m.texto;
+    if (admin) {
+      const meta = document.createElement('span'); meta.className = 'meta';
+      meta.textContent = [m.autor, m.fecha].filter(Boolean).join(' · ');
+      f.querySelector('.tx').appendChild(meta);
+      const x = document.createElement('button'); x.className = 'x'; x.title = 'Quitar mensaje'; x.textContent = '×';
+      x.onclick = () => avisoQuitar(m);
+      f.appendChild(x);
+    }
+    lista.appendChild(f);
+  });
+}
+function avisoNuevo() {
+  document.getElementById('av-form').style.display = '';
+  document.getElementById('av-mas').style.display = 'none';
+  document.getElementById('av-err').textContent = '';
+  document.getElementById('av-texto').focus();
+}
+function avisoCancelar() {
+  document.getElementById('av-form').style.display = 'none';
+  document.getElementById('av-texto').value = '';
+  cargarAvisos();
+}
+async function _avisoEnviar(cuerpo) {
+  const r = await fetch(API + '/api/mensajes', { method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({negocio: negocioActual, rol: usuario.rol, autor: usuario.nombre || usuario.usuario, ...cuerpo}) });
+  return r.json().catch(() => ({ok: false, error: 'Error ' + r.status}));
+}
+async function avisoPublicar() {
+  const texto = document.getElementById('av-texto').value.trim();
+  const err = document.getElementById('av-err');
+  if (!texto) { err.textContent = 'Escribí el mensaje'; return; }
+  const d = await _avisoEnviar({accion: 'agregar', texto});
+  if (!d.ok) { err.textContent = d.error || 'No se pudo publicar'; return; }
+  document.getElementById('av-form').style.display = 'none';
+  document.getElementById('av-texto').value = '';
+  pintarAvisos(d.mensajes);
+}
+async function avisoQuitar(m) {
+  if (!confirm('¿Quitar este mensaje? Los displays ya no lo verán.\n\n' + m.texto)) return;
+  const d = await _avisoEnviar({accion: 'quitar', id: m.id});
+  if (d.ok) pintarAvisos(d.mensajes); else alert(d.error || 'No se pudo quitar');
 }
 
 async function cargarTiendas() {

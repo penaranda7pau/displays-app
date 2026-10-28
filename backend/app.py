@@ -1530,6 +1530,46 @@ def _consolidar_inventario_db(negocio):
     db.session.commit()
     return quitadas
 
+ROLES_MENSAJES = ("subadmin",) + ROLES_ADMIN
+MAX_MENSAJES, MAX_LARGO_MENSAJE = 5, 300
+
+def mensajes_display(negocio):
+    """[{id, texto, autor, fecha}]: avisos que ven los displays del negocio hasta que un administrador los quite."""
+    cfg = db.session.get(Config, f"{negocio}:mensajes_display")
+    try:
+        return json.loads(cfg.valor) if cfg and cfg.valor else []
+    except Exception:
+        return []
+
+@app.route("/api/mensajes")
+def ver_mensajes():
+    return jsonify({"ok": True, "mensajes": mensajes_display(request.args.get("negocio", ""))})
+
+@app.route("/api/mensajes", methods=["POST"])
+def guardar_mensaje():
+    d = request.get_json(silent=True) or {}
+    if d.get("rol") not in ROLES_MENSAJES:
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    negocio = d.get("negocio")
+    if negocio not in slugs_negocios():
+        return jsonify({"ok": False, "error": "Negocio inválido"}), 400
+    msgs = mensajes_display(negocio)
+    if d.get("accion") == "quitar":
+        msgs = [m for m in msgs if m.get("id") != d.get("id")]
+    else:
+        texto = (d.get("texto") or "").strip()[:MAX_LARGO_MENSAJE]
+        if not texto:
+            return jsonify({"ok": False, "error": "Escribí el mensaje"}), 400
+        if len(msgs) >= MAX_MENSAJES:
+            return jsonify({"ok": False, "error": f"Máximo {MAX_MENSAJES} mensajes: quitá uno antes de poner otro"}), 400
+        msgs.append({"id": uuid.uuid4().hex[:10], "texto": texto, "autor": (d.get("autor") or "").strip()[:60],
+                     "fecha": datetime.now().strftime("%Y-%m-%d %H:%M")})
+    cfg = db.session.get(Config, f"{negocio}:mensajes_display") or Config(clave=f"{negocio}:mensajes_display")
+    cfg.valor = json.dumps(msgs, ensure_ascii=False)
+    db.session.add(cfg)
+    db.session.commit()
+    return jsonify({"ok": True, "mensajes": msgs})
+
 @app.route("/api/productos-negocio", methods=["POST"])
 def activar_producto():
     data = request.json or {}
