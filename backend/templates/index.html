@@ -4223,7 +4223,8 @@ async function analizarInventarioNegocio() {
   fd.append('negocio', document.getElementById('neg-slug').value);
   fd.append('solicitante_rol', usuario.rol);
   est.textContent = 'Leyendo inventario...';
-  const r = await fetch(API + '/api/negocios/analizar-inventario', { method: 'POST', body: fd });
+  const r = await fetch(API + '/api/negocios/analizar-inventario', { method: 'POST', body: fd }).catch(() => null);
+  if (!r) { est.textContent = '⚠ ' + _ERR_ARCHIVO; return; }
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { est.textContent = d.error || ('Error ' + r.status); return; }
   est.textContent = `✓ ${d.tiendas.length} tiendas · ${d.productos} productos · ${d.rurales_sugeridas.length} rurales detectadas`;
@@ -4699,7 +4700,8 @@ async function guardarNegocio() {
     fd.append('negocio', d.negocio.slug);
     fd.append('rol', usuario.rol);
     colInvAgregar('neg', fd);
-    const ri = await fetch(API + '/api/actualizar-inventario', { method: 'POST', body: fd });
+    const ri = await fetch(API + '/api/actualizar-inventario', { method: 'POST', body: fd }).catch(() => null);
+    if (!ri) { err.textContent = 'El negocio se guardó, pero el inventario no: ' + _ERR_ARCHIVO; await cargarNegociosAdmin(); return; }
     if (!ri.ok) {
       const di = await ri.json().catch(() => ({}));
       err.textContent = 'El negocio se guardó, pero el inventario falló: ' + (di.error || ri.status);
@@ -5447,6 +5449,7 @@ async function catEliminar(cat) {
 // ── Columnas del inventario: qué columna del Excel es tienda, producto, código y unidades ──
 const CAMPOS_INV = [['tienda', 'Tienda'], ['producto', 'Producto'], ['codigo', 'Código'], ['unidades', 'Unidades']];
 const _colInv = {};   // 'neg:wm' → {columnas, mapa, origen, abierto, alCambiar}
+const _ERR_ARCHIVO = 'No se pudo leer el archivo. Si lo cambiaste o lo guardaste de nuevo después de elegirlo (o está abierto en Excel), cerralo, quitalo con la × y elegilo otra vez.';
 async function colInvCargar(ctx, slot, file, negocio, alCambiar) {
   const key = ctx + ':' + slot, cont = document.getElementById(ctx + '-col-' + slot);
   delete _colInv[key];
@@ -5455,7 +5458,8 @@ async function colInvCargar(ctx, slot, file, negocio, alCambiar) {
   cont.innerHTML = '<div class="ci-caja">Leyendo las columnas del Excel...</div>';
   const fd = new FormData();
   fd.append('archivo', file); fd.append('slot', slot); fd.append('negocio', negocio || ''); fd.append('rol', usuario.rol);
-  const d = await (await fetch(API + '/api/inventario/columnas', { method: 'POST', body: fd })).json().catch(() => ({}));
+  const r = await fetch(API + '/api/inventario/columnas', { method: 'POST', body: fd }).catch(() => null);
+  const d = r ? await r.json().catch(() => ({})) : {error: _ERR_ARCHIVO};
   if (!d.ok) { cont.innerHTML = '<div class="ci-caja falta"></div>'; cont.firstChild.textContent = '⚠ ' + (d.error || 'No se pudieron leer las columnas'); return; }
   _colInv[key] = {columnas: d.columnas, mapa: d.mapa, origen: d.origen, hoja: d.hoja, fila: d.fila, abierto: d.faltan.length > 0, alCambiar};
   colInvPintar(key);
