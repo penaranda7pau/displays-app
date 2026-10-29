@@ -3057,10 +3057,11 @@ def _guia_gondola(gt):
 def _analizar_gondola(gt_id):
     import anthropic as _anth
     gt = db.session.get(GondolaTienda, gt_id)
-    prods = _productos_tienda(gt.negocio, gt.tienda, gt.categoria or "")
+    # la IA solo busca los que tienen inventario: los de 0 no cuentan en el cierre (y así se gastan menos tokens)
+    prods = [p for p in _productos_tienda(gt.negocio, gt.tienda, gt.categoria or "") if (p.cantidad or 0) > 0]
     fotos = [f for (f,) in db.session.query(FotoGondola.foto_b64).filter_by(lote=str(gt.id)).order_by(FotoGondola.id).all()]
     if not prods or not fotos:
-        gt.estado, gt.error = "ERROR", (("La categoría" if gt.categoria else "La tienda") + " no tiene productos en el inventario" if not prods else "No hay fotos")
+        gt.estado, gt.error = "ERROR", (("La categoría" if gt.categoria else "La tienda") + " no tiene productos con inventario" if not prods else "No hay fotos")
         db.session.commit(); return
     modelo = modelo_gondola(gt.negocio)
     neg = db.session.get(Negocio, gt.negocio)
@@ -3204,15 +3205,16 @@ def gondola_categorias():
     """Categorías que tienen productos en la tienda, con lo que el display ya envió esta semana."""
     negocio, tienda = request.args.get("negocio"), (request.args.get("tienda") or "").strip()
     cats, sem = categorias_de(negocio), semana_captura(negocio)
-    cuenta = {}
+    cuenta, ceros = {}, {}   # productos con inventario / en 0 (los de 0 no hace falta fotografiarlos)
     for p in _productos_tienda(negocio, tienda):
         c = categoria_de(cats, p.producto)
-        cuenta[c] = cuenta.get(c, 0) + 1
+        d = cuenta if (p.cantidad or 0) > 0 else ceros
+        d[c] = d.get(c, 0) + 1
     out = []
     for c in cats["categorias"] + [SIN_CATEGORIA]:
-        if cuenta.get(c):
+        if cuenta.get(c) or ceros.get(c):
             gt = _gt(negocio, sem, tienda, categoria=c)
-            out.append({"categoria": c, "productos": cuenta[c], "fotos": len(_fotos_gt(gt)) if gt else 0,
+            out.append({"categoria": c, "productos": cuenta.get(c, 0), "en_cero": ceros.get(c, 0), "fotos": len(_fotos_gt(gt)) if gt else 0,
                         "enviada": bool(gt and gt.estado != "SIN_FOTOS")})
     return jsonify({"categorias": out, "max": MAX_FOTOS_CATEGORIA})
 

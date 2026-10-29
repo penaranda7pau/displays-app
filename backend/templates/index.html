@@ -550,6 +550,10 @@
   .g-foto img { width: 100%; height: 100%; object-fit: cover; }
   .g-foto button { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: none; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; }
   .g-resumen { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; font-weight: 700; margin: 6px 0 10px; }
+  .g-ceros { margin-top: 10px; border: 1px solid var(--borde); border-radius: 10px; padding: 0 10px; background: var(--korax-gray-1); }
+  .g-ceros summary { cursor: pointer; padding: 10px 2px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  .g-ceros[open] summary { border-bottom: 1px solid var(--borde); }
+  .g-ceros .g-fila:last-child { border-bottom: none; }
   .g-fila { display: flex; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--borde); }
   .g-fila .g-ic { font-size: 18px; } .g-nom { font-size: 13px; font-weight: 700; } .g-nota { font-size: 12px; color: var(--muted); }
   .g-fila textarea { width: 100%; margin-top: 6px; border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; font-family: inherit; font-size: 12px; background: var(--korax-gray-1); color: var(--text); resize: vertical; min-height: 34px; }
@@ -2376,7 +2380,8 @@ async function irCategorias(tienda) {
       <span class="ga-est" style="background:${c.enviada ? '#DCFCE7' : 'var(--korax-gray-2)'};color:${c.enviada ? '#15803D' : 'var(--text)'};">${c.enviada ? '✓ Enviada' : 'Pendiente'}</span>
       <button class="btn btn-gris" style="width:auto;padding:6px 12px;font-size:12px;">Abrir</button>`;
     f.querySelector('.g-nom').textContent = c.categoria;
-    f.querySelector('.g-nota').textContent = `${c.productos} producto(s)` + (c.fotos ? ` · ${c.fotos} foto(s) enviadas` : '');
+    f.querySelector('.g-nota').textContent = (c.productos ? `${c.productos} producto(s)` : 'Sin productos con inventario')
+      + (c.en_cero ? ` · ${c.en_cero} en 0` : '') + (c.fotos ? ` · ${c.fotos} foto(s) enviadas` : '');
     f.onclick = () => irGondola(tienda, c.categoria);
     cont.appendChild(f);
   });
@@ -2397,7 +2402,8 @@ async function irGondola(tienda, categoria) {
   const est = await re.json().catch(() => ({fotos: 0, max: 20, comentarios: {}}));
   _gYa = est.fotos || 0; _gMax = est.max || 20;
   cargarLiquidacionExistente(tienda);
-  document.getElementById('status-productos').textContent = _gProds.length + ' productos · ' + (_gCat ? 'categoría ' + _gCat : 'modo góndola');
+  const _gConInv = _gProds.filter(p => p.cantidad > 0).length;
+  document.getElementById('status-productos').textContent = _gConInv + (_gConInv === 1 ? ' producto' : ' productos') + ' con inventario · ' + (_gCat ? 'categoría ' + _gCat : 'modo góndola');
   lista.innerHTML = (_gCat ? `<button class="btn btn-gris" style="width:auto;padding:8px 14px;margin-bottom:10px;" onclick="irCategorias(tiendaActual)">← Categorías</button>` : '') + `<div class="g-caja">
       <div class="g-tit" id="g-tit-fotos">Fotos de la tienda</div>
       <div class="g-ayuda">Tomá fotos de las góndolas o refrigeradores donde están los productos de la lista (máximo ${_gMax} por ${_gCat ? 'categoría' : 'tienda'} en la semana). De frente, con buena luz y que se lean las etiquetas; podés acercarte para que se lean bien. Varias fotos pueden mostrar varios productos.</div>
@@ -2415,15 +2421,24 @@ async function irGondola(tienda, categoria) {
     <div id="g-envio" class="status-envio"></div>`;
   if (_gCat) document.getElementById('g-tit-fotos').textContent = 'Fotos de la categoría ' + _gCat;
   const esp = document.getElementById('g-esp');
-  _gProds.forEach(p => {
+  // los que están en 0 van al final, en una pestaña cerrada (no hace falta fotografiarlos)
+  const ceros = _gProds.filter(p => !(p.cantidad > 0));
+  let pestCero = null;
+  if (ceros.length) {
+    pestCero = document.createElement('details'); pestCero.className = 'g-ceros';
+    pestCero.innerHTML = `<summary>Sin inventario (${ceros.length}) · no hace falta fotografiarlos</summary>`;
+  }
+  [..._gProds.filter(p => p.cantidad > 0), ...ceros].forEach(p => {
     const e = document.createElement('div'); e.className = 'g-fila';
     e.innerHTML = '<div style="flex:1;min-width:0;"><span class="g-cod"></span><div class="g-nom"></div><textarea placeholder="Comentario..."></textarea></div><div class="g-der"><div class="cant"></div></div>';
     if (p.item_nbr) e.querySelector('.g-cod').textContent = '#' + p.item_nbr;
     e.querySelector('.g-nom').textContent = p.nombre;
     const c = e.querySelector('.cant'); c.textContent = p.cantidad; if (p.cantidad <= 0) c.classList.add('cero');
     const ta = e.querySelector('textarea'); ta.value = (est.comentarios || {})[p.nombre] || ''; ta.dataset.prod = p.nombre;
-    esp.appendChild(e);
+    (p.cantidad > 0 ? esp : pestCero).appendChild(e);
   });
+  if (pestCero) esp.appendChild(pestCero);
+  if (!_gConInv) esp.insertAdjacentHTML('afterbegin', '<div class="g-ayuda" style="margin:6px 0;">Ningún producto de esta lista tiene inventario en la tienda.</div>');
   gPintarFotos();
 }
 function gAgregar(camara) {
