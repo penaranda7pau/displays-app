@@ -1528,8 +1528,10 @@ def cerrar_semana():
         return jsonify({"ok": False, "error": "Solo un administrador puede cerrar la semana"}), 403
     negocio = (data.get("negocio") or "mundo_vegano").strip()
     semana  = semana_actual(negocio)
-    if semana >= semana_captura(negocio):
-        return jsonify({"ok": False, "error": "Esa semana todavía no termina: se puede cerrar desde el lunes. "
+    # el domingo (hora CR) ya se puede cerrar la semana en curso: ese día no se mandan reportes
+    domingo = (datetime.utcnow() - timedelta(hours=6)).weekday() == 6
+    if semana > semana_captura(negocio) or (semana == semana_captura(negocio) and not domingo):
+        return jsonify({"ok": False, "error": "Esa semana todavía no termina: se puede cerrar desde el domingo. "
                                               "Los displays siguen mandando reportes a esa semana."}), 409
     habilitada = filtro_tiendas(negocio)   # cadenas desactivadas / tiendas quitadas no entran al cierre
     # Las fotos (foto_b64) NO se cargan aquí: se leen de a una al armar el ZIP (ahorra memoria)
