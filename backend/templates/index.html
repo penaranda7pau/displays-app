@@ -1909,6 +1909,15 @@
   </div>
 </div>
 
+<!-- Mensajes nuevos para el display: aparece una vez por mensaje hasta que toque Entendido -->
+<div class="modal-overlay" id="modal-avisos" style="z-index:150;">
+  <div class="modal-instrucciones-box" style="max-width:400px;">
+    <h3>📣 Mensajes nuevos</h3>
+    <div id="modal-avisos-lista"></div>
+    <button class="btn btn-verde" onclick="avisosEntendido()">Entendido</button>
+  </div>
+</div>
+
 <script>
 const API = '';
 let usuario = {};
@@ -2092,6 +2101,33 @@ const _puedeAvisos = () => usuario && ['subadmin', 'supervisor', 'admin', 'super
 async function cargarAvisos() {
   const d = await (await fetch(API + '/api/mensajes?negocio=' + encodeURIComponent(negocioActual))).json().catch(() => ({}));
   pintarAvisos(d.mensajes || []);
+  if (!_puedeAvisos()) avisosPopup(d.mensajes || []);
+}
+// ids ya confirmados con "Entendido", por negocio y usuario en este celular
+const _claveAvisos = () => 'avisos_vistos:' + negocioActual + ':' + (usuario.usuario || '');
+function _avisosVistos() {
+  try { return JSON.parse(localStorage.getItem(_claveAvisos()) || '[]'); } catch (e) { return []; }
+}
+let _avisosPendientes = [];
+function avisosPopup(msgs) {
+  const vistos = _avisosVistos();
+  const nuevos = msgs.filter(m => !vistos.includes(m.id));
+  _avisosPendientes = msgs.map(m => m.id);
+  if (!nuevos.length) return;
+  const lista = document.getElementById('modal-avisos-lista');
+  lista.innerHTML = '';
+  nuevos.slice().reverse().forEach(m => {
+    const f = document.createElement('div'); f.className = 'av-msg';
+    f.innerHTML = '<div class="tx"></div>';
+    f.querySelector('.tx').textContent = m.texto;
+    lista.appendChild(f);
+  });
+  document.getElementById('modal-avisos').classList.add('activo');
+}
+function avisosEntendido() {
+  // se guardan solo los mensajes vigentes, así la lista no crece con los que ya se quitaron
+  try { localStorage.setItem(_claveAvisos(), JSON.stringify(_avisosPendientes)); } catch (e) {}
+  document.getElementById('modal-avisos').classList.remove('activo');
 }
 function pintarAvisos(msgs) {
   const box = document.getElementById('avisos'), lista = document.getElementById('av-lista');
