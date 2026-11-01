@@ -2222,8 +2222,10 @@ def cerrar_semana():
         return jsonify({"ok": False, "error": "Solo un administrador puede cerrar la semana"}), 403
     negocio = (data.get("negocio") or "mundo_vegano").strip()
     semana  = semana_actual(negocio)
-    if semana >= semana_captura(negocio):
-        return jsonify({"ok": False, "error": "Esa semana todavía no termina: se puede cerrar desde el lunes. "
+    # el domingo (hora CR) ya se puede cerrar la semana en curso: ese día no se mandan reportes
+    domingo = (datetime.utcnow() - timedelta(hours=6)).weekday() == 6
+    if semana > semana_captura(negocio) or (semana == semana_captura(negocio) and not domingo):
+        return jsonify({"ok": False, "error": "Esa semana todavía no termina: se puede cerrar desde el domingo. "
                                               "Los displays siguen mandando reportes a esa semana."}), 409
     c = _calcular_cierre(negocio, semana)
     reportes, mapa = c["reportes"], c["mapa"]
