@@ -1730,6 +1730,10 @@
       Borra los registros sin foto de la semana actual y los reemplaza con los productos de los archivos cargados.
     </div>
 
+    <!-- resultado justo debajo del botón: abajo de la lista de productos no se veía -->
+    <div id="inv-resultado" style="display:none;margin-top:20px;background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:18px 20px;">
+    </div>
+
     <div style="margin-top:26px;">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
         <div style="font-size:15px;font-weight:800;color:var(--texto);">Productos</div>
@@ -1756,9 +1760,6 @@
         <button class="btn btn-gris" style="width:auto;padding:8px 14px;" onclick="catMoverSel()">Mover marcados</button>
       </div>
       <div id="cat-cajas" class="cat-cajas"></div>
-    </div>
-
-    <div id="inv-resultado" style="display:none;margin-top:20px;background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:18px 20px;">
     </div>
 
     <div style="margin-top:24px;border-top:1px solid var(--borde);padding-top:16px;">
