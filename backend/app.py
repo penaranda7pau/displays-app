@@ -1766,7 +1766,7 @@ def _calcular_cierre(negocio, semana):
     difs_anteriores = set()
     if semana_anterior:
         for d in Diferencia.query.filter_by(semana=semana_anterior, negocio=negocio).all():
-            if d.estado != "OK":
+            if d.estado not in ("OK", "FOTO_SIN_INV"):
                 difs_anteriores.add((d.tienda, d.producto))
 
     # Validaciones IA/supervisor de esta semana
@@ -1824,7 +1824,16 @@ def _calcular_cierre(negocio, semana):
         difs.append({"tienda": inv.tienda, "producto": inv.producto, "cantidad": inv.cantidad,
                      "estado": estado, "comentario": comentario})
 
-    return {"semana": semana, "reportes": reportes, "mapa": mapa, "difs": difs, "difs_anteriores": difs_anteriores,
+    # Fotos aprobadas de productos que no se evaluaron (inventario 0 o fuera del inventario): no son
+    # diferencia ni cuentan en el %, pero se guardan para que el historial muestre que el display sí la mandó.
+    evaluados = {(d["tienda"], d["producto"]) for d in difs}
+    stock = {(i.tienda, i.producto): i.cantidad for i in inventario}
+    con_foto = [{"tienda": t, "producto": p, "cantidad": stock.get((t, p)) or 0, "estado": "FOTO_SIN_INV",
+                 "comentario": r.comentario or ""}
+                for (t, p), r in mapa.items()
+                if r.foto and validaciones.get((t, p)) == "APROBADO" and (t, p) not in evaluados and p not in inactivos]
+
+    return {"semana": semana, "reportes": reportes, "mapa": mapa, "difs": difs, "con_foto": con_foto, "difs_anteriores": difs_anteriores,
             "validaciones": validaciones, "motivos": motivos, "rurales": rurales_negocio, "semanas_hist": semanas_hist,
             "rurales_semana": tiendas_rurales_esta_semana, "rurales_mes": tiendas_rurales_visitaron_mes,
             "inventario": inventario, "inactivos": inactivos}
@@ -2084,11 +2093,14 @@ def _excel_cierre(negocio, c, vista_previa=False):
     for t, p, sem_d, est in (db.session.query(Diferencia.tienda, Diferencia.producto, Diferencia.semana, Diferencia.estado)
                              .filter(Diferencia.negocio == negocio, Diferencia.semana != semana).order_by(Diferencia.semana)):
         m = matriz.setdefault((t, p), {})
-        if est != "OK": m[sem_d] = 1
-        elif sem_d not in m: m[sem_d] = 0
+        if est == "FOTO_SIN_INV": m.setdefault(sem_d, 2)   # 2 = sin inventario, pero mandó foto aprobada
+        elif est != "OK": m[sem_d] = 1
+        elif m.get(sem_d) != 1: m[sem_d] = 0
     for d in difs:
         m = matriz.setdefault((d["tienda"], d["producto"]), {})
-        m[semana] = 1 if d["estado"] != "OK" else m.get(semana, 0)
+        m[semana] = 1 if d["estado"] != "OK" else (1 if m.get(semana) == 1 else 0)
+    for d in c["con_foto"]:
+        matriz.setdefault((d["tienda"], d["producto"]), {}).setdefault(semana, 2)
     semanas_arch = sorted({s for m in matriz.values() for s in m if re.match(r"^\d{4}-S\d{2}$", s or "")})   # sin códigos inválidos
     if fmt.get("semanas_historial"):   # solo las últimas N semanas (0 = todas)
         semanas_arch = semanas_arch[-fmt["semanas_historial"]:]
@@ -2124,12 +2136,13 @@ def _excel_cierre(negocio, c, vista_previa=False):
         fin = [x for x in cols if x[0] == "comentario"]
         sem_cols = [(f"_s{i}", rango_de_codigo(s)[1]) for i, s in enumerate(semanas_arch)]
         todas = lead + sem_cols + [("_total", "Total")] + fin
-        filas_x = [dict(f, **{f"_s{i}": ("1" if v == 1 else "0" if v == 0 else "") for i, v in enumerate(f["_vals"])},
+        filas_x = [dict(f, **{f"_s{i}": ("1" if v == 1 else "0" if v == 0 else "F" if v == 2 else "") for i, v in enumerate(f["_vals"])},
                         _total=f["_total"]) for f in filas]
         ws = _hoja_xl(wb, nombre, titulo, subtitulo(g, filas), todas, filas_x,
                       anchos_extra={**{k: 13 for k, _ in sem_cols}, "_total": 8})
         from copy import copy
         uno, cero, vacio = PatternFill("solid", fgColor=_XL["rojo"][0]), PatternFill("solid", fgColor=_XL["verde"][0]), PatternFill("solid", fgColor=_XL["gris"])
+        foto = PatternFill("solid", fgColor=_XL["sub"])
         estilos = {}
         def estilo(cel, clave, aplicar):
             if clave in estilos:
@@ -2139,6 +2152,7 @@ def _excel_cierre(negocio, c, vista_previa=False):
             cel.alignment = Alignment(horizontal="center", vertical="center")
             if v == 1: cel.fill, cel.font = uno, Font(bold=True, size=10, color=_XL["rojo"][1])
             elif v == 0: cel.fill, cel.font = cero, Font(bold=True, size=10, color=_XL["verde"][1])
+            elif v == 2: cel.fill, cel.font = foto, Font(bold=True, size=10, color=_XL["banda"])
             else: cel.fill = vacio
         def total(cel, alto):
             cel.alignment = Alignment(horizontal="center", vertical="center")
@@ -2242,7 +2256,7 @@ def cerrar_semana():
     buf = io.BytesIO(_excel_cierre(negocio, c))
 
     Diferencia.query.filter_by(semana=semana, negocio=negocio).delete()
-    for d in c["difs"]:
+    for d in c["difs"] + c["con_foto"]:
         db.session.add(Diferencia(negocio=negocio, semana=semana, **d))
     db.session.commit()
 
