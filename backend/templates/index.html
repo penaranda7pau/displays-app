@@ -3019,6 +3019,7 @@ async function setSemana(restablecer) {
   filtrarTiendas();
 }
 
+let _panelNegocio = null;   // cliente de los reportes que están cargados en el panel
 async function cargarPanel() {
   // Mostrar barra de pruebas solo para supervisores
   if (esSup()) {
@@ -3050,12 +3051,16 @@ async function cargarPanel() {
     document.getElementById('label-semana').textContent = '—';
   }
 
+  const neg = negocioActual;
   const [rRep, rLiq] = await Promise.all([
-    fetch(API + '/api/reportes?negocio=' + negocioActual),
-    fetch(API + '/api/liquidacion?negocio=' + negocioActual)
+    fetch(API + '/api/reportes?negocio=' + neg),
+    fetch(API + '/api/liquidacion?negocio=' + neg)
   ]);
-  todosReportes = await rRep.json();
-  todasLiquidaciones = await rLiq.json();
+  const reps = await rRep.json(), liqs = await rLiq.json();
+  if (neg !== negocioActual) return;   // cambió de cliente mientras cargaba: esta respuesta ya no sirve
+  todosReportes = reps;
+  todasLiquidaciones = liqs;
+  _panelNegocio = neg;
   renderReportes();
   renderPorTienda();
   renderCriticos();
@@ -5772,6 +5777,7 @@ function sbNav(destino) {
     mostrarPantalla('tiendas');
   } else if (destino === 'panel') {
     mostrarPantalla('panel');
+    if (_panelNegocio !== negocioActual) cargarPanel();   // se cambió de cliente: no mostrar los reportes del anterior
   }
 }
 function sbNavTab(pantalla, tabId) {
