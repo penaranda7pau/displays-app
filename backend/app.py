@@ -901,10 +901,19 @@ def analizar_inventario_negocio():
     res["registros"] = len(registros)
     return jsonify(res)
 
+def _abrir_excel_rapido(datos):
+    """Abre el Excel en modo solo lectura (rápido). Los exportes de Retail Link traen mal el tamaño de la hoja
+    (dicen 'A1:A1'): sin reset_dimensions el modo rápido no ve ninguna fila."""
+    wb = openpyxl.load_workbook(io.BytesIO(datos), read_only=True, data_only=True)
+    for ws in wb.worksheets:
+        if hasattr(ws, "reset_dimensions"):
+            ws.reset_dimensions()
+    return wb
+
 def _formato_excel(archivo):
     """'wm' (Retail Link: Store Name + Signing Desc), 'am' (Auto Mercado: NombrePDX) o None."""
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), read_only=True, data_only=True)
+        wb = _abrir_excel_rapido(archivo.read())
         if _buscar_encabezados(wb, ("Store Name", "Signing Desc"))[0]:
             return "wm"
         if _buscar_encabezados(wb, ("NombrePDX", "NombreProducto"))[0]:
@@ -2826,7 +2835,7 @@ def columnas_excel_inventario():
     if not archivo or slot not in _REQ_INV:
         return jsonify({"ok": False, "error": "Faltan datos"}), 400
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(archivo.read()), read_only=True, data_only=True)
+        wb = _abrir_excel_rapido(archivo.read())
     except Exception as e:
         return jsonify({"ok": False, "error": f"No se pudo abrir el Excel: {e}"}), 400
     guardado = columnas_inventario(negocio).get(slot) if negocio in slugs_negocios() else None
@@ -2861,7 +2870,7 @@ def actualizar_inventario():
                 continue
             try:
                 arch.seek(0)
-                info = _columnas_excel(openpyxl.load_workbook(io.BytesIO(arch.read()), read_only=True, data_only=True), slot, mapas.get(slot))
+                info = _columnas_excel(_abrir_excel_rapido(arch.read()), slot, mapas.get(slot))
             except Exception:
                 info = None
             if info:
