@@ -5673,6 +5673,7 @@ async function actualizarInventario() {
     cargarPanel();
     cargarTiendas();
     cargarHistorialInv();
+    cargarProductosNeg();  // la lista de productos refleja el inventario recién cargado
   } catch(e) {
     console.error('actualizar-inventario error:', e);
     resultado.innerHTML = `<span style="color:var(--rojo);">Error de conexión: ${e.message}<br><small style="opacity:0.7;">${e.name} — abrí DevTools (F12) → Console para más detalles</small></span>`;
