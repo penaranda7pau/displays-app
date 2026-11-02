@@ -2492,11 +2492,19 @@ def _indices_auto(slot, headers):
     return {"tienda": col("NombrePDX"), "producto": col("NombreProducto"), "codigo": cod if cod is not None else col("CodigoBarras"),
             "unidades": col("Contenido")}
 
+def _sin_semana(h):
+    """Encabezado sin el número de semana que Retail Link le pone adelante ('202640 Curr Str On Hand Qty')."""
+    return re.sub(r"^\d{6}\s+", "", (h or "").strip())
+
 def _ultima_col(headers, nombre):
-    """Índice de la columna con ese encabezado; si se repite, la última (en Retail Link es la semana más reciente)."""
+    """Índice de la columna con ese encabezado; si se repite, la última (en Retail Link es la semana más reciente).
+    Si no está igual, la busca sin el número de semana: cada semana el archivo trae otro."""
     if not nombre:
         return None
-    return next((i for i, h in reversed(list(enumerate(headers))) if h == nombre), None)
+    exacta = next((i for i, h in reversed(list(enumerate(headers))) if h == nombre), None)
+    if exacta is not None:
+        return exacta
+    return next((i for i, h in reversed(list(enumerate(headers))) if h and _sin_semana(h) == _sin_semana(nombre)), None)
 
 def columnas_inventario(negocio):
     """{"wm": {campo: encabezado}, "am": {...}} elegido por el administrador para leer el inventario del negocio."""
@@ -2601,7 +2609,7 @@ def _columnas_excel(wb, slot, guardado=None):
             vistas.add(h); columnas.append({"nombre": h, "ejemplo": ejemplos[i]})
     columnas.reverse()
     if origen == "guardado":
-        mapa = {c: (guardado.get(c) if guardado.get(c) in vistas else "") for c in CAMPOS_INV}
+        mapa = {c: (headers[i] if (i := _ultima_col(headers, guardado.get(c))) is not None else "") for c in CAMPOS_INV}
     elif origen == "auto":
         idx = _indices_auto(slot, headers)
         mapa = {c: (headers[idx[c]] if idx[c] is not None else "") for c in CAMPOS_INV}
