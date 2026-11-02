@@ -2242,13 +2242,12 @@ def _excel_cierre(negocio, c, vista_previa=False):
         fin = [x for x in cols if x[0] == "comentario"]
         sem_cols = [(f"_s{i}", rango_de_codigo(s)[1]) for i, s in enumerate(semanas_arch)]
         todas = lead + sem_cols + [("_total", "Total")] + fin
-        filas_x = [dict(f, **{f"_s{i}": ("1" if v == 1 else "0" if v == 0 else "F" if v == 2 else "En revisión" if v == 3 else "") for i, v in enumerate(f["_vals"])},
+        filas_x = [dict(f, **{f"_s{i}": ("1" if v == 1 else "0" if v in (0, 2) else "En revisión" if v == 3 else "") for i, v in enumerate(f["_vals"])},
                         _total=f["_total"]) for f in filas]
         ws = _hoja_xl(wb, nombre, titulo, subtitulo(g, filas), todas, filas_x,
                       anchos_extra={**{k: 13 for k, _ in sem_cols}, "_total": 8})
         from copy import copy
         uno, cero, vacio = PatternFill("solid", fgColor=_XL["rojo"][0]), PatternFill("solid", fgColor=_XL["verde"][0]), PatternFill("solid", fgColor=_XL["gris"])
-        foto = PatternFill("solid", fgColor=_XL["sub"])
         revision = PatternFill("solid", fgColor=_XL["ambar"][0])
         estilos = {}
         def estilo(cel, clave, aplicar):
@@ -2258,8 +2257,8 @@ def _excel_cierre(negocio, c, vista_previa=False):
         def semana(cel, v):
             cel.alignment = Alignment(horizontal="center", vertical="center")
             if v == 1: cel.fill, cel.font = uno, Font(bold=True, size=10, color=_XL["rojo"][1])
-            elif v == 0: cel.fill, cel.font = cero, Font(bold=True, size=10, color=_XL["verde"][1])
-            elif v == 2: cel.fill, cel.font = foto, Font(bold=True, size=10, color=_XL["banda"])
+            elif v in (0, 2):   # 2 = sin inventario pero mandó foto aprobada: se muestra como exhibido
+                cel.fill, cel.font = cero, Font(bold=True, size=10, color=_XL["verde"][1])
             elif v == 3: cel.fill, cel.font = revision, Font(bold=True, size=9, color=_XL["ambar"][1])
             else: cel.fill = vacio
         def total(cel, alto):
