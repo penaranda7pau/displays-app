@@ -562,6 +562,8 @@
   .g-esperados { font-size: 13px; margin-bottom: 14px; } .g-esp-tit { color: var(--korax-deep); font-weight: 700; padding: 6px 0; }
   .g-esp { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--borde); font-size: 12px; }
   .g-cod { display: block; font-size: 10px; color: var(--muted); margin-bottom: 1px; }
+  .ip-tag { display: inline-block; font-size: 9px; font-weight: 700; color: #8A5A00; background: #FFF1D6; border: 1px solid #F0C36D;
+            border-radius: 6px; padding: 0 5px; margin-left: 5px; vertical-align: 1px; }
   .g-der { text-align: center; min-width: 48px; } .g-der small { display: block; font-size: 10px; color: var(--muted); }
   .cons-h { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 10px; letter-spacing: .02em; }
   .ug-in { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--borde); background: var(--korax-surface); color: var(--text); font-size: 13px; font-family: inherit; min-width: 0; }
@@ -2365,7 +2367,7 @@ async function irProductos(tienda) {
       : `<button class="btn-foto" id="foto-${i}" onclick="selFoto(${i})">+</button>`;
     fila.innerHTML = `
       <div class="nombre">
-        ${p.item_nbr ? `<span style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">#${p.item_nbr}</span>` : ''}
+        ${p.item_nbr || p.ip ? `<span style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">${p.item_nbr ? '#' + p.item_nbr : ''}${p.ip ? '<span class="ip-tag">Potencial IP</span>' : ''}</span>` : ''}
         ${p.nombre}
       </div>
       <div class="cant ${p.cantidad <= 0 ? 'cero' : ''}">${p.cantidad}</div>
@@ -2469,6 +2471,7 @@ async function irGondola(tienda, categoria) {
     const e = document.createElement('div'); e.className = 'g-fila';
     e.innerHTML = '<div style="flex:1;min-width:0;"><span class="g-cod"></span><div class="g-nom"></div><textarea placeholder="Comentario..."></textarea></div><div class="g-der"><div class="cant"></div></div>';
     if (p.item_nbr) e.querySelector('.g-cod').textContent = '#' + p.item_nbr;
+    if (p.ip) e.querySelector('.g-cod').insertAdjacentHTML('beforeend', '<span class="ip-tag">Potencial IP</span>');
     e.querySelector('.g-nom').textContent = p.nombre;
     const c = e.querySelector('.cant'); c.textContent = p.cantidad; if (p.cantidad <= 0) c.classList.add('cero');
     const ta = e.querySelector('textarea'); ta.value = (est.comentarios || {})[p.nombre] || ''; ta.dataset.prod = p.nombre;
@@ -2648,6 +2651,7 @@ async function abrirGondolaTienda(tienda, categoria) {
       <div class="g-der"><div class="cant"></div><small></small></div>`;
     f.querySelector('.g-ic').textContent = ICON[p.estado] || '⏳';
     if (p.item_nbr) f.querySelector('.g-cod').textContent = '#' + p.item_nbr;
+    if (p.ip) f.querySelector('.g-cod').insertAdjacentHTML('beforeend', '<span class="ip-tag">Potencial IP</span>');
     f.querySelector('.g-nom').textContent = p.producto;
     const com = (d.comentarios || {})[p.producto];
     f.querySelector('.g-nota').textContent = [p.foto ? 'Foto ' + p.foto : '', p.nota, p.manual ? '(corregido)' : '', com ? 'Display: ' + com : ''].filter(Boolean).join(' · ');

@@ -79,6 +79,9 @@ class Inventario(db.Model):
     item_nbr        = db.Column(db.String(50))
     cantidad        = db.Column(db.Integer, default=0)
     nombre_empaque  = db.Column(db.String(300))
+    tienda_nbr      = db.Column(db.String(20))    # número de tienda (Retail Link)
+    venta_prom      = db.Column(db.Float)         # venta promedio semanal en unidades, últimas 5 semanas (None = el archivo no trae ventas)
+    potencial_ip    = db.Column(db.Boolean, default=False)   # inventario negativo, o con inventario y sin ventas en 5 semanas
 
 class Diferencia(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
@@ -358,6 +361,15 @@ def _migrar_negocio():
             conn.commit()
         except Exception:
             conn.rollback()
+        for col, tipo in (("tienda_nbr", "VARCHAR(20)"), ("venta_prom", "FLOAT"), ("potencial_ip", "BOOLEAN DEFAULT FALSE")):
+            try:
+                if db.engine.dialect.name == "postgresql":
+                    conn.execute(db.text(f"ALTER TABLE inventario ADD COLUMN IF NOT EXISTS {col} {tipo}"))
+                else:
+                    conn.execute(db.text(f"ALTER TABLE inventario ADD COLUMN {col} {tipo}"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
         try:
             if db.engine.dialect.name == "postgresql":
                 conn.execute(db.text("ALTER TABLE negocio ADD COLUMN IF NOT EXISTS prompt TEXT"))
@@ -604,6 +616,26 @@ def rango_de_codigo(semana_code):
         archivo = f"{lunes.day:02d}_{mes_lunes}-{domingo.day:02d}_{mes_domingo}_{domingo.year}"
         legible = f"{lunes.day} {mes_lunes} – {domingo.day} {mes_domingo} {domingo.year}"
     return archivo, legible
+
+def mes_de_semana(semana_code):
+    """(año, mes) al que pertenece la semana: el de su jueves (la semana cae mayormente en ese mes)."""
+    try:
+        y, w = semana_code.split("-S")
+        jueves = datetime.fromisocalendar(int(y), int(w), 4)
+        return jueves.year, jueves.month
+    except Exception:
+        return None
+
+def es_ultima_del_mes(semana_code):
+    """True si la semana siguiente ya es de otro mes."""
+    try:
+        y, w = semana_code.split("-S")
+        jueves = datetime.fromisocalendar(int(y), int(w), 4)
+        return (jueves + timedelta(days=7)).month != jueves.month
+    except Exception:
+        return True
+
+NO_VISITA = ("SIN_FOTO", "EN_REVISION")   # estados de Diferencia que no prueban que alguien fue a la tienda
 
 def rango_semana_actual():
     return rango_de_codigo(semana_actual())
@@ -1495,8 +1527,11 @@ def _consolidar_registros(negocio, registros):
     elegidos = codigos_elegidos(negocio)
     grupos = {}
     for r in registros:
-        g = grupos.setdefault((r["tienda"], r["producto"]), {"cantidad": 0, "cods": {}})
+        g = grupos.setdefault((r["tienda"], r["producto"]), {"cantidad": 0, "cods": {}, "venta_prom": None, "tienda_nbr": ""})
         g["cantidad"] += r.get("cantidad") or 0
+        if r.get("venta_prom") is not None:   # varios códigos del mismo producto: se suman sus ventas
+            g["venta_prom"] = (g["venta_prom"] or 0) + r["venta_prom"]
+        g["tienda_nbr"] = g["tienda_nbr"] or r.get("tienda_nbr") or ""
         if r.get("item_nbr"):
             g["cods"][r["item_nbr"]] = g["cods"].get(r["item_nbr"], 0) + (r.get("cantidad") or 0)
     out, vistos = [], {}
@@ -1505,7 +1540,8 @@ def _consolidar_registros(negocio, registros):
         for c in cods:
             vistos.setdefault(p, {})[c] = vistos.get(p, {}).get(c, 0) + 1
         cod = elegidos.get(p) if elegidos.get(p) in cods else (max(cods, key=lambda c: cods[c]) if cods else "")
-        out.append({"tienda": t, "producto": p, "cantidad": g["cantidad"], "item_nbr": cod})
+        out.append({"tienda": t, "producto": p, "cantidad": g["cantidad"], "item_nbr": cod,
+                    "venta_prom": g["venta_prom"], "tienda_nbr": g["tienda_nbr"]})
     return out, vistos
 
 def _consolidar_inventario_db(negocio):
@@ -1517,13 +1553,16 @@ def _consolidar_inventario_db(negocio):
     repetidas = {k: v for k, v in por_clave.items() if len(v) > 1}
     if not repetidas:
         return 0
-    regs = [{"tienda": i.tienda, "producto": i.producto, "cantidad": i.cantidad or 0, "item_nbr": i.item_nbr or ""}
+    regs = [{"tienda": i.tienda, "producto": i.producto, "cantidad": i.cantidad or 0, "item_nbr": i.item_nbr or "",
+             "venta_prom": i.venta_prom, "tienda_nbr": i.tienda_nbr or ""}
             for v in repetidas.values() for i in v]
     unidos, vistos = _consolidar_registros(negocio, regs)
     quitadas = 0
     for u in unidos:
         primera, *resto = repetidas[(u["tienda"], u["producto"])]
         primera.cantidad, primera.item_nbr = u["cantidad"], u["item_nbr"] or None
+        primera.venta_prom, primera.tienda_nbr = u["venta_prom"], u["tienda_nbr"] or None
+        primera.potencial_ip = es_potencial_ip(u["cantidad"], u["venta_prom"])
         for x in resto:
             db.session.delete(x); quitadas += 1
     _guardar_codigos_vistos(negocio, vistos)
@@ -1651,7 +1690,7 @@ def productos(tienda):
     elegidos = codigos_elegidos(negocio)
     return jsonify([{"nombre": r.producto, "cantidad": r.cantidad,
                      "nombre_empaque": r.nombre_empaque or r.producto,
-                     "item_nbr": elegidos.get(r.producto) or r.item_nbr or ""} for r in rows])
+                     "item_nbr": elegidos.get(r.producto) or r.item_nbr or "", "ip": bool(r.potencial_ip)} for r in rows])
 
 @app.route("/api/sync", methods=["POST"])
 def sync_inventario():
@@ -1766,7 +1805,7 @@ def _calcular_cierre(negocio, semana):
     difs_anteriores = set()
     if semana_anterior:
         for d in Diferencia.query.filter_by(semana=semana_anterior, negocio=negocio).all():
-            if d.estado not in ("OK", "FOTO_SIN_INV"):
+            if d.estado not in ("OK", "FOTO_SIN_INV", "EN_REVISION"):
                 difs_anteriores.add((d.tienda, d.producto))
 
     # Validaciones IA/supervisor de esta semana
@@ -1778,21 +1817,24 @@ def _calcular_cierre(negocio, semana):
 
     rurales_negocio = rurales_de(negocio)
     tiendas_rurales_esta_semana = {r.tienda for r in reportes if r.tienda in rurales_negocio}
-    # Tiendas rurales que visitaron en las últimas 3 semanas (historial Diferencia)
-    semanas_hist = sorted({
+    semanas_cerradas = sorted({
         d.semana for d in Diferencia.query
         .filter(Diferencia.semana < semana, Diferencia.negocio == negocio)
         .with_entities(Diferencia.semana).distinct().all()
-    }, reverse=True)[:3]
+    }, reverse=True)
+    semanas_hist = semanas_cerradas[:3]   # para "última semana registrada" de la hoja de rurales
+    # Tiendas rurales visitadas en el mes (calendario) de esta semana: esta semana o las anteriores del mismo mes
+    semanas_mes = [s for s in semanas_cerradas if mes_de_semana(s) == mes_de_semana(semana)]
     tiendas_rurales_visitaron_mes = set(tiendas_rurales_esta_semana)
-    if semanas_hist:
+    if semanas_mes:
         for d in Diferencia.query.filter(
-            Diferencia.semana.in_(semanas_hist),
+            Diferencia.semana.in_(semanas_mes),
             Diferencia.negocio == negocio,
-            Diferencia.estado != "SIN_FOTO"
+            Diferencia.estado.notin_(NO_VISITA)
         ).with_entities(Diferencia.tienda).distinct().all():
             if d.tienda in rurales_negocio:
                 tiendas_rurales_visitaron_mes.add(d.tienda)
+    ultima_del_mes = es_ultima_del_mes(semana)
 
     # Diferencias de la semana (solo tiendas de cadenas activas del negocio)
     inactivos = productos_inactivos(negocio)   # productos desactivados no cuentan como diferencia
@@ -1806,10 +1848,15 @@ def _calcular_cierre(negocio, semana):
         rep = mapa.get(key)
         val_estado = validaciones.get(key)
 
-        # Rural que no visitó esta semana pero sí este mes → no es diferencia esta semana
+        # Rural que no visitó esta semana: si ya fue este mes no se evalúa; si no, queda "en revisión"
+        # y solo es diferencia en la última semana del mes (pasó el mes entero sin visita)
         if inv.tienda in rurales_negocio and inv.tienda not in tiendas_rurales_esta_semana:
             if inv.tienda in tiendas_rurales_visitaron_mes:
                 continue  # visitó este mes, no contar como diferencia
+            if not ultima_del_mes:
+                difs.append({"tienda": inv.tienda, "producto": inv.producto, "cantidad": inv.cantidad,
+                             "estado": "EN_REVISION", "comentario": ""})
+                continue
 
         if rep and rep.foto and val_estado == "RECHAZADO":
             estado, comentario = "RECHAZADO", rep.comentario or ""
@@ -1850,6 +1897,7 @@ CAMPOS_EXCEL = {   # id: (título por defecto, ancho)
     "cumplimiento": ("% Cumplimiento", 15), "tiendas": ("Tiendas visitadas", 17), "reportados": ("Productos reportados", 20),
     "ultima": ("Última actividad", 17), "visito_mes": ("Visitó este mes", 15), "visito_semana": ("Visitó esta semana", 17),
     "ultima_semana": ("Última semana registrada", 24),
+    "tienda_nbr": ("Número de tienda", 12), "venta_prom": ("Venta promedio semanal", 14), "exhibicion": ("Exhibición", 16),
 }
 _FILA_PRODUCTO = ["tienda", "producto", "codigo", "categoria", "cadena", "stock", "estado", "comentario", "reincidente",
                   "display", "fecha", "ia", "nota_ia", "rural"]
@@ -1867,7 +1915,13 @@ HOJAS_EXCEL = [   # (id, nombre, campos disponibles, campos por defecto = el Exc
      ["display", "tiendas", "reportados", "con_foto", "ultima"], {}),
     ("rurales", "Visitas Rurales", ["tienda", "cadena", "visito_mes", "visito_semana", "ultima_semana"],
      ["tienda", "visito_mes", "visito_semana", "ultima_semana"], {}),
+    ("potenciales_ip", "Potenciales IP",
+     ["tienda_nbr", "tienda", "codigo", "producto", "categoria", "cadena", "stock", "venta_prom", "exhibicion", "comentario", "display", "fecha"],
+     ["tienda_nbr", "tienda", "codigo", "producto", "stock", "exhibicion", "comentario"],
+     {"tienda": "Nombre de la tienda", "codigo": "Número de artículo", "producto": "Descripción de señalización",
+      "stock": "Inventario sin rotación"}),
 ]
+HOJAS_NUEVAS_ACTIVAS = {"potenciales_ip"}   # si el negocio ya tenía su formato guardado, estas aparecen prendidas igual
 
 def _formato_por_defecto():
     hojas = []
@@ -1903,7 +1957,7 @@ def formato_excel(negocio):
         cols += [dict(c, activa=False) for c in cols_b.values()]
         hojas.append({"id": b["id"], "nombre": (str(h.get("nombre") or "").strip() or b["nombre"])[:25],
                       "activa": bool(h.get("activa", True)), "columnas": cols})
-    hojas += [dict(h, activa=False) for h in por_id.values()]
+    hojas += [dict(h, activa=h["id"] in HOJAS_NUEVAS_ACTIVAS) for h in por_id.values()]
     try:
         sem_hist = max(0, min(104, int(guardado.get("semanas_historial", 12))))
     except (TypeError, ValueError):
@@ -1931,6 +1985,9 @@ def _estilo_valor(campo, valor):
         return (_XL["verde"] if valor >= .8 else _XL["ambar"] if valor >= .5 else _XL["rojo"]) + (True,)
     if campo in ("visito_mes", "visito_semana"):
         return (_XL["verde"] + (False,)) if v == "Sí" else (_XL["rojo"] + (True,))
+    if campo == "exhibicion":
+        return {"Exhibido": _XL["verde"] + (True,), "No exhibido": _XL["rojo"] + (True,),
+                "Foto rechazada": _XL["rojo2"] + (True,), "Sin visita": _XL["ambar"] + (True,)}.get(v)
     return None
 
 def _hoja_xl(wb, nombre, titulo, subtitulo, cols, filas, anchos_extra=None):
@@ -2013,7 +2070,7 @@ def _excel_cierre(negocio, c, vista_previa=False):
     elegidos, cats = codigos_elegidos(negocio), categorias_de(negocio)
     cod_inv = {(i.tienda, i.producto): i.item_nbr or "" for i in c["inventario"]}
     ESTADO_TXT = {"SIN_FOTO": "Sin foto", "RECHAZADO": "Foto rechazada", "REVISAR": "Revisar",
-                  "CON_JUSTIFICACION": "Con justificación", "OK": "OK"}
+                  "CON_JUSTIFICACION": "Con justificación", "OK": "OK", "EN_REVISION": "En revisión"}
     IA_TXT = {"APROBADO": "Aprobada", "RECHAZADO": "Rechazada", "REVISAR": "Revisar"}
 
     def fila_producto(d):
@@ -2029,7 +2086,8 @@ def _excel_cierre(negocio, c, vista_previa=False):
                 "ia": IA_TXT.get(c["validaciones"].get(k), ""), "nota_ia": c["motivos"].get(k, ""),
                 "rural": "Sí" if d["tienda"] in c["rurales"] else "No"}
 
-    no_ok = sorted((d for d in difs if d["estado"] != "OK"), key=lambda d: (d["tienda"], d["producto"]))
+    # las rurales "en revisión" (sin visita todavía en el mes) no son diferencia: se ven en la hoja de rurales
+    no_ok = sorted((d for d in difs if d["estado"] not in ("OK", "EN_REVISION")), key=lambda d: (d["tienda"], d["producto"]))
     datos = {
         "diferencias": [fila_producto(d) for d in no_ok],
         "reincidentes": [fila_producto(d) for d in no_ok if (d["tienda"], d["producto"]) in c["difs_anteriores"]],
@@ -2043,8 +2101,14 @@ def _excel_cierre(negocio, c, vista_previa=False):
     for i in inv:
         prods_tienda[i.tienda] = prods_tienda.get(i.tienda, 0) + 1
     cad_txt = lambda t: nombre_cadena(cadena_de_tienda(t, extra)) if cadena_de_tienda(t, extra) else ""
-    datos["sin_visita"] = [{"tienda": t, "cadena": cad_txt(t), "productos": prods_tienda[t],
-                            "observacion": "Ningún display reportó esta tienda en la semana"}
+    en_revision = {d["tienda"] for d in difs if d["estado"] == "EN_REVISION"}
+    def obs_sin_visita(t):
+        if t in en_revision:
+            return "Rural · en revisión: todavía no se visita este mes"
+        if t in c["rurales"] and t in c["rurales_mes"]:
+            return "Rural · ya se visitó este mes"
+        return "Ningún display reportó esta tienda en la semana"
+    datos["sin_visita"] = [{"tienda": t, "cadena": cad_txt(t), "productos": prods_tienda[t], "observacion": obs_sin_visita(t)}
                            for t in sorted(set(prods_tienda) - con_reporte)]
 
     # Resumen por tienda (% de cumplimiento, menor primero)
@@ -2078,7 +2142,7 @@ def _excel_cierre(negocio, c, vista_previa=False):
     for t in sorted({i.tienda for i in inv if i.tienda in c["rurales"]}):
         ultima = "—"
         for sh in c["semanas_hist"]:
-            if Diferencia.query.filter_by(semana=sh, tienda=t, negocio=negocio).filter(Diferencia.estado != "SIN_FOTO").first():
+            if Diferencia.query.filter_by(semana=sh, tienda=t, negocio=negocio).filter(Diferencia.estado.notin_(NO_VISITA)).first():
                 ultima = rango_de_codigo(sh)[1]
                 break
         if t in c["rurales_semana"]:
@@ -2087,20 +2151,53 @@ def _excel_cierre(negocio, c, vista_previa=False):
                       "visito_semana": "Sí" if t in c["rurales_semana"] else "No", "ultima_semana": ultima})
     datos["rurales"] = filas
 
+    # Potenciales IP (inventario de Walmart): si el display los exhibió esta semana
+    filas = []
+    for i in sorted((i for i in inv if i.potencial_ip), key=lambda i: (i.tienda, i.producto)):
+        k = (i.tienda, i.producto)
+        rep = mapa.get(k)
+        if i.tienda not in con_reporte:
+            exh = "Sin visita"
+        elif rep and rep.foto:
+            exh = "Foto rechazada" if c["validaciones"].get(k) == "RECHAZADO" else "Exhibido"
+        else:
+            exh = "No exhibido"
+        filas.append({"tienda_nbr": i.tienda_nbr or "", "tienda": i.tienda, "producto": i.producto,
+                      "codigo": elegidos.get(i.producto) or i.item_nbr or "",
+                      "categoria": categoria_de(cats, i.producto) if cats["categorias"] else "", "cadena": cad_txt(i.tienda),
+                      "stock": i.cantidad, "venta_prom": round(i.venta_prom or 0, 2), "exhibicion": exh,
+                      "comentario": (rep.comentario or "") if rep else "",
+                      "display": (rep.usuario or "") if rep else "", "fecha": _fecha_txt(rep.fecha) if rep else ""})
+    datos["potenciales_ip"] = filas
+
     # Historial: semanas anteriores (de la base) + la que se cierra (en memoria)
-    matriz = {}
+    # valores: 1 diferencia, 0 OK, 2 sin inventario pero mandó foto aprobada, 3 rural en revisión (sin visita aún en el mes)
+    matriz, visitas = {}, set()
     # solo las columnas necesarias (el historial crece cada semana: no se cargan objetos completos)
     for t, p, sem_d, est in (db.session.query(Diferencia.tienda, Diferencia.producto, Diferencia.semana, Diferencia.estado)
                              .filter(Diferencia.negocio == negocio, Diferencia.semana != semana).order_by(Diferencia.semana)):
         m = matriz.setdefault((t, p), {})
-        if est == "FOTO_SIN_INV": m.setdefault(sem_d, 2)   # 2 = sin inventario, pero mandó foto aprobada
+        if est not in NO_VISITA: visitas.add((t, sem_d))
+        if est == "FOTO_SIN_INV": m.setdefault(sem_d, 2)
+        elif est == "EN_REVISION": m.setdefault(sem_d, 3)
         elif est != "OK": m[sem_d] = 1
         elif m.get(sem_d) != 1: m[sem_d] = 0
     for d in difs:
         m = matriz.setdefault((d["tienda"], d["producto"]), {})
-        m[semana] = 1 if d["estado"] != "OK" else (1 if m.get(semana) == 1 else 0)
+        m[semana] = 3 if d["estado"] == "EN_REVISION" else 1 if d["estado"] != "OK" else (1 if m.get(semana) == 1 else 0)
     for d in c["con_foto"]:
         matriz.setdefault((d["tienda"], d["producto"]), {}).setdefault(semana, 2)
+    # Semanas viejas de rurales (cerradas antes de la regla del mes): la semana sin visita era "sin foto";
+    # ahora es "en revisión", salvo la última semana de un mes en que nadie fue a la tienda
+    visitas |= {(t, semana) for t in c["rurales_semana"]}
+    meses_visita = {(t, mes_de_semana(s)) for t, s in visitas}
+    for (t, p), m in matriz.items():
+        if t not in c["rurales"]:
+            continue
+        for s, v in m.items():
+            if v == 1 and s != semana and (t, s) not in visitas:
+                if not (es_ultima_del_mes(s) and (t, mes_de_semana(s)) not in meses_visita):
+                    m[s] = 3
     semanas_arch = sorted({s for m in matriz.values() for s in m if re.match(r"^\d{4}-S\d{2}$", s or "")})   # sin códigos inválidos
     if fmt.get("semanas_historial"):   # solo las últimas N semanas (0 = todas)
         semanas_arch = semanas_arch[-fmt["semanas_historial"]:]
@@ -2136,13 +2233,14 @@ def _excel_cierre(negocio, c, vista_previa=False):
         fin = [x for x in cols if x[0] == "comentario"]
         sem_cols = [(f"_s{i}", rango_de_codigo(s)[1]) for i, s in enumerate(semanas_arch)]
         todas = lead + sem_cols + [("_total", "Total")] + fin
-        filas_x = [dict(f, **{f"_s{i}": ("1" if v == 1 else "0" if v == 0 else "F" if v == 2 else "") for i, v in enumerate(f["_vals"])},
+        filas_x = [dict(f, **{f"_s{i}": ("1" if v == 1 else "0" if v == 0 else "F" if v == 2 else "En revisión" if v == 3 else "") for i, v in enumerate(f["_vals"])},
                         _total=f["_total"]) for f in filas]
         ws = _hoja_xl(wb, nombre, titulo, subtitulo(g, filas), todas, filas_x,
                       anchos_extra={**{k: 13 for k, _ in sem_cols}, "_total": 8})
         from copy import copy
         uno, cero, vacio = PatternFill("solid", fgColor=_XL["rojo"][0]), PatternFill("solid", fgColor=_XL["verde"][0]), PatternFill("solid", fgColor=_XL["gris"])
         foto = PatternFill("solid", fgColor=_XL["sub"])
+        revision = PatternFill("solid", fgColor=_XL["ambar"][0])
         estilos = {}
         def estilo(cel, clave, aplicar):
             if clave in estilos:
@@ -2153,6 +2251,7 @@ def _excel_cierre(negocio, c, vista_previa=False):
             if v == 1: cel.fill, cel.font = uno, Font(bold=True, size=10, color=_XL["rojo"][1])
             elif v == 0: cel.fill, cel.font = cero, Font(bold=True, size=10, color=_XL["verde"][1])
             elif v == 2: cel.fill, cel.font = foto, Font(bold=True, size=10, color=_XL["banda"])
+            elif v == 3: cel.fill, cel.font = revision, Font(bold=True, size=9, color=_XL["ambar"][1])
             else: cel.fill = vacio
         def total(cel, alto):
             cel.alignment = Alignment(horizontal="center", vertical="center")
@@ -2167,13 +2266,16 @@ def _excel_cierre(negocio, c, vista_previa=False):
 
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    hojas = [h for h in fmt["hojas"] if h["activa"]]
+    # sin datos de venta (Auto Mercado, o un inventario sin semanas de venta) no hay hoja de potenciales IP
+    hojas = [h for h in fmt["hojas"] if h["activa"] and (h["id"] != "potenciales_ip" or datos["potenciales_ip"])]
     con_tienda = [h for h in hojas if any(x["id"] == "tienda" for x in h["columnas"])]
     sin_tienda = [h for h in hojas if h not in con_tienda]
     if fmt["separar_por_cadena"]:
         for g in grupos:
             for h in con_tienda:
-                escribir(h, g, [f for f in datos[h["id"]] if grupo_de(f["tienda"]) == g])
+                filas_g = [f for f in datos[h["id"]] if grupo_de(f["tienda"]) == g]
+                if h["id"] != "potenciales_ip" or filas_g:
+                    escribir(h, g, filas_g)
         for h in sin_tienda:
             escribir(h, "", datos[h["id"]])
     else:
@@ -2560,6 +2662,8 @@ def _leer_inventario(archivo, slot, mapa=None):
     # Walmart: solo productos activos
     idx_status = headers.index("Item Status") if slot == "wm" and "Item Status" in headers else None
     it, ip, iq, ic = idx["tienda"], idx["producto"], idx["unidades"], idx["codigo"]
+    i_nbr, i_ventas = _columnas_ip(headers) if slot == "wm" else (None, [])
+    num = lambda v: float(v) if isinstance(v, (int, float)) else float(str(v).replace(",", "")) if v not in (None, "") else None
 
     resultados = []
     for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
@@ -2580,8 +2684,38 @@ def _leer_inventario(archivo, slot, mapa=None):
         item_nbr = ""
         if ic is not None and len(row) > ic and row[ic] not in (None, ""):
             item_nbr = str(row[ic]).strip().split(".")[0]
-        resultados.append({"tienda": tienda, "producto": producto, "cantidad": cantidad, "item_nbr": item_nbr})
+        r = {"tienda": tienda, "producto": producto, "cantidad": cantidad, "item_nbr": item_nbr}
+        if i_nbr is not None and len(row) > i_nbr and row[i_nbr] not in (None, ""):
+            r["tienda_nbr"] = str(row[i_nbr]).strip().split(".")[0]
+        if i_ventas:   # como PROMEDIO de Excel: las celdas vacías no cuentan
+            vals = []
+            for i in i_ventas:
+                try:
+                    v = num(row[i]) if len(row) > i else None
+                except ValueError:
+                    v = None
+                if v is not None:
+                    vals.append(v)
+            r["venta_prom"] = sum(vals) / len(vals) if vals else 0.0
+        resultados.append(r)
     return resultados
+
+SEMANAS_IP = 5   # semanas de venta para el promedio (las últimas que trae el archivo)
+
+def _columnas_ip(headers):
+    """(índice del número de tienda, índices de 'Venta en unidades' de las últimas 5 semanas) en Retail Link,
+    en inglés ('202637 POS Qty') o en español ('202151 Venta en Unidades')."""
+    low = [(h or "").strip().lower() for h in headers]
+    i_nbr = next((i for i, h in enumerate(low) if h in ("store nbr", "número de tienda", "numero de tienda")), None)
+    ventas = sorted(((h[:6], i) for i, h in enumerate(low)
+                     if re.match(r"^\d{6}\s+(pos qty|venta en unidades)$", h)), key=lambda x: x[0])
+    return i_nbr, [i for _, i in ventas[-SEMANAS_IP:]]
+
+def es_potencial_ip(cantidad, venta_prom):
+    """Igual que el Excel de IP: inventario negativo, o con inventario y venta promedio semanal en 0."""
+    if venta_prom is None:
+        return False
+    return cantidad < 0 or (cantidad > 0 and venta_prom == 0)
 
 def _leer_excel_walmart(archivo, mapa=None):
     return _leer_inventario(archivo, "wm", mapa)
@@ -2752,10 +2886,13 @@ def actualizar_inventario():
                     inv.item_nbr = r["item_nbr"]
                 actualizados += 1
             else:
-                nuevo = Inventario(negocio=negocio, tienda=r["tienda"], producto=r["producto"],
-                                   cantidad=r["cantidad"], item_nbr=r.get("item_nbr") or None)
-                db.session.add(nuevo)
+                inv = Inventario(negocio=negocio, tienda=r["tienda"], producto=r["producto"],
+                                 cantidad=r["cantidad"], item_nbr=r.get("item_nbr") or None)
+                db.session.add(inv)
                 nuevos += 1
+            inv.tienda_nbr = r.get("tienda_nbr") or inv.tienda_nbr
+            inv.venta_prom = r.get("venta_prom")
+            inv.potencial_ip = es_potencial_ip(r["cantidad"], r.get("venta_prom"))
 
         # Quitar lo que ya no viene en el archivo, solo de la(s) cadena(s) del archivo subido
         # (WM/MXM/MP/PALI con el de Walmart, Auto Mercado con el suyo). Si un archivo no trajo
@@ -3303,6 +3440,7 @@ def gondola_detalle():
     for x in res:
         p = inv.get(x["producto"])
         x["item_nbr"], x["cantidad"] = (elegidos.get(x["producto"]) or p.item_nbr or "", p.cantidad) if p else ("", 0)
+        x["ip"] = bool(p and p.potencial_ip)
     return jsonify({"ok": True, "tienda": tienda, "categoria": cat, "estado": gt.estado, "fotos": _fotos_gt(gt), "productos": res,
                     "comentarios": json.loads(gt.comentarios or "{}"), "observaciones": gt.observaciones or "",
                     "modelo": gt.modelo or "", "costo_usd": round(gt.costo_usd or 0, 4), "usuario": gt.usuario or "", "error": gt.error or ""})
