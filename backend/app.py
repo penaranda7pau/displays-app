@@ -2237,13 +2237,15 @@ def cerrar_semana():
                         "No se vuelve a cerrar para no perder el historial. "
                         "Si el ZIP no se descargó, usá 'Descargar último cierre'."}), 409
 
+    # Excel con el formato del negocio. Va ANTES del commit: el commit vence los objetos cargados
+    # y armarlo después releía el inventario fila por fila (miles de consultas a la base).
+    buf = io.BytesIO(_excel_cierre(negocio, c))
+
     Diferencia.query.filter_by(semana=semana, negocio=negocio).delete()
     for d in c["difs"]:
         db.session.add(Diferencia(negocio=negocio, semana=semana, **d))
     db.session.commit()
 
-    # Excel con el formato del negocio
-    buf = io.BytesIO(_excel_cierre(negocio, c))
     rango_archivo, rango_legible = rango_de_codigo(semana)
 
     # Mapa de estado por producto para separar carpetas en el ZIP
