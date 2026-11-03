@@ -1396,6 +1396,35 @@ def reset_historial():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/historial-cadena", methods=["POST"])
+def historial_cadena():
+    """Diferencias de semanas cerradas de UNA cadena (p. ej. Auto Mercado cargado por error antes de usarse).
+    Sin confirmar devuelve cuántas filas y qué semanas; con confirmar="BORRAR" las elimina."""
+    data = request.get_json(silent=True) or {}
+    if data.get("rol") not in ROLES_ADMIN:
+        return jsonify({"error": "No autorizado"}), 403
+    negocio, cadena = (data.get("negocio") or "").strip(), (data.get("cadena") or "").strip()
+    n = Negocio.query.get(negocio)
+    if not n or not cadena:
+        return jsonify({"error": "Negocio o cadena no indicados"}), 400
+    extra = parse_cadenas(n.cadenas)
+    sem = semana_actual(negocio)
+    filas = [(d.id, d.semana) for d in db.session.query(Diferencia.id, Diferencia.semana, Diferencia.tienda)
+             .filter(Diferencia.negocio == negocio, Diferencia.semana != sem)
+             if cadena_de_tienda(d.tienda, extra) == cadena]
+    semanas = sorted({s for _, s in filas})
+    if data.get("confirmar") != "BORRAR":
+        return jsonify({"filas": len(filas), "semanas": semanas})
+    try:
+        ids = [i for i, _ in filas]
+        for k in range(0, len(ids), 500):
+            Diferencia.query.filter(Diferencia.id.in_(ids[k:k + 500])).delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({"ok": True, "borradas": len(ids), "semanas": semanas})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/tiendas-reportadas")
 def tiendas_reportadas():
     negocio = request.args.get("negocio", "mundo_vegano")

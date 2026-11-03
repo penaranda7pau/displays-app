@@ -1874,6 +1874,12 @@
       <button onclick="resetHistorial()" style="background:var(--err);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;">Borrar historial viejo</button>
       <button onclick="resetSemanaActual()" style="background:var(--korax-deep);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;margin-top:8px;">↺ Borrar todo y empezar de cero</button>
       <div style="font-size:11px;color:var(--muted);margin-top:6px;">Elimina todos los reportes, diferencias y validaciones de todas las semanas. Úsalo solo para empezar desde cero.</div>
+      <div style="border-top:1px solid var(--borde);margin-top:14px;padding-top:12px;">
+        <div style="font-size:13px;color:var(--texto);margin-bottom:4px;">Borrar historial de una cadena</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Quita del historial las diferencias de semanas ya cerradas de una sola cadena (por ejemplo, un inventario cargado por error). Las demás cadenas y la semana actual no se tocan.</div>
+        <select id="hcad-cadena" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:7px 10px;font-size:13px;margin-right:8px;"></select>
+        <button onclick="borrarHistorialCadena()" style="background:var(--err);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;">Revisar y borrar</button>
+      </div>
     </div>
   </div>
 </div><!-- /#panel: Inventario y Sistema ahora quedan dentro del panel -->
@@ -4817,6 +4823,7 @@ async function cargarSistema() {
     const el = document.getElementById(id);
     if (el) el.style.display = esAdmin ? 'block' : 'none';
   });
+  llenarCadenasHistorial();
   try {
     const r = await fetch(API + '/api/sistema/stats?rol=' + usuario.rol + '&negocio=' + negocioActual);
     const d = await r.json();
@@ -4902,6 +4909,47 @@ async function resetSemanaActual() {
       alert('Error: ' + (d.error || r.status));
     }
   } catch(e) { alert('Error de red: ' + e.message); }
+}
+
+function llenarCadenasHistorial() {
+  const sel = document.getElementById('hcad-cadena');
+  if (!sel) return;
+  const cads = (NEGOCIOS[negocioActual] || {}).cadenas || [];
+  sel.innerHTML = cads.map(c => `<option value="${c}">${(CADENAS_CAT.find(x => x.codigo === c) || {}).nombre || c}</option>`).join('');
+}
+
+async function borrarHistorialCadena() {
+  const sel = document.getElementById('hcad-cadena');
+  const cadena = sel && sel.value;
+  if (!cadena) return;
+  const nombre = sel.options[sel.selectedIndex].text;
+  const pedir = extra => fetch(API + '/api/historial-cadena', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(Object.assign({negocio: negocioActual, cadena, rol: usuario.rol}, extra))
+  }).then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || r.status); return d; });
+  try {
+    const info = await pedir({});
+    if (!info.filas) { alert(`${nombre} no tiene diferencias en semanas cerradas.`); return; }
+    const sems = info.semanas.length > 1 ? `${info.semanas[0]} a ${info.semanas[info.semanas.length - 1]}` : info.semanas[0];
+    const ok = await new Promise(res => {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,25,45,.6);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      ov.innerHTML = `<div style="background:var(--card);border-radius:14px;padding:24px;max-width:340px;width:90%;box-shadow:0 24px 60px -24px rgba(8,76,141,.35);border:1px solid var(--borde);">
+        <div style="font-size:15px;font-weight:700;color:#dc3c3c;margin-bottom:10px;">Borrar historial de ${nombre}</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5;">Se borrarán <b style="color:var(--texto);">${info.filas.toLocaleString()}</b> filas del historial de ${nombre} (${info.semanas.length} semana(s): ${sems}).<br><br>Las otras cadenas y la semana actual no se tocan.<br><br><b style="color:var(--texto);">Esta acción no se puede deshacer.</b></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button id="_hcad-no" style="background:var(--card2);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px;">Cancelar</button>
+          <button id="_hcad-si" style="background:var(--err);color:#fff;border:none;border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:700;">Sí, borrar</button>
+        </div>
+      </div>`;
+      document.body.appendChild(ov);
+      document.getElementById('_hcad-si').onclick = () => { document.body.removeChild(ov); res(true); };
+      document.getElementById('_hcad-no').onclick = () => { document.body.removeChild(ov); res(false); };
+    });
+    if (!ok) return;
+    const d = await pedir({confirmar: 'BORRAR'});
+    alert(`Listo: se borraron ${d.borradas.toLocaleString()} filas del historial de ${nombre}.`);
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 async function resetHistorial() {
