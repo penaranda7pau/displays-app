@@ -3844,8 +3844,8 @@ async function cargarConsumo() {
     document.getElementById('cons-cap-pico').style.left = pctPico + '%';
   });
   document.getElementById('cons-nota').textContent =
-    `Los MB por negocio son aproximados (fotos + liquidaciones + registros). ${_fmtMB(c.otros_mb)} son índices de la base y espacio de fotos ya borradas que la base todavía no liberó. ` +
-    `"Semana completa" = una foto por cada producto con existencia en tiendas habilitadas.`;
+    `Los MB por negocio son aproximados (fotos por producto, de góndola y de categoría + liquidaciones + registros). ${_fmtMB(c.otros_mb)} son índices de la base y espacio de fotos ya borradas que la base todavía no liberó. ` +
+    `"Semana completa" = por producto, una foto por cada producto con existencia; por góndola o categoría, las fotos que se mandan por tienda o categoría (promedio real).`;
   pintarConsumo();
   pintarMiniConsumo();
 }
@@ -3922,7 +3922,7 @@ function mostrarTipConsumo(ev, n) {
   const tip = document.getElementById('cons-tip');
   const f = n.filas;
   tip.innerHTML = `<b></b>
-    <div><span class="k">Fotos:</span> ${_fmtMB(n.fotos_mb)} (${n.n_fotos.toLocaleString()})</div>
+    <div><span class="k">Fotos:</span> ${_fmtMB(n.fotos_mb)} (${n.n_fotos.toLocaleString()}: ${(n.n_fotos_producto || 0).toLocaleString()} por producto, ${(n.n_fotos_gondola || 0).toLocaleString()} de góndola/categoría)</div>
     <div><span class="k">Liquidaciones:</span> ${_fmtMB(n.liquidaciones_mb)}</div>
     <div><span class="k">Registros:</span> ${_fmtMB(n.datos_mb)} · ${n.filas_total.toLocaleString()} filas</div>
     <div><span class="k">Inventario:</span> ${f.inventario.toLocaleString()} · <span class="k">Usuarios:</span> ${f.usuarios}</div>

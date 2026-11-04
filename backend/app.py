@@ -3903,8 +3903,12 @@ def sistema_consumo():
     negocios = []
     for n in Negocio.query.order_by(Negocio.orden, Negocio.nombre).all():
         slug = n.slug
-        fotos_b = _suma_largo(Reporte.foto_b64, Reporte.negocio == slug)
-        n_fotos = Reporte.query.filter(Reporte.negocio == slug, Reporte.foto_b64.isnot(None), Reporte.foto_b64 != "").count()
+        fotos_prod_b = _suma_largo(Reporte.foto_b64, Reporte.negocio == slug)
+        n_fotos_prod = Reporte.query.filter(Reporte.negocio == slug, Reporte.foto_b64.isnot(None), Reporte.foto_b64 != "").count()
+        # modo góndola / categoría: las fotos van en FotoGondola, no en el reporte
+        fotos_gon_b = _suma_largo(FotoGondola.foto_b64, FotoGondola.negocio == slug)
+        n_fotos_gon = FotoGondola.query.filter(FotoGondola.negocio == slug).count()
+        fotos_b, n_fotos = fotos_prod_b + fotos_gon_b, n_fotos_prod + n_fotos_gon
         liq_b = (_suma_largo(Liquidacion.foto1_b64, Liquidacion.negocio == slug)
                  + _suma_largo(Liquidacion.foto2_b64, Liquidacion.negocio == slug)
                  + _suma_largo(Liquidacion.foto3_b64, Liquidacion.negocio == slug))
@@ -3921,27 +3925,48 @@ def sistema_consumo():
                          .filter(ValidacionIA.negocio == slug).scalar() or 0)
         ia_fotos = ValidacionIA.query.filter(ValidacionIA.negocio == slug,
                                              ValidacionIA.estado.in_(["APROBADO", "RECHAZADO", "REVISAR"])).count()
-        # proyección: una semana completa = una foto por producto con existencia en tiendas habilitadas
-        habilitada = filtro_tiendas(slug)
-        esperadas = sum(1 for i in Inventario.query.filter(Inventario.negocio == slug, Inventario.cantidad > 0)
-                        .with_entities(Inventario.tienda).all() if habilitada(i.tienda))
         prom_foto = (fotos_b / n_fotos) if n_fotos else TAM_FOTO_ESTIMADO
-        # proyección de fotos: tiendas semanales cada semana, rurales una vez al mes (semana pico = normal + rurales)
+        # proyección de una semana completa según el modo de cada cadena:
+        #   producto  = una foto por producto con existencia
+        #   góndola   = las fotos que manda una tienda (promedio real, o 4 si todavía no hay)
+        #   categoría = las fotos de cada categoría con existencia (promedio real, o 2 si todavía no hay)
+        # tiendas semanales cada semana, rurales una vez al mes (semana pico = normal + rurales)
+        habilitada = filtro_tiendas(slug)
         rur, inact = rurales_de(slug), productos_inactivos(slug)
+        modo_base, modos, extra = (n.modo_captura or "producto"), modos_cadena(slug), parse_cadenas(n.cadenas)
+        cats = categorias_de(slug)
+        fotos_por_lote = {"gondola": 4.0, "categoria": 2.0}
+        for es_cat, prom in (db.session.query(GondolaTienda.categoria != "", db.func.count(FotoGondola.id) * 1.0
+                                              / db.func.count(db.distinct(GondolaTienda.id)))
+                             .join(FotoGondola, FotoGondola.lote == db.cast(GondolaTienda.id, db.String))
+                             .filter(GondolaTienda.negocio == slug).group_by(GondolaTienda.categoria != "").all()):
+            if prom:
+                fotos_por_lote["categoria" if es_cat else "gondola"] = float(prom)
+        lotes = {}   # (tienda, categoría o "") → modo, para contar góndolas/categorías una sola vez
         f_sem = f_rur = 0; t_sem, t_rur, prods = set(), set(), set()
         for tienda, prod in (Inventario.query.filter(Inventario.negocio == slug, Inventario.cantidad > 0)
                              .with_entities(Inventario.tienda, Inventario.producto).all()):
             if not habilitada(tienda) or prod in inact:
                 continue
             prods.add(prod)
-            if (tienda or "").strip().upper() in rur:
-                f_rur += 1; t_rur.add(tienda)
+            es_rural = (tienda or "").strip().upper() in rur
+            (t_rur if es_rural else t_sem).add(tienda)
+            modo = modos.get(cadena_de_tienda(tienda, extra)) or modo_base
+            if modo == "producto":
+                if es_rural: f_rur += 1
+                else: f_sem += 1
             else:
-                f_sem += 1; t_sem.add(tienda)
+                lotes[(tienda, categoria_de(cats, prod) if modo == "categoria" else "")] = (modo, es_rural)
+        for modo, es_rural in lotes.values():
+            if es_rural: f_rur += fotos_por_lote[modo]
+            else: f_sem += fotos_por_lote[modo]
+        f_sem, f_rur = round(f_sem), round(f_rur)
+        esperadas = f_sem + f_rur
         negocios.append({
             "slug": slug, "nombre": n.nombre, "activo": bool(n.activo),
             "logo": f"/api/negocios/{slug}/logo" if n.logo_b64 else "",
             "fotos_mb": round(fotos_b / MB, 2), "n_fotos": n_fotos,
+            "n_fotos_producto": n_fotos_prod, "n_fotos_gondola": n_fotos_gon,
             "liquidaciones_mb": round(liq_b / MB, 2),
             "datos_mb": round(datos_b / MB, 2),
             "total_mb": round((fotos_b + liq_b + datos_b) / MB, 2),
