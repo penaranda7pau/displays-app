@@ -2363,14 +2363,18 @@ async function irProductos(tienda) {
   productos.forEach((p, i) => {
     const rep = mapaReportes[p.nombre];
     const pen = pend[p.nombre];
-    const fotoExistente = pen?.foto_b64 || rep?.foto_b64 || '';
+    // Solo la miniatura para mostrar. foto_b64 queda vacío salvo que el usuario elija una foto nueva:
+    // así al reenviar no se pisa la foto original con una miniatura.
+    const fotoExistente = pen?.foto_b64 || rep?.thumb || '';
     const comentarioExistente = pen?.comentario || rep?.comentario || '';
-    filas.push({nombre: p.nombre, cantidad: p.cantidad, foto_b64: fotoExistente, comentario: comentarioExistente});
+    filas.push({nombre: p.nombre, cantidad: p.cantidad, foto_b64: pen?.foto_b64 || '', comentario: comentarioExistente});
     const fila = document.createElement('div');
     fila.className = 'fila';
     const btnFoto = fotoExistente
       ? `<img src="data:image/jpeg;base64,${fotoExistente}" id="foto-${i}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid #668BCD;" onclick="selFoto(${i})">`
-      : `<button class="btn-foto" id="foto-${i}" onclick="selFoto(${i})">+</button>`;
+      : (rep?.tiene_foto
+          ? `<button class="btn-foto" id="foto-${i}" onclick="selFoto(${i})" title="Ya hay una foto enviada">📷</button>`
+          : `<button class="btn-foto" id="foto-${i}" onclick="selFoto(${i})">+</button>`);
     fila.innerHTML = `
       <div class="nombre">
         ${p.item_nbr || p.ip ? `<span style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">${p.item_nbr ? '#' + p.item_nbr : ''}${p.ip ? '<span class="ip-tag">Potencial IP</span>' : ''}</span>` : ''}
@@ -2453,6 +2457,7 @@ async function irGondola(tienda, categoria) {
       <div class="g-tit" id="g-tit-fotos">Fotos de la tienda</div>
       <div class="g-ayuda">Tomá fotos de las góndolas o refrigeradores donde están los productos de la lista (máximo ${_gMax} por ${_gCat ? 'categoría' : 'tienda'} en la semana). De frente, con buena luz y que se lean las etiquetas; podés acercarte para que se lean bien. Varias fotos pueden mostrar varios productos.</div>
       <div id="g-ya" class="g-ayuda" style="color:var(--korax-deep);font-weight:700;"></div>
+      <div id="g-enviadas" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;"></div>
       <div class="g-fotos" id="g-fotos"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;" id="g-agregar">
         <button class="btn btn-gris" style="width:auto;padding:10px 16px;" onclick="gAgregar(true)">📷 Cámara</button>
@@ -2465,6 +2470,14 @@ async function irGondola(tienda, categoria) {
     <button class="btn btn-verde" id="g-enviar" onclick="gEnviar()">✓ Enviar fotos y comentarios</button>
     <div id="g-envio" class="status-envio"></div>`;
   if (_gCat) document.getElementById('g-tit-fotos').textContent = 'Fotos de la categoría ' + _gCat;
+  // Miniaturas de las fotos que ya se enviaron esta semana (para ver si ya se mandaron)
+  const ge = document.getElementById('g-enviadas');
+  if (ge && est.miniaturas && est.miniaturas.length) {
+    ge.innerHTML = est.miniaturas.map((t, i) => t
+      ? `<img src="data:image/jpeg;base64,${t}" title="Foto enviada ${i + 1}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #0B8A6F;">`
+      : `<div style="width:72px;height:72px;border-radius:8px;border:1px dashed var(--muted);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);">Foto ${i + 1}</div>`
+    ).join('');
+  }
   const esp = document.getElementById('g-esp');
   // los que están en 0 van al final, en una pestaña cerrada (no hace falta fotografiarlos)
   const ceros = _gProds.filter(p => !(p.cantidad > 0));
@@ -3062,14 +3075,17 @@ async function cargarPanel() {
   }
 
   const neg = negocioActual;
-  const [rRep, rLiq] = await Promise.all([
+  const [rRep, rLiq, rEnv] = await Promise.all([
     fetch(API + '/api/reportes?negocio=' + neg),
-    fetch(API + '/api/liquidacion?negocio=' + neg)
+    fetch(API + '/api/liquidacion?negocio=' + neg),
+    fetch(API + '/api/gondola/envios?negocio=' + neg).catch(() => null)
   ]);
   const reps = await rRep.json(), liqs = await rLiq.json();
+  const envios = rEnv && rEnv.ok ? await rEnv.json().catch(() => []) : [];
   if (neg !== negocioActual) return;   // cambió de cliente mientras cargaba: esta respuesta ya no sirve
   todosReportes = reps;
   todasLiquidaciones = liqs;
+  window._envios = envios;
   _panelNegocio = neg;
   renderReportes();
   renderPorTienda();
@@ -3305,8 +3321,58 @@ function formatearFechaReporte(fecha) {
   return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
 }
 
+// Bloque desplegable por envío de góndola/categoría: fotos una sola vez (miniaturas al abrir), productos debajo
+function bloqueEnvios(envios) {
+  const cont = document.createElement('div');
+  cont.style.cssText = 'margin-bottom:14px;';
+  cont.innerHTML = `<div style="font-size:13px;font-weight:700;color:var(--principal);margin:4px 0 8px;">Góndolas enviadas (${envios.length})</div>`;
+  envios.forEach(e => {
+    const det = document.createElement('details');
+    det.className = 'tbl-row';
+    det.style.cssText = 'display:block;padding:10px 12px;margin-bottom:8px;';
+    det.ontoggle = () => { if (det.open) cargarMinisEnvio(e.id, det); };
+    const cats = e.categoria ? ' · ' + e.categoria : '';
+    const estados = { presente: 'Presente', dudoso: 'Dudoso', ausente: 'No se ve' };
+    const filasProd = e.productos.map(p => `
+      <div style="display:grid;grid-template-columns:1fr 90px 60px;gap:8px;font-size:11px;padding:4px 0;border-top:1px solid var(--borde);">
+        <div>${p.producto}${p.comentario ? `<div style="color:var(--muted);font-size:10px;">${p.comentario}</div>` : ''}</div>
+        <div style="color:${p.estado === 'presente' ? 'var(--ok)' : 'var(--err)'};font-weight:600;">${estados[p.estado] || p.estado || '—'}</div>
+        <div style="color:var(--muted);text-align:center;">${p.foto ? 'foto ' + p.foto : '—'}</div>
+      </div>`).join('');
+    det.innerHTML = `
+      <summary style="cursor:pointer;list-style:none;font-size:12px;">
+        <b>${e.tienda}${cats}</b>
+        <span class="muted"> · ${e.usuario || 'display'} · ${formatearFechaReporte(e.fecha)} · ${e.n_fotos} foto(s) · ${e.productos.length} producto(s)</span>
+      </summary>
+      <div class="env-min" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;"></div>
+      <div>${filasProd}</div>`;
+    cont.appendChild(det);
+  });
+  return cont;
+}
+
+async function cargarMinisEnvio(id, det) {
+  const box = det.querySelector('.env-min');
+  if (!box || box.dataset.cargado) return;
+  box.dataset.cargado = '1';
+  box.innerHTML = '<span class="muted" style="font-size:11px;">Cargando fotos...</span>';
+  try {
+    const thumbs = await (await fetch(API + '/api/gondola/envio/' + id + '/miniaturas')).json();
+    box.innerHTML = thumbs.map((t, i) => t
+      ? `<img src="data:image/jpeg;base64,${t}" title="Foto ${i + 1}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--borde);">`
+      : `<div style="width:72px;height:72px;border-radius:8px;border:1px dashed var(--muted);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);">Foto ${i + 1}</div>`
+    ).join('') || '<span class="muted" style="font-size:11px;">Sin fotos</span>';
+  } catch (e) {
+    box.innerHTML = '<span class="muted" style="font-size:11px;">No se pudieron cargar las fotos</span>';
+    delete box.dataset.cargado;
+  }
+}
+
 function renderReportes() {
-  const reps = todosReportes;
+  const envios = window._envios || [];
+  // Los productos de góndola ya salen en su bloque: no se repiten en la lista de reportes
+  const enviadas = new Set(envios.flatMap(e => e.productos.map(p => e.tienda + '|' + p.producto)));
+  const reps = todosReportes.filter(r => !enviadas.has(r.tienda + '|' + r.producto));
   const conFoto  = reps.filter(r => r.foto).length;
   const sinStock = reps.filter(r => !r.foto && r.comentario === '').length;
   document.getElementById('chip-total').textContent = reps.length + ' reportes';
@@ -3314,8 +3380,9 @@ function renderReportes() {
   document.getElementById('chip-rojo').textContent  = sinStock + ' sin comentario';
   const lista = document.getElementById('lista-reportes');
   lista.innerHTML = '';
+  if (envios.length) lista.appendChild(bloqueEnvios(envios));
   if (!reps.length) {
-    lista.innerHTML = '<div class="seccion-vacia">No hay reportes aún</div>';
+    if (!envios.length) lista.insertAdjacentHTML('beforeend', '<div class="seccion-vacia">No hay reportes aún</div>');
   } else {
   reps.forEach(rep => {
     const d = document.createElement('div');
@@ -3337,14 +3404,20 @@ function renderReportes() {
     `;
     lista.appendChild(d);
   });
-  // Cargar miniaturas en paralelo (lazy, igual que tab IA)
-  lista.querySelectorAll('img[data-src]').forEach(async img => {
-    try {
-      const r = await fetch(API + '/api/reporte/' + img.dataset.src + '/foto');
-      const d = await r.json();
-      if (d.foto_b64) img.src = 'data:image/jpeg;base64,' + d.foto_b64;
-    } catch(e) {}
-  });
+  // Miniaturas por lotes de 100 (antes se pedía la foto completa de cada reporte: lo que más pesaba)
+  const idsConFoto = reps.filter(r => r.foto || r.tiene_foto).map(r => r.id);
+  for (let i = 0; i < idsConFoto.length; i += 100) {
+    const lote = idsConFoto.slice(i, i + 100);
+    fetch(API + '/api/reportes/miniaturas?negocio=' + encodeURIComponent(negocioActual) + '&ids=' + lote.join(','))
+      .then(r => r.json())
+      .then(m => {
+        lista.querySelectorAll('img[data-src]').forEach(img => {
+          const t = m[img.dataset.src];
+          if (t) img.src = 'data:image/jpeg;base64,' + t;
+        });
+      })
+      .catch(() => {});
+  }
   } // cierre else reps
 
   // Novedades (liquidación, vencidos, etc.) — sección siempre visible
@@ -3435,8 +3508,12 @@ function renderPorTienda() {
   const mapa = {};
   todosReportes.forEach(r => {
     if (!mapa[r.tienda]) mapa[r.tienda] = {dias: new Set(), fotos: 0};
-    const dia = (r.fecha || '').substring(0, 10);
+    // fecha = "AAAAMMDD_HHMMSS": el día son los primeros 8 caracteres (antes se tomaban 10 y contaba mal)
+    const dia = (r.fecha || '').substring(0, 8);
     if (dia) mapa[r.tienda].dias.add(dia);
+    // si el display volvió otro día a editar, cuenta también ese día
+    const diaEdit = (r.modificado_en || '').substring(0, 8);
+    if (diaEdit) mapa[r.tienda].dias.add(diaEdit);
     if (r.foto || r.tiene_foto) mapa[r.tienda].fotos++;
   });
   const lista = document.getElementById('lista-por-tienda');
@@ -3922,7 +3999,11 @@ function mostrarTipConsumo(ev, n) {
   const tip = document.getElementById('cons-tip');
   const f = n.filas;
   tip.innerHTML = `<b></b>
-    <div><span class="k">Fotos:</span> ${_fmtMB(n.fotos_mb)} (${n.n_fotos.toLocaleString()}: ${(n.n_fotos_producto || 0).toLocaleString()} por producto, ${(n.n_fotos_gondola || 0).toLocaleString()} de góndola/categoría)</div>
+    <div><span class="k">Fotos completas:</span> ${_fmtMB(n.fotos_mb)} (${n.n_fotos.toLocaleString()} en total)</div>
+    <div style="padding-left:12px;"><span class="k">· Por producto:</span> ${(n.n_fotos_producto || 0).toLocaleString()}</div>
+    <div style="padding-left:12px;"><span class="k">· Góndola:</span> ${((n.n_fotos_gondola || 0) - (n.n_fotos_categoria || 0)).toLocaleString()}</div>
+    <div style="padding-left:12px;"><span class="k">· Categoría:</span> ${(n.n_fotos_categoria || 0).toLocaleString()}</div>
+    <div><span class="k">Miniaturas (listas):</span> ${_fmtMB(n.miniaturas_mb || 0)}</div>
     <div><span class="k">Liquidaciones:</span> ${_fmtMB(n.liquidaciones_mb)}</div>
     <div><span class="k">Registros:</span> ${_fmtMB(n.datos_mb)} · ${n.filas_total.toLocaleString()} filas</div>
     <div><span class="k">Inventario:</span> ${f.inventario.toLocaleString()} · <span class="k">Usuarios:</span> ${f.usuarios}</div>
@@ -5268,14 +5349,20 @@ function renderResultadosIA() {
     `;
     lista.appendChild(row);
   });
-  // Cargar miniaturas de fotos que necesitan revisión
-  document.querySelectorAll('img[data-src]').forEach(async img => {
-    try {
-      const r = await fetch(API + '/api/reporte/' + img.dataset.src + '/foto');
-      const d = await r.json();
-      if (d.foto_b64) img.src = 'data:image/jpeg;base64,' + d.foto_b64;
-    } catch(e) {}
-  });
+  // Miniaturas por lotes de 100 (antes se pedía la foto completa de cada fila)
+  const idsValid = [...new Set([...document.querySelectorAll('img[data-src]')].map(img => img.dataset.src))];
+  for (let i = 0; i < idsValid.length; i += 100) {
+    const lote = idsValid.slice(i, i + 100);
+    fetch(API + '/api/reportes/miniaturas?negocio=' + encodeURIComponent(negocioActual) + '&ids=' + lote.join(','))
+      .then(r => r.json())
+      .then(m => {
+        document.querySelectorAll('img[data-src]').forEach(img => {
+          const t = m[img.dataset.src];
+          if (t) img.src = 'data:image/jpeg;base64,' + t;
+        });
+      })
+      .catch(() => {});
+  }
 }
 async function deshacerValidacion(id, estadoOriginal, el) {
   el.textContent = '...';

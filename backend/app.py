@@ -65,6 +65,7 @@ class Reporte(db.Model):
     comentario = db.Column(db.Text)
     foto       = db.Column(db.String(300))
     foto_b64   = db.Column(db.Text)
+    thumb_b64  = db.Column(db.Text)                     # miniatura (~180 px) para listas; la foto completa queda en foto_b64
     usuario    = db.Column(db.String(100))
     fecha      = db.Column(db.String(20))
     semana         = db.Column(db.String(20), default="")
@@ -155,6 +156,7 @@ class FotoGondola(db.Model):
     usuario    = db.Column(db.String(100))
     fecha      = db.Column(db.String(30))
     foto_b64   = db.Column(db.Text)
+    thumb_b64  = db.Column(db.Text)                     # miniatura (~180 px) de la foto de góndola
     resultado  = db.Column(db.Text)                     # JSON devuelto por la IA (igual en todas las fotos del lote)
     costo_usd  = db.Column(db.Float, default=0.0)
 
@@ -219,6 +221,24 @@ def _migrar_columnas():
                 conn.execute(db.text("ALTER TABLE reporte ADD COLUMN IF NOT EXISTS foto_b64 TEXT"))
             else:
                 conn.execute(db.text("ALTER TABLE reporte ADD COLUMN foto_b64 TEXT"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("ALTER TABLE reporte ADD COLUMN IF NOT EXISTS thumb_b64 TEXT"))
+            else:
+                conn.execute(db.text("ALTER TABLE reporte ADD COLUMN thumb_b64 TEXT"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            if db.engine.dialect.name == "postgresql":
+                conn.execute(db.text("ALTER TABLE foto_gondola ADD COLUMN IF NOT EXISTS thumb_b64 TEXT"))
+            else:
+                conn.execute(db.text("ALTER TABLE foto_gondola ADD COLUMN thumb_b64 TEXT"))
             conn.commit()
         except Exception:
             conn.rollback()
@@ -1747,6 +1767,21 @@ def sync_inventario():
     db.session.commit()
     return jsonify({"ok": True, "productos": total})
 
+def _miniatura_b64(foto_b64, lado=180):
+    """Miniatura JPEG (lado máximo `lado` px) en base64. Si falla, devuelve "" (la lista muestra un botón para ver la foto)."""
+    try:
+        from PIL import Image, ImageOps
+        import io
+        raw = foto_b64.split(",", 1)[1] if "," in foto_b64 else foto_b64
+        im = Image.open(io.BytesIO(base64.b64decode(raw)))
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.thumbnail((lado, lado))
+        out = io.BytesIO()
+        im.save(out, format="JPEG", quality=70, optimize=True)
+        return base64.b64encode(out.getvalue()).decode()
+    except Exception:
+        return ""
+
 @app.route("/api/reporte", methods=["POST"])
 def guardar_reporte():
     data        = request.json
@@ -1767,10 +1802,13 @@ def guardar_reporte():
         with open(os.path.join(FOTOS_DIR, nombre_foto), "wb") as f:
             f.write(base64.b64decode(foto_b64))
 
+    thumb = _miniatura_b64(foto_b64) if foto_b64 else ""
+
     if existente:
         # UPSERT: actualizar el existente
         existente.comentario    = comentario
         existente.foto_b64      = foto_b64 or existente.foto_b64
+        existente.thumb_b64     = thumb or existente.thumb_b64
         existente.foto          = nombre_foto or existente.foto
         existente.usuario       = usuario
         existente.fecha         = ahora
@@ -1780,11 +1818,74 @@ def guardar_reporte():
         return jsonify({"ok": True, "id": existente.id, "modificado": True})
     else:
         rep = Reporte(negocio=negocio, tienda=tienda, producto=producto, comentario=comentario,
-                      foto=nombre_foto, foto_b64=foto_b64 or None, usuario=usuario,
+                      foto=nombre_foto, foto_b64=foto_b64 or None, thumb_b64=thumb or None, usuario=usuario,
                       fecha=ahora, semana=sem, modificaciones=0)
         db.session.add(rep)
         db.session.commit()
         return jsonify({"ok": True, "id": rep.id, "modificado": False})
+
+def _thumbs_reportes(reps):
+    """{reporte.id: miniatura}. Un reporte de góndola toma la miniatura de su FotoGondola (una foto cubre varios productos)."""
+    out, fids = {}, {}
+    for r in reps:
+        ref = r.foto or ""
+        if ref.startswith("GONDOLA:"):
+            x = ref.split(":", 1)[1]
+            if x.isdigit():
+                fids[r.id] = int(x)
+        else:
+            out[r.id] = r.thumb_b64 or ""
+    if fids:
+        tm = dict(db.session.query(FotoGondola.id, FotoGondola.thumb_b64)
+                  .filter(FotoGondola.id.in_(set(fids.values()))).all())
+        for rid, fid in fids.items():
+            out[rid] = tm.get(fid) or ""
+    return out
+
+@app.route("/api/gondola/envios")
+def gondola_envios():
+    """Panel del supervisor: un bloque por envío de góndola/categoría (tienda o categoría de la semana).
+    Trae fecha, display y la lista de productos con su estado; las miniaturas se piden al desplegar (ver abajo)."""
+    negocio = request.args.get("negocio", "mundo_vegano")
+    sem = semana_actual(negocio)
+    habilitada = filtro_tiendas(negocio)
+    out = []
+    for gt in GondolaTienda.query.filter_by(negocio=negocio, semana=sem).order_by(GondolaTienda.tienda, GondolaTienda.categoria).all():
+        if not habilitada(gt.tienda):
+            continue
+        fotos = (db.session.query(FotoGondola.id, FotoGondola.fecha).filter_by(lote=str(gt.id))
+                 .order_by(FotoGondola.id).all())
+        if not fotos:
+            continue
+        coment = json.loads(gt.comentarios or "{}")
+        prods = []
+        for p in json.loads(gt.resultado or "[]"):
+            n = p.get("foto")   # None = el producto no se ve en ninguna foto
+            prods.append({"producto": p.get("producto", ""), "estado": p.get("estado", ""),
+                          "foto": n if n and 1 <= n <= len(fotos) else None, "frentes": p.get("frentes"),
+                          "comentario": coment.get(p.get("producto", "")) or p.get("nota") or ""})
+        out.append({"id": gt.id, "tienda": gt.tienda, "categoria": gt.categoria or "", "usuario": gt.usuario or "",
+                    "fecha": fotos[0][1], "fecha_ultima": fotos[-1][1], "n_fotos": len(fotos), "productos": prods})
+    return jsonify(out)
+
+@app.route("/api/gondola/envio/<int:gid>/miniaturas")
+def gondola_envio_miniaturas(gid):
+    """Miniaturas de las fotos de un envío (se piden solo al abrir el bloque)."""
+    rows = (FotoGondola.query.with_entities(FotoGondola.thumb_b64)
+            .filter_by(lote=str(gid)).order_by(FotoGondola.id).all())
+    return jsonify([r[0] or "" for r in rows])
+
+@app.route("/api/reportes/miniaturas")
+def reportes_miniaturas():
+    """Miniaturas por lote de ids (el panel del supervisor las pide de a 100, no la foto completa)."""
+    negocio = request.args.get("negocio", "mundo_vegano")
+    ids = [int(x) for x in request.args.get("ids", "").split(",") if x.isdigit()][:200]
+    if not ids:
+        return jsonify({})
+    habilitada = filtro_tiendas(negocio)
+    reps = [r for r in Reporte.query.options(db.defer(Reporte.foto_b64))
+            .filter(Reporte.id.in_(ids), Reporte.negocio == negocio).all() if habilitada(r.tienda)]
+    return jsonify({str(k): v for k, v in _thumbs_reportes(reps).items()})
 
 @app.route("/api/reportes")
 def ver_reportes():
@@ -1794,20 +1895,20 @@ def ver_reportes():
     q = Reporte.query.filter_by(semana=semana, negocio=negocio)
     if tienda:
         q = q.filter_by(tienda=tienda)
-    # Cuando se filtra por tienda (pantalla del display, pocas fotos) se incluye foto_b64.
-    # Sin filtro (panel supervisor) NO se cargan las fotos en memoria: solo si tiene o no.
-    include_b64 = bool(tienda)
+    # Las listas NO traen la foto completa (pesa MB y saturaba la base): solo la miniatura (thumb).
+    # La foto completa se pide por demanda con /api/reporte/<id>/foto.
     tiene_b64 = (Reporte.foto_b64.isnot(None) & (Reporte.foto_b64 != "")).label("tiene_b64")
-    if include_b64:
-        rows = [(r, bool(r.foto_b64)) for r in q.order_by(Reporte.id.desc()).all()]
-    else:
-        rows = q.options(db.defer(Reporte.foto_b64)).add_columns(tiene_b64).order_by(Reporte.id.desc()).all()
+    # El panel sin tienda (supervisor) solo necesita saber si hay foto: no carga miniaturas.
+    diferidas = [db.defer(Reporte.foto_b64)] + ([] if tienda else [db.defer(Reporte.thumb_b64)])
+    rows = q.options(*diferidas).add_columns(tiene_b64).order_by(Reporte.id.desc()).all()
     habilitada = filtro_tiendas(negocio)
     rows = [x for x in rows if habilitada(x[0].tienda)]
+    th = _thumbs_reportes([x[0] for x in rows]) if tienda else {}
     return jsonify([{"id": r.id, "tienda": r.tienda, "producto": r.producto,
                      "comentario": r.comentario, "foto": r.foto,
                      "tiene_foto": bool(tb or r.foto),
-                     "foto_b64": (r.foto_b64 or "") if include_b64 else "",
+                     "thumb": th.get(r.id, ""),
+                     "foto_b64": "",
                      "usuario": r.usuario, "fecha": r.fecha,
                      "modificaciones": r.modificaciones or 0,
                      "modificado_en": r.modificado_en or ""} for r, tb in rows])
@@ -3352,8 +3453,11 @@ def gondola_estado():
     negocio, tienda = request.args.get("negocio"), (request.args.get("tienda") or "").strip()
     cat = (request.args.get("categoria") or "").strip()
     gt = _gt(negocio, semana_captura(negocio), tienda, categoria=cat)
-    return jsonify({"fotos": len(_fotos_gt(gt)) if gt else 0, "max": _max_fotos(cat),
-                    "comentarios": json.loads(gt.comentarios or "{}") if gt else {}})
+    fids = _fotos_gt(gt) if gt else []
+    thumbs = dict(db.session.query(FotoGondola.id, FotoGondola.thumb_b64).filter(FotoGondola.id.in_(fids)).all()) if fids else {}
+    return jsonify({"fotos": len(fids), "max": _max_fotos(cat),
+                    "comentarios": json.loads(gt.comentarios or "{}") if gt else {},
+                    "miniaturas": [thumbs.get(f) or "" for f in fids]})   # miniaturas de las fotos ya enviadas
 
 @app.route("/api/gondola/foto", methods=["POST"])
 def gondola_subir_foto():
@@ -3366,7 +3470,8 @@ def gondola_subir_foto():
     if len(_fotos_gt(gt)) >= _max_fotos(cat):
         return jsonify({"ok": False, "error": f"Máximo {_max_fotos(cat)} fotos por " + ("categoría" if cat else "tienda")}), 400
     db.session.add(FotoGondola(negocio=negocio, semana=sem, tienda=tienda, lote=str(gt.id), usuario=(d.get("usuario") or "")[:100],
-                               fecha=datetime.now().strftime("%Y%m%d_%H%M%S"), foto_b64=foto.split(",", 1)[-1]))
+                               fecha=datetime.now().strftime("%Y%m%d_%H%M%S"), foto_b64=foto.split(",", 1)[-1],
+                               thumb_b64=_miniatura_b64(foto) or None))
     gt.usuario = (d.get("usuario") or gt.usuario or "")[:100]
     db.session.commit()
     return jsonify({"ok": True, "fotos": len(_fotos_gt(gt))})
@@ -3909,6 +4014,12 @@ def sistema_consumo():
         fotos_gon_b = _suma_largo(FotoGondola.foto_b64, FotoGondola.negocio == slug)
         n_fotos_gon = FotoGondola.query.filter(FotoGondola.negocio == slug).count()
         fotos_b, n_fotos = fotos_prod_b + fotos_gon_b, n_fotos_prod + n_fotos_gon
+        # desglose: góndola (sin categoría) y categoría; miniaturas de reportes y de góndola
+        n_fotos_cat = (db.session.query(db.func.count(FotoGondola.id))
+                       .join(GondolaTienda, FotoGondola.lote == db.cast(GondolaTienda.id, db.String))
+                       .filter(FotoGondola.negocio == slug, GondolaTienda.categoria != "").scalar() or 0)
+        thumbs_b = (_suma_largo(Reporte.thumb_b64, Reporte.negocio == slug)
+                    + _suma_largo(FotoGondola.thumb_b64, FotoGondola.negocio == slug))
         liq_b = (_suma_largo(Liquidacion.foto1_b64, Liquidacion.negocio == slug)
                  + _suma_largo(Liquidacion.foto2_b64, Liquidacion.negocio == slug)
                  + _suma_largo(Liquidacion.foto3_b64, Liquidacion.negocio == slug))
@@ -3967,9 +4078,11 @@ def sistema_consumo():
             "logo": f"/api/negocios/{slug}/logo" if n.logo_b64 else "",
             "fotos_mb": round(fotos_b / MB, 2), "n_fotos": n_fotos,
             "n_fotos_producto": n_fotos_prod, "n_fotos_gondola": n_fotos_gon,
+            "n_fotos_categoria": n_fotos_cat,
+            "miniaturas_mb": round(thumbs_b / MB, 2),
             "liquidaciones_mb": round(liq_b / MB, 2),
             "datos_mb": round(datos_b / MB, 2),
-            "total_mb": round((fotos_b + liq_b + datos_b) / MB, 2),
+            "total_mb": round((fotos_b + thumbs_b + liq_b + datos_b) / MB, 2),
             "filas": filas,
             "ia_costo_usd": round(ia_costo, 4), "ia_fotos": ia_fotos,
             "fotos_semana_esperadas": esperadas,
