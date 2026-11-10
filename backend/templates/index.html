@@ -1287,6 +1287,10 @@
       </div>
       <div class="cons-cap" role="img" id="cons-cap-aria"><div class="uso" id="cons-cap-uso"></div><div class="pico" id="cons-cap-pico"><span>pico</span></div></div>
       <div class="cons-ley"><span><i></i>Usado ahora</span><span><i class="pico"></i>Pico estimado (semana completa)</span><span id="cons-limite"></span></div>
+      <div style="display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap;">
+        <button class="btn btn-gris" id="btn-optimizar" style="width:auto;padding:7px 14px;" onclick="optimizarBase()">Optimizar base</button>
+        <span class="muted" style="font-size:11px;">Crea un índice para buscar reportes más rápido y recupera el espacio de fotos borradas. No borra datos. Úsalo una vez al mes o cuando la base se sienta lenta.</span>
+      </div>
 
       <div class="cons-tab" id="cons-tab">
         <button data-m="total_mb" class="on">Ocupa ahora</button>
@@ -3905,6 +3909,20 @@ function _estadoCapacidad(pct) {
   if (pct >= 85) return { c: 'var(--err)',  t: 'Crítico' };
   if (pct >= 60) return { c: 'var(--warn)', t: 'Atención' };
   return { c: 'var(--ok)', t: 'Bien' };
+}
+
+async function optimizarBase() {
+  if (!confirm('¿Optimizar la base? No borra datos; puede tardar unos segundos.')) return;
+  const b = document.getElementById('btn-optimizar');
+  b.disabled = true; b.textContent = 'Optimizando...';
+  try {
+    const r = await fetch(API + '/api/sistema/optimizar', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({solicitante_rol: usuario.rol}) });
+    const d = await r.json();
+    toast(d.ok ? d.mensaje : (d.error || 'No se pudo optimizar'), d.ok ? 'ok' : 'err');
+    if (d.ok) cargarConsumo();
+  } catch (e) { toast('No se pudo optimizar la base', 'err'); }
+  b.disabled = false; b.textContent = 'Optimizar base';
 }
 
 async function cargarConsumo() {

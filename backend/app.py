@@ -4042,6 +4042,24 @@ def tamano_db_mb():
 def _suma_largo(columna, *filtros):
     return int(db.session.query(db.func.coalesce(db.func.sum(db.func.length(columna)), 0)).filter(*filtros).scalar() or 0)
 
+@app.route("/api/sistema/optimizar", methods=["POST"])
+def sistema_optimizar():
+    """Crea el índice de reportes (si falta) y recupera el espacio de fotos borradas. No borra datos."""
+    data = request.get_json(silent=True) or {}
+    if data.get("solicitante_rol") not in ("superadmin", "admin"):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    if db.engine.dialect.name != "postgresql":
+        return jsonify({"ok": False, "error": "Esta optimización solo aplica a la base de producción (Postgres)"}), 400
+    try:
+        with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+            c.execute(db.text("CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_reporte_negocio_semana_tienda "
+                              "ON reporte (negocio, semana, tienda)"))
+            c.execute(db.text("VACUUM ANALYZE reporte"))
+            c.execute(db.text("VACUUM ANALYZE foto_gondola"))
+        return jsonify({"ok": True, "mensaje": "Base optimizada: índice listo y espacio recuperado"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"No se pudo optimizar: {e}"}), 500
+
 @app.route("/api/sistema/consumo")
 def sistema_consumo():
     """Superadmin: cuánto ocupa cada negocio en la base y cuánto gasta en IA."""
