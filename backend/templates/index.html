@@ -1304,7 +1304,7 @@
     <div id="sis-negocios" class="sg-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
         <div style="font-size:12px;font-weight:600;color:var(--muted);">NEGOCIOS (CLIENTES)</div>
-        <button class="btn btn-verde" style="width:auto;padding:7px 14px;" onclick="abrirFormNegocio()">+ Nuevo negocio</button>
+        <button class="btn btn-verde" id="btn-nuevo-negocio" style="width:auto;padding:7px 14px;" onclick="abrirFormNegocio()">+ Nuevo negocio</button>
       </div>
       <div id="neg-admin-lista"></div>
       <div class="neg-form" id="neg-form">
@@ -1972,6 +1972,7 @@ function isoSemana(fecha) {
 }
 let tiendas = [];
 let tiendasReportadas = new Set();
+let tiendasPendientes = new Set();   // góndolas enviadas y sin analizar
 let filas = [];
 let tiendaActual = '';
 let todosReportes = [];
@@ -2052,12 +2053,15 @@ async function mostrarSelectorNegocio() {
     cont.appendChild(b);
   });
   document.getElementById('sidebar').classList.remove('visible');
-  const esSuperadmin = usuario.rol === 'superadmin';
+  const esSuperadmin = ['superadmin', 'admin'].includes(usuario.rol);   // Sistema: lo ve el superadmin y el administrador general
   document.getElementById('sh-sistema').style.display = esSuperadmin ? '' : 'none';
+  // Crear y eliminar negocios: solo el superadmin
+  const soloSuper = usuario.rol === 'superadmin';
+  ['btn-nuevo-negocio', 'neg-eliminar'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = soloSuper ? '' : 'none'; });
   document.querySelector('#selector-negocio .sh-cuerpo').classList.toggle('sin-sistema', !esSuperadmin);
   mostrar('selector-negocio');
   if (esSuperadmin) {
-    fetch(API + '/api/sistema/consumo?solicitante_rol=superadmin').then(r => r.json()).then(c => {
+    fetch(API + '/api/sistema/consumo?solicitante_rol=' + usuario.rol).then(r => r.json()).then(c => {
       _consumo = c; c.negocios.forEach(n => n.filas_total = Object.values(n.filas).reduce((a, b) => a + b, 0));
       pintarMiniConsumo();
     }).catch(() => {});
@@ -2200,6 +2204,8 @@ async function cargarTiendas() {
   ]);
   tiendas = await rTiendas.json();
   tiendasReportadas = new Set(await rReportadas.json());
+  try { tiendasPendientes = new Set(await (await fetch(API + '/api/tiendas-pendientes?negocio=' + negocioActual)).json()); }
+  catch (e) { tiendasPendientes = new Set(); }
   actualizarContadoresCadenas();
   if (cadenaActual) filtrarTiendas();
 }
@@ -2266,6 +2272,7 @@ function filtrarTiendas() {
   if (cadenaActual) fuente = tiendas.filter(t => grupoDeTienda(t) === cadenaActual);
   fuente.filter(t => t.toLowerCase().includes(txt)).forEach(t => {
     const visitada = tiendasReportadas.has(t);
+    const pendiente = tiendasPendientes.has(t);   // fotos de góndola enviadas y aún sin analizar
     const d = document.createElement('div');
     d.className = 'tienda-item';
     d.style.display = 'flex';
@@ -2274,8 +2281,8 @@ function filtrarTiendas() {
     const esRural = TIENDAS_RURALES_JS.has(t);
     d.innerHTML = `
       <span style="font-weight:600;">${t}${esRural ? ' <span style="font-size:10px;background:rgba(232,168,56,0.2);color:var(--amarillo);border-radius:4px;padding:1px 5px;font-weight:700;">Rural</span>' : ''}</span>
-      <span style="font-size:12px;font-weight:600;flex-shrink:0;margin-left:10px;color:${visitada ? 'var(--ok)' : 'var(--err)'};">
-        ${visitada ? '✓ Visitada' : '✗ Sin visita'}
+      <span style="font-size:12px;font-weight:600;flex-shrink:0;margin-left:10px;color:${pendiente ? 'var(--amarillo)' : visitada ? 'var(--ok)' : 'var(--err)'};">
+        ${pendiente ? '⏳ Pendiente' : visitada ? '✓ Visitada' : '✗ Sin visita'}
       </span>`;
     d.onclick = () => irProductos(t);
     lista.appendChild(d);
@@ -3332,11 +3339,11 @@ function bloqueEnvios(envios) {
     det.style.cssText = 'display:block;padding:10px 12px;margin-bottom:8px;';
     det.ontoggle = () => { if (det.open) cargarMinisEnvio(e.id, det); };
     const cats = e.categoria ? ' · ' + e.categoria : '';
-    const estados = { presente: 'Presente', dudoso: 'Dudoso', ausente: 'No se ve' };
+    const estados = { presente: 'Presente', dudoso: 'Dudoso', ausente: 'No se ve', pendiente: 'Pendiente de análisis' };
     const filasProd = e.productos.map(p => `
       <div style="display:grid;grid-template-columns:1fr 90px 60px;gap:8px;font-size:11px;padding:4px 0;border-top:1px solid var(--borde);">
         <div>${p.producto}${p.comentario ? `<div style="color:var(--muted);font-size:10px;">${p.comentario}</div>` : ''}</div>
-        <div style="color:${p.estado === 'presente' ? 'var(--ok)' : 'var(--err)'};font-weight:600;">${estados[p.estado] || p.estado || '—'}</div>
+        <div style="color:${p.estado === 'presente' ? 'var(--ok)' : p.estado === 'pendiente' ? 'var(--muted)' : 'var(--err)'};font-weight:600;">${estados[p.estado] || p.estado || '—'}</div>
         <div style="color:var(--muted);text-align:center;">${p.foto ? 'foto ' + p.foto : '—'}</div>
       </div>`).join('');
     det.innerHTML = `
@@ -3767,7 +3774,7 @@ let resultadosIA = [];
 let _negLogoNuevo = null;
 
 function abrirSistemaGlobal(seccion) {
-  if (usuario.rol !== 'superadmin') return;
+  if (!['superadmin', 'admin'].includes(usuario.rol)) return;
   seccion = seccion || 'negocios';
   document.getElementById('sidebar').classList.remove('visible');
   if (!document.getElementById('sistema-global').classList.contains('active')) mostrar('sistema-global');
@@ -3901,7 +3908,7 @@ function _estadoCapacidad(pct) {
 }
 
 async function cargarConsumo() {
-  const r = await fetch(API + '/api/sistema/consumo?solicitante_rol=superadmin');
+  const r = await fetch(API + '/api/sistema/consumo?solicitante_rol=' + usuario.rol);
   if (!r.ok) { toast('No se pudo leer el consumo', 'err'); return; }
   _consumo = await r.json();
   _consumo.negocios.forEach(n => n.filas_total = Object.values(n.filas).reduce((a, b) => a + b, 0));
@@ -4035,7 +4042,7 @@ const UG_FUNC = [
   ['display', 'Display', ['Solo sus negocios', 'Tiendas: enviar fotos y novedades', '-Panel de supervisor']],
 ];
 async function ugCargar() {
-  _ugUsuarios = await (await fetch(API + '/api/usuarios/todos?solicitante_rol=superadmin')).json();
+  _ugUsuarios = await (await fetch(API + '/api/usuarios/todos?solicitante_rol=' + usuario.rol)).json();
   if (!Object.keys(NEGOCIOS).length) await cargarNegocios();
   ugPintarNegForm(); ugPintar();
 }
@@ -4060,7 +4067,7 @@ async function ugCrear() {
   if (!nombre || !login || !password) { err.textContent = 'Completá nombre, usuario y contraseña'; return; }
   if (rol !== 'admin' && !_ugNegForm.length) { err.textContent = 'Elegí al menos un negocio'; return; }
   const r = await fetch(API + '/api/usuarios', { method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({nombre, usuario: login, password, rol, negocio: _ugNegForm[0], negocios: _ugNegForm, solicitante_rol: 'superadmin'}) });
+    body: JSON.stringify({nombre, usuario: login, password, rol, negocio: _ugNegForm[0], negocios: _ugNegForm, solicitante_rol: usuario.rol}) });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) { err.textContent = d.error || ('Error ' + r.status); return; }
   ['ug-nombre', 'ug-login', 'ug-pass'].forEach(id => document.getElementById(id).value = '');
@@ -4068,7 +4075,7 @@ async function ugCrear() {
 }
 async function ugGuardar(u, cambios) {
   const r = await fetch(API + '/api/usuarios/' + u.id, { method: 'PUT', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(Object.assign({solicitante_rol: 'superadmin'}, cambios)) });
+    body: JSON.stringify(Object.assign({solicitante_rol: usuario.rol}, cambios)) });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) { toast(d.error || ('Error ' + r.status), 'err'); ugPintar(); return false; }
   toast('Cambios de ' + u.nombre + ' guardados', 'ok'); await ugCargar(); return true;
@@ -4086,7 +4093,7 @@ function ugCambiarRol(u, rol) {
 async function ugEliminar(u) {
   if (!confirm('¿Eliminar a ' + u.nombre + ' (@' + u.usuario + ')? No podrá volver a entrar a ningún negocio.')) return;
   const r = await fetch(API + '/api/usuarios/' + u.id, { method: 'DELETE', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({solicitante_rol: 'superadmin'}) });
+    body: JSON.stringify({solicitante_rol: usuario.rol}) });
   const d = await r.json().catch(() => ({}));
   if (!d.ok) { toast(d.error || 'Error', 'err'); return; }
   toast(u.nombre + ' eliminado', 'ok'); ugCargar();
@@ -4095,7 +4102,7 @@ async function ugPassword(u) {
   const nueva = prompt('Nueva contraseña para ' + u.nombre + ':');
   if (!nueva || !nueva.trim()) return;
   const r = await fetch(API + '/api/usuarios/' + u.id + '/password', { method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({password: nueva.trim(), solicitante_rol: 'superadmin'}) });
+    body: JSON.stringify({password: nueva.trim(), solicitante_rol: usuario.rol}) });
   const d = await r.json().catch(() => ({}));
   if (d.ok) { toast('Contraseña actualizada', 'ok'); ugCargar(); } else toast(d.error || 'Error', 'err');
 }
@@ -4213,7 +4220,7 @@ async function cargarLogFotos() {
   const t = document.getElementById('lf-tabla'), res = document.getElementById('lf-resumen');
   t.innerHTML = '<div class="seccion-vacia">Cargando...</div>';
   let lista = [];
-  try { lista = await (await fetch(API + '/api/foto/log?solicitante_rol=superadmin')).json(); } catch (e) {}
+  try { lista = await (await fetch(API + '/api/foto/log?solicitante_rol=' + usuario.rol)).json(); } catch (e) {}
   // un mismo intento puede dejar 2 registros (celular + servidor): se muestran ambos, el más nuevo arriba
   lista = (lista || []).slice().reverse();
   const tipoRes = x => /^convertida/.test(x.resultado || '') ? 'ok' : (x.motivo === 'vacia') ? 'vacia' : /sin conexion/i.test(x.resultado || '') ? 'senal' : 'error';
@@ -4245,8 +4252,8 @@ async function cargarLogFotos() {
 }
 
 async function cargarNegociosAdmin() {
-  if (usuario.rol !== 'superadmin') return;
-  const lista = await (await fetch(API + '/api/negocios/admin?solicitante_rol=superadmin')).json();
+  if (!['superadmin', 'admin'].includes(usuario.rol)) return;
+  const lista = await (await fetch(API + '/api/negocios/admin?solicitante_rol=' + usuario.rol)).json();
   window._negociosAdmin = lista;
   const cont = document.getElementById('neg-admin-lista');
   cont.innerHTML = '';
@@ -4620,7 +4627,7 @@ async function abrirFormNegocio(n) {
     _promptOriginal = n.prompt_original || '';
     document.getElementById('neg-prompt').value = n.prompt || _promptOriginal;
   } else {
-    const r = await fetch(API + '/api/negocios/prompt-base?solicitante_rol=superadmin&nombre=');
+    const r = await fetch(API + '/api/negocios/prompt-base?solicitante_rol=' + usuario.rol + '&nombre=');
     _promptOriginal = (await r.json()).prompt || '';
     document.getElementById('neg-prompt').value = _promptOriginal;
   }
@@ -4638,7 +4645,7 @@ async function abrirFormNegocio(n) {
   document.getElementById('neg-config').style.display = 'none';
   _negEstado = { sem: new Set(), rur: new Set(), quit: new Set(), cadenas: new Set(), detectadas: [] };
   if (n) {
-    fetch(API + '/api/negocios/' + encodeURIComponent(n.slug) + '/tiendas?solicitante_rol=superadmin')
+    fetch(API + '/api/negocios/' + encodeURIComponent(n.slug) + '/tiendas?solicitante_rol=' + usuario.rol)
       .then(r => r.json()).then(res => {
         document.getElementById('neg-inv-estado').textContent = `${res.tiendas.length} tiendas en el inventario actual.`;
         _negCargarResumen(res, res.rurales, res.excluidas, n.cadenas);

@@ -786,7 +786,7 @@ def foto_log():
 
 @app.route("/api/foto/log")
 def foto_log_ver():
-    if request.args.get("solicitante_rol") != "superadmin":
+    if request.args.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"error": "No autorizado"}), 403
     cfg = db.session.get(Config, _LOG_FOTOS_CLAVE)
     return jsonify(json.loads(cfg.valor) if cfg and cfg.valor else [])
@@ -894,7 +894,7 @@ def catalogo_cadenas():
 @app.route("/api/negocios/analizar-inventario", methods=["POST"])
 def analizar_inventario_negocio():
     """Lee el/los Excel de inventario SIN guardar nada: devuelve tiendas, cadenas y rurales sugeridas."""
-    if request.form.get("solicitante_rol") != "superadmin":
+    if request.form.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"error": "No autorizado"}), 403
     archivo_wm = request.files.get("archivo_wm")
     archivo_am = request.files.get("archivo_am")
@@ -947,7 +947,7 @@ def _formato_excel(archivo):
 @app.route("/api/negocios/detectar-excel", methods=["POST"])
 def detectar_excel():
     """Recibe varios Excel (archivos sueltos o una carpeta) y dice cuál es de Walmart y cuál de Auto Mercado."""
-    if request.form.get("solicitante_rol") != "superadmin":
+    if request.form.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"error": "No autorizado"}), 403
     res = []
     for i, f in enumerate(request.files.getlist("archivos")):
@@ -957,7 +957,7 @@ def detectar_excel():
 @app.route("/api/negocios/<slug>/tiendas")
 def tiendas_config_negocio(slug):
     """Tiendas del inventario actual del negocio, para editar semanales/rurales/quitadas."""
-    if request.args.get("solicitante_rol") != "superadmin":
+    if request.args.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"error": "No autorizado"}), 403
     n = Negocio.query.get_or_404(slug)
     rows = db.session.query(Inventario.tienda).filter(Inventario.negocio == slug).distinct().all()
@@ -1003,7 +1003,7 @@ def listar_negocios():
 
 @app.route("/api/negocios/admin")
 def listar_negocios_admin():
-    if request.args.get("solicitante_rol") != "superadmin":
+    if request.args.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"error": "No autorizado"}), 403
     rows = Negocio.query.order_by(Negocio.orden, Negocio.nombre).all()
     return jsonify([_negocio_json(n, admin=True) for n in rows])
@@ -1022,7 +1022,7 @@ def logo_negocio(slug):
 @app.route("/api/negocios/prompt-base")
 def prompt_base_negocio():
     """Prompt inicial sugerido para un negocio nuevo."""
-    if request.args.get("solicitante_rol") != "superadmin":
+    if request.args.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"error": "No autorizado"}), 403
     return jsonify({"prompt": _prompt_por_defecto("", request.args.get("nombre", ""))})
 
@@ -1064,7 +1064,7 @@ def crear_negocio():
 @app.route("/api/negocios/<slug>", methods=["PUT"])
 def editar_negocio(slug):
     data = request.get_json(force=True) or {}
-    if not _es_superadmin(data):
+    if data.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"ok": False, "error": "No autorizado"}), 403
     n = Negocio.query.get_or_404(slug)
     if "nombre" in data:
@@ -1258,7 +1258,7 @@ def crear_usuario():
 @app.route("/api/usuarios/todos")
 def usuarios_todos():
     """Superadmin: todos los usuarios de la app (Sistema → Usuarios)."""
-    if request.args.get("solicitante_rol") != "superadmin":
+    if request.args.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"error": "No autorizado"}), 403
     rows = Usuario.query.order_by(Usuario.nombre).all()
     return jsonify([{"id": u.id, "nombre": u.nombre, "usuario": u.usuario, "password": u.password, "rol": u.rol,
@@ -1267,11 +1267,14 @@ def usuarios_todos():
 
 @app.route("/api/usuarios/<int:usuario_id>", methods=["PUT"])
 def editar_usuario(usuario_id):
-    """Superadmin: cambia nombre, tipo (rol) y negocios de un usuario."""
+    """Superadmin o administrador general: cambia nombre, tipo (rol) y negocios de un usuario."""
     data = request.json or {}
-    if not _es_superadmin(data):
-        return jsonify({"ok": False, "error": "No autorizado"}), 403
     u = Usuario.query.get_or_404(usuario_id)
+    if data.get("solicitante_rol") == "admin":
+        if u.rol in ("admin", "superadmin") or data.get("rol") in ("admin", "superadmin"):
+            return jsonify({"ok": False, "error": "El administrador general no puede tocar superadmin ni administradores"}), 403
+    elif not _es_superadmin(data):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
     if u.rol == "superadmin":
         return jsonify({"ok": False, "error": "El superadmin no se modifica desde aquí"}), 400
     nombre = (data.get("nombre") or "").strip()
@@ -1864,9 +1867,49 @@ def gondola_envios():
             prods.append({"producto": p.get("producto", ""), "estado": p.get("estado", ""),
                           "foto": n if n and 1 <= n <= len(fotos) else None, "frentes": p.get("frentes"),
                           "comentario": coment.get(p.get("producto", "")) or p.get("nota") or ""})
+        if not prods:
+            # Aún no analizada: los productos que debería traer esa tienda (o categoría) según el inventario
+            cats, inact = categorias_de(negocio), productos_inactivos(negocio)
+            for inv in Inventario.query.filter_by(negocio=negocio, tienda=gt.tienda).filter(Inventario.cantidad > 0).all():
+                if inv.producto in inact:
+                    continue
+                if gt.categoria and categoria_de(cats, inv.producto) != gt.categoria:
+                    continue
+                prods.append({"producto": inv.producto, "estado": "pendiente", "foto": None, "frentes": None,
+                              "comentario": coment.get(inv.producto, "")})
         out.append({"id": gt.id, "tienda": gt.tienda, "categoria": gt.categoria or "", "usuario": gt.usuario or "",
                     "fecha": fotos[0][1], "fecha_ultima": fotos[-1][1], "n_fotos": len(fotos), "productos": prods})
     return jsonify(out)
+
+@app.route("/api/tiendas-pendientes")
+def tiendas_pendientes():
+    """Tiendas (o categorías) con fotos de góndola enviadas que todavía no se han analizado."""
+    negocio = request.args.get("negocio", "mundo_vegano")
+    sem = semana_actual(negocio)
+    habilitada = filtro_tiendas(negocio)
+    n = Negocio.query.filter_by(slug=negocio).first()
+    modo_base, modos, extra = (n.modo_captura or "producto") if n else "producto", modos_cadena(negocio), parse_cadenas(n.cadenas if n else "")
+    cats, inact = categorias_de(negocio), productos_inactivos(negocio)
+    # lo que debería enviar cada tienda: una góndola completa ("") o una foto por categoría con productos
+    esperado = {}
+    for tienda, prod in (Inventario.query.filter(Inventario.negocio == negocio, Inventario.cantidad > 0)
+                         .with_entities(Inventario.tienda, Inventario.producto).all()):
+        if not habilitada(tienda) or prod in inact:
+            continue
+        modo = modos.get(cadena_de_tienda(tienda, extra)) or modo_base
+        if modo == "categoria":
+            esperado.setdefault(tienda, set()).add(categoria_de(cats, prod))
+        elif modo == "gondola":
+            esperado.setdefault(tienda, set()).add("")
+    # lo que ya mandaron: (tienda, categoría) con al menos una foto
+    enviado = set(db.session.query(GondolaTienda.tienda, GondolaTienda.categoria)
+                  .join(FotoGondola, FotoGondola.lote == db.cast(GondolaTienda.id, db.String))
+                  .filter(GondolaTienda.negocio == negocio, GondolaTienda.semana == sem).distinct().all())
+    # pendiente = la tienda sí fue visitada (mandó algo) pero le falta alguna categoría (o la góndola completa).
+    # Si no mandó nada, es "Sin visita", no pendiente.
+    visitadas = {t for (t, _c) in enviado}
+    out = {t for t, cs in esperado.items() if t in visitadas and any((t, c) not in enviado for c in cs)}
+    return jsonify(sorted(out))
 
 @app.route("/api/gondola/envio/<int:gid>/miniaturas")
 def gondola_envio_miniaturas(gid):
@@ -2437,8 +2480,8 @@ def ver_excel_formato():
 @app.route("/api/excel-formato", methods=["POST"])
 def guardar_excel_formato():
     d = request.get_json(silent=True) or {}
-    if d.get("rol") != "superadmin":
-        return jsonify({"ok": False, "error": "Solo el superadmin edita el formato del Excel"}), 403
+    if d.get("rol") not in ("superadmin", "admin"):
+        return jsonify({"ok": False, "error": "Solo el superadmin o el administrador general edita el formato del Excel"}), 403
     negocio = d.get("negocio")
     if negocio not in slugs_negocios():
         return jsonify({"ok": False, "error": "Negocio inválido"}), 400
@@ -4002,7 +4045,7 @@ def _suma_largo(columna, *filtros):
 @app.route("/api/sistema/consumo")
 def sistema_consumo():
     """Superadmin: cuánto ocupa cada negocio en la base y cuánto gasta en IA."""
-    if request.args.get("solicitante_rol") != "superadmin":
+    if request.args.get("solicitante_rol") not in ("superadmin", "admin"):
         return jsonify({"error": "No autorizado"}), 403
     MB = 1024 * 1024
     negocios = []
