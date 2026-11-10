@@ -4090,12 +4090,21 @@ def sistema_consumo():
         modo_base, modos, extra = (n.modo_captura or "producto"), modos_cadena(slug), parse_cadenas(n.cadenas)
         cats = categorias_de(slug)
         fotos_por_lote = {"gondola": 4.0, "categoria": 2.0}
-        for es_cat, prom in (db.session.query(GondolaTienda.categoria != "", db.func.count(FotoGondola.id) * 1.0
-                                              / db.func.count(db.distinct(GondolaTienda.id)))
-                             .join(FotoGondola, FotoGondola.lote == db.cast(GondolaTienda.id, db.String))
-                             .filter(GondolaTienda.negocio == slug).group_by(GondolaTienda.categoria != "").all()):
-            if prom:
-                fotos_por_lote["categoria" if es_cat else "gondola"] = float(prom)
+        # promedio de fotos por lote, separado en góndola completa y categoría. Se agrupa en Python:
+        # Postgres rechaza GROUP BY con expresiones (causaba "no se pudo leer el consumo").
+        fotos_de_lote = dict(db.session.query(FotoGondola.lote, db.func.count(FotoGondola.id))
+                             .filter(FotoGondola.negocio == slug).group_by(FotoGondola.lote).all())
+        cat_de_lote = dict(db.session.query(db.cast(GondolaTienda.id, db.String), GondolaTienda.categoria)
+                           .filter(GondolaTienda.negocio == slug).all())
+        acum = {True: [0, 0], False: [0, 0]}   # es_categoria -> [fotos, lotes]
+        for lote, n_f in fotos_de_lote.items():
+            if lote in cat_de_lote:
+                es_cat = (cat_de_lote[lote] or "") != ""
+                acum[es_cat][0] += n_f
+                acum[es_cat][1] += 1
+        for es_cat, (n_f, n_l) in acum.items():
+            if n_l:
+                fotos_por_lote["categoria" if es_cat else "gondola"] = n_f / n_l
         lotes = {}   # (tienda, categoría o "") → modo, para contar góndolas/categorías una sola vez
         f_sem = f_rur = 0; t_sem, t_rur, prods = set(), set(), set()
         for tienda, prod in (Inventario.query.filter(Inventario.negocio == slug, Inventario.cantidad > 0)
