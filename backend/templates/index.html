@@ -3095,13 +3095,15 @@ async function cargarPanel() {
   }
 
   const neg = negocioActual;
-  const [rRep, rLiq, rEnv] = await Promise.all([
+  const [rRep, rLiq, rEnv, rVis] = await Promise.all([
     fetch(API + '/api/reportes?negocio=' + neg),
     fetch(API + '/api/liquidacion?negocio=' + neg),
-    fetch(API + '/api/gondola/envios?negocio=' + neg).catch(() => null)
+    fetch(API + '/api/gondola/envios?negocio=' + neg).catch(() => null),
+    fetch(API + '/api/visitas-dias?negocio=' + neg).catch(() => null)
   ]);
   const reps = await rRep.json(), liqs = await rLiq.json();
   const envios = rEnv && rEnv.ok ? await rEnv.json().catch(() => []) : [];
+  window._visitasDias = rVis && rVis.ok ? await rVis.json().catch(() => ({})) : {};
   if (neg !== negocioActual) return;   // cambió de cliente mientras cargaba: esta respuesta ya no sirve
   todosReportes = reps;
   todasLiquidaciones = liqs;
@@ -3568,6 +3570,11 @@ function renderPorTienda() {
     const diaEdit = (r.modificado_en || '').substring(0, 8);
     if (diaEdit) mapa[r.tienda].dias.add(diaEdit);
     if (r.foto || r.tiene_foto) mapa[r.tienda].fotos++;
+  });
+  // Visitas registradas por día: suma los días aunque un reenvío haya cambiado la fecha de los reportes
+  Object.entries(window._visitasDias || {}).forEach(([tienda, dias]) => {
+    if (!mapa[tienda]) mapa[tienda] = {dias: new Set(), fotos: 0};
+    dias.forEach(d => mapa[tienda].dias.add(d));
   });
   const lista = document.getElementById('lista-por-tienda');
   lista.innerHTML = '';

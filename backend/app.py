@@ -72,6 +72,16 @@ class Reporte(db.Model):
     modificaciones = db.Column(db.Integer, default=0)
     modificado_en  = db.Column(db.String(30))
 
+class VisitaTienda(db.Model):
+    """Una fila por tienda y día en que el display envió o guardó algo. No se sobrescribe al reenviar,
+    así los días visitados cuentan aunque la fecha de los reportes cambie."""
+    id       = db.Column(db.Integer, primary_key=True)
+    negocio  = db.Column(db.String(50), index=True)
+    tienda   = db.Column(db.String(200))
+    semana   = db.Column(db.String(20))
+    dia      = db.Column(db.String(8))   # AAAAMMDD
+    usuario  = db.Column(db.String(100))
+
 class Inventario(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     negocio         = db.Column(db.String(50), default="mundo_vegano", index=True)
@@ -1785,6 +1795,25 @@ def _miniatura_b64(foto_b64, lado=180):
     except Exception:
         return ""
 
+def _registrar_visita(negocio, tienda, semana, usuario):
+    """Anota que el display visitó la tienda hoy (una sola fila por tienda y día)."""
+    dia = datetime.now().strftime("%Y%m%d")
+    if not VisitaTienda.query.filter_by(negocio=negocio, tienda=tienda, semana=semana, dia=dia).first():
+        db.session.add(VisitaTienda(negocio=negocio, tienda=tienda, semana=semana, dia=dia,
+                                    usuario=(usuario or "")[:100]))
+
+@app.route("/api/visitas-dias")
+def visitas_dias():
+    """{tienda: [AAAAMMDD, ...]} de las visitas de la semana activa (mismo filtro que /api/reportes)."""
+    negocio = request.args.get("negocio", "mundo_vegano")
+    semana  = semana_actual(negocio)
+    habilitada = filtro_tiendas(negocio)
+    out = {}
+    for v in VisitaTienda.query.filter_by(negocio=negocio, semana=semana).all():
+        if habilitada(v.tienda):
+            out.setdefault(v.tienda, set()).add(v.dia)
+    return jsonify({t: sorted(d) for t, d in out.items()})
+
 @app.route("/api/reporte", methods=["POST"])
 def guardar_reporte():
     data        = request.json
@@ -1797,6 +1826,7 @@ def guardar_reporte():
     ahora       = datetime.now().strftime("%Y%m%d_%H%M%S")
     sem         = semana_captura(negocio)
 
+    _registrar_visita(negocio, tienda, sem, usuario)
     existente = Reporte.query.filter_by(tienda=tienda, producto=producto, semana=sem, negocio=negocio).first()
 
     nombre_foto = ""
@@ -3552,6 +3582,7 @@ def gondola_enviar():
         rep.usuario, rep.fecha = gt.usuario, ahora
         if not (rep.foto or "").startswith("GONDOLA:"):
             rep.comentario = com.get(p.producto, "")
+    _registrar_visita(negocio, tienda, sem, gt.usuario)
     db.session.commit()
     return jsonify({"ok": True, "fotos": n})
 
