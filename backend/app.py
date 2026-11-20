@@ -3500,7 +3500,8 @@ def gondola_estado():
     thumbs = dict(db.session.query(FotoGondola.id, FotoGondola.thumb_b64).filter(FotoGondola.id.in_(fids)).all()) if fids else {}
     return jsonify({"fotos": len(fids), "max": _max_fotos(cat),
                     "comentarios": json.loads(gt.comentarios or "{}") if gt else {},
-                    "miniaturas": [thumbs.get(f) or "" for f in fids]})   # miniaturas de las fotos ya enviadas
+                    "miniaturas": [thumbs.get(f) or "" for f in fids],   # miniaturas de las fotos ya enviadas
+                    "fotos_ids": fids})   # ids para abrir cada foto completa al hacer clic
 
 @app.route("/api/gondola/foto", methods=["POST"])
 def gondola_subir_foto():

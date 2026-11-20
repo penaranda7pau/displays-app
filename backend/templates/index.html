@@ -486,6 +486,9 @@
   .gam-miniaturas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .gam-mini { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--borde); background: var(--korax-surface); cursor: pointer; font-weight: 700; font-family: inherit; color: var(--text); }
   .gam-mini.on { background: var(--korax-mid); color: #fff; border-color: var(--korax-mid); }
+  .modal-nav-foto { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; color: #fff; font-size: 13px; }
+  .modal-nav-foto[hidden] { display: none; }
+  .modal-nav-foto button { background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; }
   .gam-prods { overflow: auto; padding: 6px 12px; }
   .ga-botones { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
   .ga-botones button { border: 1px solid var(--borde); background: var(--korax-surface); color: var(--text); border-radius: 999px; padding: 2px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }
@@ -1904,6 +1907,11 @@
 <div class="modal-overlay" id="modal-foto">
   <div class="modal-foto-box">
     <img id="modal-foto-img" src="" alt="Foto del reporte">
+    <div class="modal-nav-foto" id="modal-foto-nav-bar" hidden>
+      <button type="button" onclick="verFotoGondola(_gFotoIdx - 1)">‹ Anterior</button>
+      <span id="modal-foto-nav"></span>
+      <button type="button" onclick="verFotoGondola(_gFotoIdx + 1)">Siguiente ›</button>
+    </div>
     <button class="modal-cerrar" onclick="cerrarModalFoto()">Cerrar</button>
   </div>
 </div>
@@ -2484,8 +2492,9 @@ async function irGondola(tienda, categoria) {
   // Miniaturas de las fotos que ya se enviaron esta semana (para ver si ya se mandaron)
   const ge = document.getElementById('g-enviadas');
   if (ge && est.miniaturas && est.miniaturas.length) {
+    _gFotosIds = est.fotos_ids || [];
     ge.innerHTML = est.miniaturas.map((t, i) => t
-      ? `<img src="data:image/jpeg;base64,${t}" title="Foto enviada ${i + 1}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #0B8A6F;">`
+      ? `<img src="data:image/jpeg;base64,${t}" title="Ver foto ${i + 1}" onclick="verFotoGondola(${i})" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #0B8A6F;cursor:pointer;">`
       : `<div style="width:72px;height:72px;border-radius:8px;border:1px dashed var(--muted);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);">Foto ${i + 1}</div>`
     ).join('');
   }
@@ -3484,6 +3493,7 @@ function verLiqFoto(li, fi) {
 }
 
 async function verFoto(id) {
+  document.getElementById('modal-foto-nav-bar').hidden = true;
   const modal = document.getElementById('modal-foto');
   const img = document.getElementById('modal-foto-img');
   img.src = '';
@@ -3504,6 +3514,7 @@ async function verFoto(id) {
 }
 
 function verFotoB64(b64) {
+  document.getElementById('modal-foto-nav-bar').hidden = true;
   const modal = document.getElementById('modal-foto');
   const img = document.getElementById('modal-foto-img');
   img.src = 'data:image/jpeg;base64,' + b64;
@@ -3513,6 +3524,26 @@ function verFotoB64(b64) {
 function cerrarModalFoto() {
   document.getElementById('modal-foto').classList.remove('activo');
   document.getElementById('modal-foto-img').src = '';
+  document.getElementById('modal-foto-nav-bar').hidden = true;
+}
+
+// Fotos enviadas en una tienda de góndola: se recorren con Anterior / Siguiente
+let _gFotosIds = [], _gFotoIdx = 0;
+async function verFotoGondola(idx) {
+  if (!_gFotosIds.length) return;
+  _gFotoIdx = (idx + _gFotosIds.length) % _gFotosIds.length;
+  const img = document.getElementById('modal-foto-img');
+  img.src = '';
+  document.getElementById('modal-foto').classList.add('activo');
+  document.getElementById('modal-foto-nav-bar').hidden = false;
+  document.getElementById('modal-foto-nav').textContent = `Foto ${_gFotoIdx + 1} de ${_gFotosIds.length}`;
+  try {
+    const d = await (await fetch(API + '/api/gondola/foto/' + _gFotosIds[_gFotoIdx])).json();
+    if (d.foto_b64) img.src = 'data:image/jpeg;base64,' + d.foto_b64;
+    else cerrarModalFoto();
+  } catch (e) {
+    cerrarModalFoto();
+  }
 }
 
 function renderPorTienda() {
