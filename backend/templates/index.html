@@ -911,6 +911,22 @@
     .modal-foto-cuerpo.con-info img { max-width: 100%; }
     .modal-foto-info { flex: none; max-width: 100%; max-height: 30vh; }
   }
+  .modal-foto-info .fi-actual { font-weight: 600; }
+  .modal-foto-info .fi-otro { opacity: .7; }
+  .modal-foto-info .fi-presente { color: var(--ok); }
+  .modal-foto-info .fi-ausente { color: var(--err); }
+  .modal-foto-info .fi-dudoso { color: var(--warn); }
+  .modal-foto-info .fi-pendiente { color: var(--muted); }
+  /* En computadora: panel en la mitad derecha (datos arriba, foto abajo), con la lista visible a la izquierda */
+  @media (min-width: 900px) {
+    #modal-foto.activo { justify-content: flex-end; align-items: stretch; padding: 0; background: transparent; backdrop-filter: none; pointer-events: none; }
+    #modal-foto .modal-foto-box { pointer-events: auto; width: 50vw; max-width: 50vw; height: 100vh; max-height: 100vh; background: var(--korax-surface); box-shadow: -12px 0 40px rgba(0,0,0,.28); padding: 16px; gap: 10px; justify-content: flex-start; }
+    #modal-foto .modal-foto-cuerpo, #modal-foto .modal-foto-cuerpo.con-info { flex-direction: column; width: 100%; flex: 1 1 auto; min-height: 0; justify-content: flex-start; align-items: stretch; gap: 10px; }
+    #modal-foto .modal-foto-info { flex: 0 1 auto; max-width: 100%; max-height: 45%; box-shadow: none; border: 1px solid var(--borde); }
+    #modal-foto .modal-foto-cuerpo img, #modal-foto .modal-foto-cuerpo.con-info img { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 100%; max-height: none; object-fit: contain; box-shadow: none; outline: none; background: #000; }
+    #modal-foto .modal-nav-foto { color: var(--text); width: 100%; }
+    #modal-foto .modal-nav-foto button { color: var(--text); background: var(--korax-gray-1); border-color: var(--borde); }
+  }
   .modal-cerrar {
     background: var(--korax-surface); color: var(--korax-deep); border: 1px solid var(--korax-mid);
     padding: 10px 24px; border-radius: var(--radius-btn); cursor: pointer; font-size: 14px; font-weight: 600;
@@ -3596,12 +3612,16 @@ function infoEnvio(gid, idx) {
   if (!e) return '';
   const estados = { presente: 'Presente', dudoso: 'Dudoso', ausente: 'No se ve', pendiente: 'Pendiente de análisis' };
   const cats = e.categoria ? ' · ' + e.categoria : '';
-  const prods = (e.productos || []).filter(p => Number(p.foto) === idx + 1);
-  const filas = prods.length
-    ? prods.map(p => `<div class="fi-fila"><span>${_esc(p.producto)}</span><span class="fi-est">${estados[p.estado] || _esc(p.estado || '—')}</span>${p.comentario ? `<span class="fi-com">${_esc(p.comentario)}</span>` : ''}</div>`).join('')
-    : '<div class="fi-sub">Esta foto no tiene productos asignados.</div>';
+  // Lista completa del envío: primero los productos de esta foto (marcados con ●), después el resto
+  const todos = e.productos || [];
+  const enFoto = p => Number(p.foto) === idx + 1;
+  const orden = [...todos.filter(enFoto), ...todos.filter(p => !enFoto(p))];
+  const nEnFoto = todos.filter(enFoto).length;
+  const filas = orden.length
+    ? orden.map(p => `<div class="fi-fila ${enFoto(p) ? 'fi-actual' : 'fi-otro'}"><span>${enFoto(p) ? '● ' : ''}${_esc(p.producto)}</span><span class="fi-est fi-${_esc(p.estado || '')}">${estados[p.estado] || _esc(p.estado || '—')}</span>${p.comentario ? `<span class="fi-com">${_esc(p.comentario)}</span>` : ''}</div>`).join('')
+    : '<div class="fi-sub">Este envío no tiene productos.</div>';
   return `<div class="fi-tit">${_esc(e.tienda)}${_esc(cats)}</div>
-    <div class="fi-sub">${_esc(e.usuario || 'display')} · ${_esc(formatearFechaReporte(e.fecha))} · Foto ${idx + 1} de ${(e.n_fotos || (e.productos || []).length) || '—'}</div>
+    <div class="fi-sub">${_esc(e.usuario || 'display')} · ${_esc(formatearFechaReporte(e.fecha))} · Foto ${idx + 1} de ${(e.n_fotos || _gFotosIds.length) || '—'}<br>${nEnFoto} producto(s) en esta foto (●) · ${todos.length} en el envío</div>
     ${filas}`;
 }
 async function verFotoGondola(idx) {
