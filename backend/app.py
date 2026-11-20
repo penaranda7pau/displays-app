@@ -1918,6 +1918,12 @@ def gondola_envio_miniaturas(gid):
             .filter_by(lote=str(gid)).order_by(FotoGondola.id).all())
     return jsonify([r[0] or "" for r in rows])
 
+@app.route("/api/gondola/envio/<int:gid>/ids")
+def gondola_envio_ids(gid):
+    """Ids de las fotos de un envío, en el mismo orden que sus miniaturas. Sin imágenes: es liviano."""
+    rows = FotoGondola.query.with_entities(FotoGondola.id).filter_by(lote=str(gid)).order_by(FotoGondola.id).all()
+    return jsonify([r[0] for r in rows])
+
 @app.route("/api/reportes/miniaturas")
 def reportes_miniaturas():
     """Miniaturas por lote de ids (el panel del supervisor las pide de a 100, no la foto completa)."""

@@ -3371,15 +3371,26 @@ function bloqueEnvios(envios) {
   return cont;
 }
 
+// ids de las fotos de cada envío ya abierto: así el visor recorre solo las fotos de ese envío
+const _envioIds = {};
+function verFotoEnvio(gid, i) {
+  _gFotosIds = _envioIds[gid] || [];
+  verFotoGondola(i);
+}
+
 async function cargarMinisEnvio(id, det) {
   const box = det.querySelector('.env-min');
   if (!box || box.dataset.cargado) return;
   box.dataset.cargado = '1';
   box.innerHTML = '<span class="muted" style="font-size:11px;">Cargando fotos...</span>';
   try {
-    const thumbs = await (await fetch(API + '/api/gondola/envio/' + id + '/miniaturas')).json();
+    const [thumbs, ids] = await Promise.all([
+      fetch(API + '/api/gondola/envio/' + id + '/miniaturas').then(r => r.json()),
+      fetch(API + '/api/gondola/envio/' + id + '/ids').then(r => r.json()),
+    ]);
+    _envioIds[id] = ids;
     box.innerHTML = thumbs.map((t, i) => t
-      ? `<img src="data:image/jpeg;base64,${t}" title="Foto ${i + 1}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--borde);">`
+      ? `<img src="data:image/jpeg;base64,${t}" title="Ver foto ${i + 1}" onclick="verFotoEnvio(${id}, ${i})" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--borde);cursor:pointer;">`
       : `<div style="width:72px;height:72px;border-radius:8px;border:1px dashed var(--muted);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);">Foto ${i + 1}</div>`
     ).join('') || '<span class="muted" style="font-size:11px;">Sin fotos</span>';
   } catch (e) {
