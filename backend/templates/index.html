@@ -895,6 +895,22 @@
   .modal-overlay.activo { display: flex; }
   .modal-foto-box { max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; align-items: center; gap: 12px; }
   .modal-foto-box img { max-width: 100%; max-height: 78vh; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); outline: 2px solid var(--korax-mid); outline-offset: 3px; }
+  /* visor con datos: a la izquierda la información, a la derecha la foto (en celular, una sobre otra) */
+  .modal-foto-cuerpo { display: flex; align-items: center; justify-content: center; gap: 16px; width: 100%; min-width: 0; }
+  .modal-foto-cuerpo.con-info { justify-content: space-between; width: min(1080px, 92vw); }
+  .modal-foto-cuerpo.con-info img { flex: 1 1 50%; min-width: 0; max-width: 50%; max-height: 78vh; object-fit: contain; }
+  .modal-foto-info { flex: 0 0 300px; max-width: 42%; max-height: 78vh; overflow: auto; background: var(--korax-surface); color: var(--text); border-radius: 12px; padding: 14px 16px; font-size: 13px; line-height: 1.5; box-shadow: 0 8px 32px rgba(0,0,0,0.25); }
+  .modal-foto-info[hidden] { display: none; }
+  .modal-foto-info .fi-tit { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .modal-foto-info .fi-sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .modal-foto-info .fi-fila { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 0; border-top: 1px solid var(--borde); }
+  .modal-foto-info .fi-est { font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .modal-foto-info .fi-com { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+  @media (max-width: 640px) {
+    .modal-foto-cuerpo.con-info { flex-direction: column; width: 100%; }
+    .modal-foto-cuerpo.con-info img { max-width: 100%; }
+    .modal-foto-info { flex: none; max-width: 100%; max-height: 30vh; }
+  }
   .modal-cerrar {
     background: var(--korax-surface); color: var(--korax-deep); border: 1px solid var(--korax-mid);
     padding: 10px 24px; border-radius: var(--radius-btn); cursor: pointer; font-size: 14px; font-weight: 600;
@@ -1906,7 +1922,10 @@
 
 <div class="modal-overlay" id="modal-foto">
   <div class="modal-foto-box">
-    <img id="modal-foto-img" src="" alt="Foto del reporte">
+    <div class="modal-foto-cuerpo" id="modal-foto-cuerpo">
+      <div class="modal-foto-info" id="modal-foto-info" hidden></div>
+      <img id="modal-foto-img" src="" alt="Foto del reporte">
+    </div>
     <div class="modal-nav-foto" id="modal-foto-nav-bar" hidden>
       <button type="button" onclick="verFotoGondola(_gFotoIdx - 1)">‹ Anterior</button>
       <span id="modal-foto-nav"></span>
@@ -3377,6 +3396,7 @@ function bloqueEnvios(envios) {
 const _envioIds = {};
 function verFotoEnvio(gid, i) {
   _gFotosIds = _envioIds[gid] || [];
+  _infoFotoFn = idx => infoEnvio(gid, idx);
   verFotoGondola(i);
 }
 
@@ -3507,6 +3527,8 @@ function verLiqFoto(li, fi) {
 
 async function verFoto(id) {
   document.getElementById('modal-foto-nav-bar').hidden = true;
+  _infoFotoFn = null;
+  _setInfoFoto(infoReporte(id));
   const modal = document.getElementById('modal-foto');
   const img = document.getElementById('modal-foto-img');
   img.src = '';
@@ -3528,6 +3550,8 @@ async function verFoto(id) {
 
 function verFotoB64(b64) {
   document.getElementById('modal-foto-nav-bar').hidden = true;
+  _infoFotoFn = null;
+  _setInfoFoto('');
   const modal = document.getElementById('modal-foto');
   const img = document.getElementById('modal-foto-img');
   img.src = 'data:image/jpeg;base64,' + b64;
@@ -3535,6 +3559,8 @@ function verFotoB64(b64) {
 }
 
 function cerrarModalFoto() {
+  _infoFotoFn = null;
+  _setInfoFoto('');
   document.getElementById('modal-foto').classList.remove('activo');
   document.getElementById('modal-foto-img').src = '';
   document.getElementById('modal-foto-nav-bar').hidden = true;
@@ -3542,6 +3568,42 @@ function cerrarModalFoto() {
 
 // Fotos enviadas en una tienda de góndola: se recorren con Anterior / Siguiente
 let _gFotosIds = [], _gFotoIdx = 0;
+// Datos que acompañan a la foto en el visor (columna izquierda). null = sin datos.
+let _infoFotoFn = null;
+const _esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+function _setInfoFoto(html) {
+  const info = document.getElementById('modal-foto-info');
+  const cuerpo = document.getElementById('modal-foto-cuerpo');
+  if (!info || !cuerpo) return;
+  if (html) { info.innerHTML = html; info.hidden = false; cuerpo.classList.add('con-info'); }
+  else { info.innerHTML = ''; info.hidden = true; cuerpo.classList.remove('con-info'); }
+}
+// Datos de un reporte por producto (vista Reportes)
+function infoReporte(id) {
+  const r = (todosReportes || []).find(x => x.id === id);
+  if (!r) return '';
+  const mod = r.modificaciones > 0 ? `<div class="fi-sub">Modificado ${r.modificaciones} vez/veces</div>` : '';
+  return `<div class="fi-tit">${_esc(r.tienda)}</div>
+    <div class="fi-sub">${_esc(r.producto)}</div>
+    <div class="fi-fila"><span>Enviado por</span><span>${_esc(r.usuario || '—')}</span></div>
+    <div class="fi-fila"><span>Fecha</span><span>${_esc(formatearFechaReporte(r.fecha))}</span></div>
+    <div class="fi-fila"><span>Comentario</span><span>${_esc(r.comentario || '—')}</span></div>
+    ${mod}`;
+}
+// Datos de una foto de un envío de góndola: los productos que señala esa foto y su estado
+function infoEnvio(gid, idx) {
+  const e = (window._envios || []).find(x => x.id === gid);
+  if (!e) return '';
+  const estados = { presente: 'Presente', dudoso: 'Dudoso', ausente: 'No se ve', pendiente: 'Pendiente de análisis' };
+  const cats = e.categoria ? ' · ' + e.categoria : '';
+  const prods = (e.productos || []).filter(p => Number(p.foto) === idx + 1);
+  const filas = prods.length
+    ? prods.map(p => `<div class="fi-fila"><span>${_esc(p.producto)}</span><span class="fi-est">${estados[p.estado] || _esc(p.estado || '—')}</span>${p.comentario ? `<span class="fi-com">${_esc(p.comentario)}</span>` : ''}</div>`).join('')
+    : '<div class="fi-sub">Esta foto no tiene productos asignados.</div>';
+  return `<div class="fi-tit">${_esc(e.tienda)}${_esc(cats)}</div>
+    <div class="fi-sub">${_esc(e.usuario || 'display')} · ${_esc(formatearFechaReporte(e.fecha))} · Foto ${idx + 1} de ${(e.n_fotos || (e.productos || []).length) || '—'}</div>
+    ${filas}`;
+}
 async function verFotoGondola(idx) {
   if (!_gFotosIds.length) return;
   _gFotoIdx = (idx + _gFotosIds.length) % _gFotosIds.length;
@@ -3550,6 +3612,7 @@ async function verFotoGondola(idx) {
   document.getElementById('modal-foto').classList.add('activo');
   document.getElementById('modal-foto-nav-bar').hidden = false;
   document.getElementById('modal-foto-nav').textContent = `Foto ${_gFotoIdx + 1} de ${_gFotosIds.length}`;
+  _setInfoFoto(_infoFotoFn ? _infoFotoFn(_gFotoIdx) : '');
   try {
     const d = await (await fetch(API + '/api/gondola/foto/' + _gFotosIds[_gFotoIdx])).json();
     if (d.foto_b64) img.src = 'data:image/jpeg;base64,' + d.foto_b64;
